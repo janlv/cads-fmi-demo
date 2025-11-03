@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  orchestrator:
+    build: .
+    image: cads-fmi-demo:latest
+    container_name: cads-fmi-orchestrator
+    volumes:
+      - ./data:/app/data
+    command: ["python", "orchestrator/run.py"]

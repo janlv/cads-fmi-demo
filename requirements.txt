@@ -1,0 +1,3 @@
+pythonfmu==0.9.10
+FMPy==0.3.20
+numpy>=1.26
