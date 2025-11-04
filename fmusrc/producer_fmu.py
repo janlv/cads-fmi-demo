@@ -1,8 +1,10 @@
-from pythonfmu import Fmi2Causality, Fmi2Variability, ScalarVariable, Fmi2CoSimulation
+from pythonfmu import Fmi2Causality, Fmi2Variability
+from pythonfmu.fmi2slave import Fmi2Slave
+from pythonfmu.variables import Real, Boolean
 import time, os, csv, math, random, statistics
 from datetime import datetime, timedelta
 
-class Producer(Fmi2CoSimulation):
+class Producer(Fmi2Slave):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -15,18 +17,24 @@ class Producer(Fmi2CoSimulation):
         self.rollingMean = 0.0
         self.done = False
 
-        self.add_variable(ScalarVariable("mean",        causality=Fmi2Causality.output, variability=Fmi2Variability.tunable, start=self.mean))
-        self.add_variable(ScalarVariable("std",         causality=Fmi2Causality.output, variability=Fmi2Variability.tunable, start=self.std))
-        self.add_variable(ScalarVariable("vmin",        causality=Fmi2Causality.output, variability=Fmi2Variability.tunable, start=self.vmin))
-        self.add_variable(ScalarVariable("vmax",        causality=Fmi2Causality.output, variability=Fmi2Variability.tunable, start=self.vmax))
-        self.add_variable(ScalarVariable("rollingMean", causality=Fmi2Causality.output, variability=Fmi2Variability.tunable, start=self.rollingMean))
-        self.add_variable(ScalarVariable("done",        causality=Fmi2Causality.output, variability=Fmi2Variability.discrete, start=False))
+        self.register_variable(Real("mean", causality=Fmi2Causality.output,
+                                    variability=Fmi2Variability.continuous))
+        self.register_variable(Real("std", causality=Fmi2Causality.output,
+                                    variability=Fmi2Variability.continuous))
+        self.register_variable(Real("vmin", causality=Fmi2Causality.output,
+                                    variability=Fmi2Variability.continuous))
+        self.register_variable(Real("vmax", causality=Fmi2Causality.output,
+                                    variability=Fmi2Variability.continuous))
+        self.register_variable(Real("rollingMean", causality=Fmi2Causality.output,
+                                    variability=Fmi2Variability.continuous))
+        self.register_variable(Boolean("done", causality=Fmi2Causality.output,
+                                       variability=Fmi2Variability.discrete))
 
         # Parameters
         self.csv_path = "data/measurements.csv"
         self.duration_sec = 30.0  # wall-clock demo duration
 
-    def enterInitializationMode(self):
+    def enter_initialization_mode(self):
         # Ensure CSV exists (generate synthetic if missing)
         if not os.path.exists(self.csv_path):
             os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
@@ -65,7 +73,7 @@ class Producer(Fmi2CoSimulation):
         # stash for reporting
         self._start_time = time.time()
 
-    def doStep(self, currentCommunicationPoint, communicationStepSize):
+    def do_step(self, current_time, step_size):
         # Fake workload for the demo: keep running until ~30 s wall time
         if time.time() - self._start_time >= self.duration_sec:
             self.done = True
