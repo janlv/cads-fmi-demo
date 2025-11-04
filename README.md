@@ -108,6 +108,20 @@ scripts/install_platform_resources.py --profile apple
 
 The Docker image runs the equivalent logic automatically based on the target architecture, so you only need this when developing locally or rebuilding FMUs on the host.
 
+### Company certificate helpers
+
+If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building:
+
+```bash
+# macOS – pulls matching certs from System/login keychains (repeat --subject as needed)
+scripts/export_company_certs.py --platform mac --subject "NORCE"
+
+# Linux – copies matching certs from /usr/local/share/ca-certificates
+scripts/export_company_certs.py --platform linux --subject "NORCE"
+```
+
+Certificates are written as individual `certs/company-<fingerprint>.crt` files and are picked up automatically by the Docker build step.
+
 ## OVH Ubuntu 22.04 quickstart
 
 ```bash
