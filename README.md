@@ -9,6 +9,35 @@ Two simple Python models packaged as **FMUs (FMI 2.0 Co‑Simulation)** and orch
 
 Artifacts written to `data/producer_result.json` and `data/consumer_result.json`.
 
+## Platform resources
+
+Platform-specific pythonfmu binaries live under `platform_resources/<profile>/`. Use the helper script to stage the right bundle (it copies into the ignored `pythonfmu_resources/` directory). The script launches a minimal Docker image to generate the resources if they are missing, so ensure Docker is available.
+
+```bash
+# Auto-detect (runs linux profile on x86_64, apple profile on Darwin/arm64); bootstraps resources on first run
+scripts/install_platform_resources.py
+
+# Explicit selection
+scripts/install_platform_resources.py --profile linux
+scripts/install_platform_resources.py --profile apple
+```
+
+The Docker image runs the equivalent logic automatically based on the target architecture, so you only need this when developing locally or rebuilding FMUs on the host.
+
+### Company certificate helpers
+
+If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building:
+
+```bash
+# macOS – pulls matching certs from System/login keychains (repeat --subject as needed)
+scripts/export_company_certs.py --platform mac --subject "NORCE"
+
+# Linux – copies matching certs from /usr/local/share/ca-certificates
+scripts/export_company_certs.py --platform linux --subject "NORCE"
+```
+
+Certificates are written as individual `certs/company-<fingerprint>.crt` files and are picked up automatically by the Docker build step.
+
 ## Quick Start (Docker)
 
 ```bash
@@ -31,7 +60,10 @@ The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`
    sudo port install docker docker-compose colima py311-requests-unixsocket
    colima start
    docker context use colima
-   docker context show    # expect "colima"
+   ```
+   Optional sanity checks:
+   ```bash
+   docker context show    # expect "colima" or "default"
    docker ps              # connectivity check, expect header row output
    ```
 2. Build & test the orchestrator (rebuilds the FMUs for arm64 automatically):
@@ -59,7 +91,7 @@ The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`
 If you want to rebuild or simulate FMUs on the host Python interpreter, stage the platform resources first:
 
 ```bash
-scripts/install_platform_resources.py  # auto-detects Apple profile
+scripts/install_platform_resources.py --bootstrap  # auto-detects Apple profile
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pythonfmu build -f fmusrc/producer_fmu.py -d dist
@@ -92,35 +124,6 @@ The container build also works on x86_64 Linux, including the OVH images describ
    ```bash
    docker compose up orchestrator
    ```
-
-## Platform resources
-
-Platform-specific pythonfmu binaries live under `platform_resources/<profile>/`. Use the helper script to stage the right bundle (it copies into the ignored `pythonfmu_resources/` directory).
-
-```bash
-# Auto-detect (runs linux profile on x86_64, apple profile on Darwin/arm64)
-scripts/install_platform_resources.py
-
-# Explicit selection
-scripts/install_platform_resources.py --profile linux
-scripts/install_platform_resources.py --profile apple
-```
-
-The Docker image runs the equivalent logic automatically based on the target architecture, so you only need this when developing locally or rebuilding FMUs on the host.
-
-### Company certificate helpers
-
-If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building:
-
-```bash
-# macOS – pulls matching certs from System/login keychains (repeat --subject as needed)
-scripts/export_company_certs.py --platform mac --subject "NORCE"
-
-# Linux – copies matching certs from /usr/local/share/ca-certificates
-scripts/export_company_certs.py --platform linux --subject "NORCE"
-```
-
-Certificates are written as individual `certs/company-<fingerprint>.crt` files and are picked up automatically by the Docker build step.
 
 ## OVH Ubuntu 22.04 quickstart
 
