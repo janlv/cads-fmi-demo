@@ -23,7 +23,7 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Provide optional cached pythonfmu runtime binaries (for offline/air-gapped builds)
-COPY cache/ /tmp/pythonfmu_cache/
+COPY fmu_artifacts/cache/ /tmp/pythonfmu_cache/
 RUN set -eux; \
     TARGET_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/resources; \
     if [ -d /tmp/pythonfmu_cache/linux/pythonfmu_resources ]; then \
@@ -54,10 +54,10 @@ COPY orchestrator/ ./orchestrator/
 COPY data/ ./data/
 
 # Build FMUs (pythonfmu CLI)
-RUN mkdir -p dist && \
-    python -m pythonfmu build -f fmusrc/producer_fmu.py -d dist && \
-    python -m pythonfmu build -f fmusrc/consumer_fmu.py -d dist && \
-    echo 'Built FMUs to /app/dist'
+RUN mkdir -p fmu_artifacts/build && \
+    python -m pythonfmu build -f fmusrc/producer_fmu.py -d fmu_artifacts/build && \
+    python -m pythonfmu build -f fmusrc/consumer_fmu.py -d fmu_artifacts/build && \
+    echo 'Built FMUs to /app/fmu_artifacts/build'
 
 # Default command: run orchestrator
 CMD ["python", "orchestrator/run.py"]

@@ -1,21 +1,14 @@
 # Do not add sensitive certificates to the repo
 certs/
-cache/
 
-.venv_cads
-.venv/
-venv/
 __pycache__/
 *.py[cod]
 
 # FMU build artifacts
-dist/
-host_dist/
-tmp_pyfmu/
+fmu_artifacts/
 
 # Runtime outputs
-data/*.json
-data/measurements.csv
+data/
 
 # Local tooling
 .DS_Store

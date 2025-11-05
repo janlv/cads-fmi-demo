@@ -2,7 +2,7 @@
 """
 Install architecture-specific pythonfmu resource bundles.
 
-Resources are cached under ``cache/<profile>/pythonfmu_resources``. When the
+Resources are cached under ``fmu_artifacts/cache/<profile>/pythonfmu_resources``. When the
 cache is missing, the script bootstraps it automatically by spinning up a
 temporary Python Docker image for the relevant architecture, installing
 pythonfmu, rebuilding the exporter, and copying its resource directory back to
@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE_ROOT = ROOT / "cache"
+ARTIFACTS_ROOT = ROOT / "fmu_artifacts"
+CACHE_ROOT = ARTIFACTS_ROOT / "cache"
 PYTHONFMU_VERSION = "0.6.9"
 
 PROFILE_SOURCES = {
@@ -231,6 +232,7 @@ def install(
     print(f"Installing pythonfmu resources for profile: {profile}")
 
     if not dry_run:
+        ARTIFACTS_ROOT.mkdir(parents=True, exist_ok=True)
         CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         data_dir = ROOT / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
