@@ -13,18 +13,18 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
 
 ```
 cads-fmi-demo/
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── .gitignore
+├── Dockerfile         # Container image build for the co-simulation demo
+├── docker-compose.yml # Compose stack to orchestrate Producer/Consumer runs
+├── requirements.txt   # Python dependencies used for local builds/tests
+├── scripts/           # Helper utilities for cache bootstrap, cert export, etc.
 ├── fmu/
-│   ├── models/      # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)
-│   └── artifacts/   (generated)
-│       ├── cache/   # pythonfmu binaries cached by scripts/install_platform_resources.py
-│       └── build/   # FMUs built locally or inside Docker (Producer.fmu, Consumer.fmu)
+│   ├── models/        # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)
+│   └── artifacts/     # Generated outputs
+│       ├── cache/     # pythonfmu toolchain cached by scripts/
+│       └── build/     # Built FMUs (Producer.fmu, Consumer.fmu) for current architecture
 ├── orchestrator/
-│   └── run.py
-└── data/
+│   └── run.py         # Coordinates FMU execution and writes summary JSON
+└── data/              # Runtime data/setpoints/results; created on demand
     └── (created at runtime)
 ```
 
