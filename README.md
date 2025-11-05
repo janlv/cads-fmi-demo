@@ -11,7 +11,7 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
 
 ## Platform resources
 
-Platform-specific pythonfmu binaries live under `platform_resources/<profile>/`. Use the helper script to stage the right bundle (it copies into the ignored `pythonfmu_resources/` directory). The script launches a minimal Docker image to generate the resources if they are missing, so ensure Docker is available.
+Platform-specific pythonfmu binaries live under `platform_resources/<profile>/`. Use the helper script to stage the right bundle (it copies into the ignored `pythonfmu_resources/` directory). The script launches a minimal Docker image to generate the resources if they are missing, so ensure Docker is available. Any `.crt` / `.pem` files dropped into `certs/` are mounted automatically so pip can trust your corporate proxies during bootstrapping.
 
 ```bash
 # Auto-detect (runs linux profile on x86_64, apple profile on Darwin/arm64); bootstraps resources on first run
@@ -26,7 +26,7 @@ The Docker image runs the equivalent logic automatically based on the target arc
 
 ### Company certificate helpers
 
-If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building:
+If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building or running the bootstrap script:
 
 ```bash
 # macOS – pulls matching certs from System/login keychains (repeat --subject as needed)

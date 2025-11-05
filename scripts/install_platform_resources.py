@@ -70,28 +70,30 @@ def bootstrap_source(source: str) -> None:
     print(f"- Bootstrapping resources for '{source}' using Docker ({platform_flag})")
     certs_mount: list[str] = []
     certs_snippet = ""
-    cert_env = ""
+    certs_env = ""
     certs_dir = ROOT / "certs"
-    ca_files = [f for f in certs_dir.iterdir() if f.is_file()] if certs_dir.exists() else []
+    ca_files = [f for f in certs_dir.iterdir() if f.is_file() and f.suffix.lower() in {".crt", ".pem"}] if certs_dir.exists() else []
     if ca_files:
         certs_mount = ["-v", f"{certs_dir.resolve()}:/tmp/company-certs:ro"]
-        primary = ca_files[0].name
-        cert_env = (
-            f'export REQUESTS_CA_BUNDLE="/tmp/company-certs/{primary}"\n'
-            f'export PIP_CERT="/tmp/company-certs/{primary}"\n'
+        certs_env = (
+            "export REQUESTS_CA_BUNDLE=/tmp/company-ca.pem\n"
+            "export PIP_CERT=/tmp/company-ca.pem\n"
         )
         certs_snippet = (
             "if [ -d /tmp/company-certs ]; then\n"
             "  mkdir -p /usr/local/share/ca-certificates/company\n"
+            "  : > /tmp/company-ca.pem\n"
             "  for file in /tmp/company-certs/*; do\n"
             "    [ -f \"$file\" ] || continue\n"
             "    base=$(basename \"$file\")\n"
             "    case \"$base\" in\n"
             "      *.pem)\n"
             "        cp \"$file\" \"/usr/local/share/ca-certificates/company/${base%.pem}.crt\"\n"
+            "        cat \"$file\" >> /tmp/company-ca.pem\n"
             "        ;;\n"
             "      *.crt)\n"
             "        cp \"$file\" \"/usr/local/share/ca-certificates/company/$base\"\n"
+            "        cat \"$file\" >> /tmp/company-ca.pem\n"
             "        ;;\n"
             "      *)\n"
             "        continue\n"
@@ -114,15 +116,19 @@ def bootstrap_source(source: str) -> None:
         "bash",
         "-lc",
         "set -euo pipefail\n"
-        f"{cert_env}"
+        "echo '[bootstrap] Updating apt cache' >&2\n"
         "apt-get update >/dev/null\n"
         f"{certs_snippet}"
+        f"{certs_env}"
+        "echo '[bootstrap] Installing build prerequisites' >&2\n"
         "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
         "build-essential cmake unzip >/dev/null\n"
+        "echo '[bootstrap] Installing pythonfmu' >&2\n"
         f"pip install --no-cache-dir pythonfmu=={PYTHONFMU_VERSION} >/dev/null\n"
         "PYFMI_EXPORT_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/pythonfmu-export\n"
         "cd \"$PYFMI_EXPORT_DIR\"\n"
         "chmod +x build_unix.sh\n"
+        "echo '[bootstrap] Building pythonfmu-export native library' >&2\n"
         "./build_unix.sh >/dev/null\n"
         "rm -rf build\n"
         "rm -rf /out/pythonfmu_resources\n"
