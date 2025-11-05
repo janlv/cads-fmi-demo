@@ -13,6 +13,7 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
 
 ```
 cads-fmi-demo/
+├── build.sh          # One-stop helper to refresh platform cache and rebuild Docker image/FMUs
 ├── Dockerfile         # Container image build for the co-simulation demo
 ├── docker-compose.yml # Compose stack to orchestrate Producer/Consumer runs
 ├── requirements.txt   # Python dependencies used for local builds/tests
