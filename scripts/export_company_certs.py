@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import platform
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,6 +35,8 @@ class CertificateInfo:
     subject: str
     issuer: str
     fingerprint: str
+    pem: str
+    source_path: Path | None = None
 
 
 @dataclass
@@ -43,6 +44,7 @@ class ProbeResult:
     exported: int
     fingerprints: set[str]
     names: set[str]
+    hosts: set[str]
 
 
 def run_checked(cmd: list[str]) -> bytes:
@@ -70,7 +72,7 @@ def normalize_dn(name: str) -> str:
     return name.strip().lower()
 
 
-def fingerprint_pem(pem: str) -> CertificateInfo:
+def fingerprint_pem(pem: str, source_path: Path | None = None) -> CertificateInfo:
     with tempfile.NamedTemporaryFile("w", delete=False) as tmp:
         tmp.write(pem)
         tmp.flush()
@@ -90,24 +92,72 @@ def fingerprint_pem(pem: str) -> CertificateInfo:
         subject=subject,
         issuer=issuer,
         fingerprint=sha1.replace(":", "").replace(" ", "").lower(),
+        pem=pem,
+        source_path=source_path,
     )
 
 
-def should_include(cert: CertificateInfo, allowed_subjects: set[str] | None, allowed_fingerprints: set[str] | None) -> bool:
-    if allowed_fingerprints and cert.fingerprint in allowed_fingerprints:
+def select_certificates(
+    candidates: dict[str, CertificateInfo],
+    allowed_subjects: set[str] | None,
+    allowed_fingerprints: set[str] | None,
+    host_hints: set[str] | None,
+) -> dict[str, CertificateInfo]:
+    if not (allowed_subjects or allowed_fingerprints or host_hints):
+        return dict(candidates)
+    selected: dict[str, CertificateInfo] = {}
+    subjects_allowed = set(allowed_subjects or [])
+    host_hints = {hint for hint in (host_hints or set()) if hint}
+
+    def add_certificate(cert: CertificateInfo) -> bool:
+        if cert.fingerprint in selected:
+            return False
+        selected[cert.fingerprint] = cert
+        issuer_norm = normalize_dn(cert.issuer) if cert.issuer else ""
+        if issuer_norm:
+            subjects_allowed.add(issuer_norm)
         return True
-    if allowed_subjects:
-        subject_key = normalize_dn(cert.subject) if cert.subject else ""
-        issuer_key = normalize_dn(cert.issuer) if cert.issuer else ""
-        if subject_key in allowed_subjects or (issuer_key and issuer_key in allowed_subjects):
-            return True
-        return False
-    return not allowed_subjects and not allowed_fingerprints
+
+    if allowed_fingerprints:
+        for fingerprint in allowed_fingerprints:
+            cert = candidates.get(fingerprint)
+            if cert:
+                add_certificate(cert)
+
+    changed = True
+    while changed:
+        changed = False
+        for cert in candidates.values():
+            if cert.fingerprint in selected:
+                continue
+            subject_norm = normalize_dn(cert.subject) if cert.subject else ""
+            issuer_norm = normalize_dn(cert.issuer) if cert.issuer else ""
+
+            match_subject = bool(subjects_allowed and subject_norm and subject_norm in subjects_allowed)
+            match_host = bool(
+                host_hints
+                and subject_norm
+                and any(hint in subject_norm for hint in host_hints)
+            )
+            if match_subject or match_host:
+                if add_certificate(cert):
+                    if subject_norm:
+                        subjects_allowed.add(subject_norm)
+                    if issuer_norm:
+                        subjects_allowed.add(issuer_norm)
+                    changed = True
+    return selected
 
 
-def export_mac(dest: Path, keychains: list[str], seen: set[str], allowed_subjects: set[str] | None = None,
-               allowed_fingerprints: set[str] | None = None) -> int:
-    exported = 0
+def export_mac(
+    dest: Path,
+    keychains: list[str],
+    seen: set[str],
+    allowed_subjects: set[str] | None = None,
+    allowed_fingerprints: set[str] | None = None,
+    host_hints: set[str] | None = None,
+) -> int:
+    candidates: dict[str, CertificateInfo] = {}
     for keychain in keychains:
         kc_path = Path(keychain).expanduser()
         if not kc_path.exists():
@@ -117,35 +167,50 @@ def export_mac(dest: Path, keychains: list[str], seen: set[str], allowed_subject
             if "BEGIN CERTIFICATE" not in pem:
                 continue
             cert = fingerprint_pem(pem)
-            if not should_include(cert, allowed_subjects, allowed_fingerprints):
-                continue
-            if cert.fingerprint in seen:
-                continue
-            seen.add(cert.fingerprint)
-            filename = dest / f"company-{cert.fingerprint}.crt"
-            filename.write_text(pem)
-            print(f"[mac] exported {cert.subject} -> {filename}")
-            exported += 1
+            candidates.setdefault(cert.fingerprint, cert)
+
+    selected = select_certificates(candidates, allowed_subjects, allowed_fingerprints, host_hints)
+
+    exported = 0
+    for fingerprint, cert in selected.items():
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        filename = dest / f"company-{fingerprint}.crt"
+        filename.write_text(cert.pem)
+        print(f"[mac] exported {cert.subject} -> {filename}")
+        exported += 1
     return exported
 
 
-def export_linux(dest: Path, source_dir: Path, seen: set[str], allowed_subjects: set[str] | None = None,
-                 allowed_fingerprints: set[str] | None = None) -> int:
+def export_linux(
+    dest: Path,
+    source_dir: Path,
+    seen: set[str],
+    allowed_subjects: set[str] | None = None,
+    allowed_fingerprints: set[str] | None = None,
+    host_hints: set[str] | None = None,
+) -> int:
     exported = 0
     if not source_dir.exists():
         raise FileNotFoundError(f"Linux source directory '{source_dir}' does not exist")
-    candidates = list(source_dir.rglob("*.crt")) + list(source_dir.rglob("*.pem"))
-    for path in candidates:
+    candidates_paths = list(source_dir.rglob("*.crt")) + list(source_dir.rglob("*.pem"))
+    candidates: dict[str, CertificateInfo] = {}
+    for path in candidates_paths:
         pem = path.read_text()
-        cert = fingerprint_pem(pem)
-        if not should_include(cert, allowed_subjects, allowed_fingerprints):
+        cert = fingerprint_pem(pem, source_path=path)
+        candidates.setdefault(cert.fingerprint, cert)
+
+    selected = select_certificates(candidates, allowed_subjects, allowed_fingerprints, host_hints)
+
+    for fingerprint, cert in selected.items():
+        if fingerprint in seen:
             continue
-        if cert.fingerprint in seen:
-            continue
-        seen.add(cert.fingerprint)
+        seen.add(fingerprint)
         filename = dest / f"company-{cert.fingerprint}.crt"
-        shutil.copy2(path, filename)
-        print(f"[linux] copied {path} ({cert.subject}) -> {filename}")
+        filename.write_text(cert.pem)
+        source_hint = f"{cert.source_path} " if cert.source_path else ""
+        print(f"[linux] copied {source_hint}({cert.subject}) -> {filename}")
         exported += 1
     return exported
 
@@ -154,12 +219,14 @@ def export_probe(dest: Path, hosts: list[str], seen: set[str]) -> ProbeResult:
     exported = 0
     fingerprints: set[str] = set()
     names: set[str] = set()
+    hosts_seen: set[str] = set()
     for host in hosts:
         host_part, _, port_part = host.partition(":")
         host_part = host_part.strip()
         port = port_part.strip() or "443"
         if not host_part:
             continue
+        hosts_seen.add(host_part.lower())
         cmd = [
             "openssl",
             "s_client",
@@ -168,7 +235,6 @@ def export_probe(dest: Path, hosts: list[str], seen: set[str]) -> ProbeResult:
             host_part,
             "-connect",
             f"{host_part}:{port}",
-            "-brief",
         ]
         proc = subprocess.run(cmd, input=b"\n", stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
         output = proc.stdout + proc.stderr
@@ -193,7 +259,8 @@ def export_probe(dest: Path, hosts: list[str], seen: set[str]) -> ProbeResult:
             filename.write_text(pem)
             print(f"[probe] exported {cert.subject} (#{idx} from {host}) -> {filename}")
             exported += 1
-    return ProbeResult(exported=exported, fingerprints=fingerprints, names=names)
+        print(f"[probe] captured {len(blocks)} certificate(s) from {host}")
+    return ProbeResult(exported=exported, fingerprints=fingerprints, names=names, hosts=hosts_seen)
 
 
 def detect_platform() -> str:
@@ -231,11 +298,22 @@ def main() -> None:
     probe_result = export_probe(dest, probe_targets, seen)
     allowed_subjects = {normalize_dn(name) for name in probe_result.names if name}
     allowed_fingerprints = set(probe_result.fingerprints)
+    host_hints = {host for host in probe_result.hosts if host}
+    host_hints.update({f"cn={host}" for host in probe_result.hosts if host})
+    for host in probe_targets:
+        host_part = host.partition(":")[0].strip().lower()
+        if host_part:
+            host_hints.add(host_part)
+            host_hints.add(f"cn={host_part}")
+
+    exported = probe_result.exported
 
     if allowed_subjects or allowed_fingerprints:
         msg_subjects = f"{len(allowed_subjects)} subject(s)" if allowed_subjects else "no subjects"
         msg_fp = f"{len(allowed_fingerprints)} fingerprint(s)" if allowed_fingerprints else "no fingerprints"
         print(f"[filter] restricting platform export to {msg_subjects} and {msg_fp} captured from probe.")
+    elif host_hints:
+        print(f"[filter] probe yielded no certificates, using host hints {sorted(host_hints)} to match local stores.")
     else:
         print("[filter] probe yielded no certificates; exporting all platform certificates.")
 
@@ -246,20 +324,22 @@ def main() -> None:
         ]
         if args.mac_keychains:
             keychains.extend(args.mac_keychains)
-        exported = probe_result.exported + export_mac(
+        exported += export_mac(
             dest,
             keychains,
             seen,
             allowed_subjects or None,
             allowed_fingerprints or None,
+            host_hints or None,
         )
     else:
-        exported = probe_result.exported + export_linux(
+        exported += export_linux(
             dest,
             args.linux_source,
             seen,
             allowed_subjects or None,
             allowed_fingerprints or None,
+            host_hints or None,
         )
 
     if exported == 0:

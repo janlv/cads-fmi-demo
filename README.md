@@ -79,7 +79,7 @@ The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`
    ```
    Optional sanity checks:
    ```bash
-   docker context show    # expect "colima" or "default"
+   docker context show    # expect "colima"
    docker ps              # connectivity check, expect header row output
    ```
 2. Build & test the orchestrator (rebuilds the FMUs for arm64 automatically):
