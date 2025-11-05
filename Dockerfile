@@ -22,17 +22,19 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Provide pre-downloaded pythonfmu runtime binaries (for offline build)
-COPY platform_resources/ /tmp/platform_resources/
+# Provide optional cached pythonfmu runtime binaries (for offline/air-gapped builds)
+COPY cache/ /tmp/pythonfmu_cache/
 RUN set -eux; \
     TARGET_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/resources; \
-    rm -rf "$TARGET_DIR"; \
-    mkdir -p "$TARGET_DIR"; \
-    cp -a /tmp/platform_resources/linux/pythonfmu_resources/. "$TARGET_DIR"/; \
-    if [ "$TARGETARCH" = "arm64" ]; then \
-        cp -a /tmp/platform_resources/apple/pythonfmu_resources/. "$TARGET_DIR"/; \
+    if [ -d /tmp/pythonfmu_cache/linux/pythonfmu_resources ]; then \
+        rm -rf "$TARGET_DIR"; \
+        mkdir -p "$TARGET_DIR"; \
+        cp -a /tmp/pythonfmu_cache/linux/pythonfmu_resources/. "$TARGET_DIR"/; \
+        if [ "$TARGETARCH" = "arm64" ] && [ -d /tmp/pythonfmu_cache/apple/pythonfmu_resources ]; then \
+            cp -a /tmp/pythonfmu_cache/apple/pythonfmu_resources/. "$TARGET_DIR"/; \
+        fi; \
     fi; \
-    rm -rf /tmp/platform_resources
+    rm -rf /tmp/pythonfmu_cache || true
 
 # Rebuild pythonfmu exporter for current architecture so the generated FMUs ship
 # with native binaries (arm64 on Apple Silicon, etc.).

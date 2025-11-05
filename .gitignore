@@ -1,5 +1,6 @@
 # Do not add sensitive certificates to the repo
 certs/
+cache/
 
 .venv_cads
 .venv/
@@ -11,7 +12,6 @@ __pycache__/
 dist/
 host_dist/
 tmp_pyfmu/
-pythonfmu_resources/
 
 # Runtime outputs
 data/*.json

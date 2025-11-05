@@ -11,15 +11,11 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
 
 ## Platform resources
 
-Platform-specific pythonfmu binaries live under `platform_resources/<profile>/`. Use the helper script to stage the right bundle (it copies into the ignored `pythonfmu_resources/` directory). The script launches a minimal Docker image to generate the resources if they are missing, so ensure Docker is available. Any `.crt` / `.pem` files dropped into `certs/` are mounted automatically so pip can trust your corporate proxies during bootstrapping.
+Platform-specific pythonfmu binaries are cached under `cache/<profile>/` (ignored by git). Run the helper script before local FMU builds or `docker build`; it auto-detects your architecture (override with `--profile`) and bootstraps the cache via a minimal Docker image when needed. If pip hits TLS errors during bootstrap, the script automatically runs `scripts/export_company_certs.py` in the background to capture your trusted chain and retries.
 
 ```bash
-# Auto-detect (runs linux profile on x86_64, apple profile on Darwin/arm64); bootstraps resources on first run
-scripts/install_platform_resources.py
-
-# Explicit selection
-scripts/install_platform_resources.py --profile linux
-scripts/install_platform_resources.py --profile apple
+# Populate/refresh the cache (auto-detect profile; override with --profile linux|apple)
+scripts/install_platform_resources.py [--profile linux|apple]
 ```
 
 The Docker image runs the equivalent logic automatically based on the target architecture, so you only need this when developing locally or rebuilding FMUs on the host.
@@ -30,36 +26,18 @@ For more visibility during bootstrapping, pass `--verbose` to stream the underly
 scripts/install_platform_resources.py --verbose
 ```
 
-### Company certificate helpers
-
-If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building or running the bootstrap script:
-
-```bash
-# Auto-detect platform, export trusted certs, and capture TLS chain from pypi.org by default
-scripts/export_company_certs.py
-
-# Force macOS or Linux mode explicitly
-scripts/export_company_certs.py --platform mac
-scripts/export_company_certs.py --platform linux
-
-# Probe an additional internal endpoint (host[:port])
-scripts/export_company_certs.py --probe-host private-registry.local:8443
-```
-
-Certificates are written as individual `certs/company-<fingerprint>.crt` files and are picked up automatically by the Docker build step.
-
-For more visibility during bootstrapping, pass `--verbose` to stream the underlying `apt-get`, `pip`, and build output:
-
-```bash
-scripts/install_platform_resources.py --verbose
-```
-
 ## Quick Start (Docker)
 
 ```bash
+# Populate cache/<profile>/... for the host architecture (once per machine)
+scripts/install_platform_resources.py
+
+# Build container using the cached resources
 docker build -t cads-fmi-demo .
 docker run --rm -it -v "$PWD/data:/app/data" cads-fmi-demo
 ```
+
+During the Docker build, the same bootstrap sequence runs inside the image after requirements are installed; if the cache is present it is copied in first, otherwise pythonfmu is rebuilt from source so the resulting FMUs match the container’s architecture. The cert-export retry ensures pip can reach its indexes even behind corporate TLS proxies.
 
 or with Compose:
 
@@ -104,10 +82,10 @@ The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`
 
 ### Local rebuilds outside Docker (optional)
 
-If you want to rebuild or simulate FMUs on the host Python interpreter, stage the platform resources first:
+If you want to rebuild or simulate FMUs on the host Python interpreter, stage the platform resources first (populates `cache/<profile>/...`):
 
 ```bash
-scripts/install_platform_resources.py --bootstrap  # auto-detects Apple profile
+scripts/install_platform_resources.py  # auto-detect profile
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pythonfmu build -f fmusrc/producer_fmu.py -d dist
