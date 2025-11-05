@@ -9,6 +9,25 @@ Two simple Python models packaged as **FMUs (FMI 2.0 Co‑Simulation)** and orch
 
 Artifacts written to `data/producer_result.json` and `data/consumer_result.json`.
 
+## Repo layout
+
+```
+cads-fmi-demo/
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .gitignore
+├── fmu/
+│   ├── models/      # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)
+│   └── artifacts/   (generated)
+│       ├── cache/   # pythonfmu binaries cached by scripts/install_platform_resources.py
+│       └── build/   # FMUs built locally or inside Docker (Producer.fmu, Consumer.fmu)
+├── orchestrator/
+│   └── run.py
+└── data/
+    └── (created at runtime)
+```
+
 ## Platform resources
 
 Platform-specific pythonfmu binaries are cached under `fmu/artifacts/cache/<profile>/` (ignored by git). Run the helper script before local FMU builds or `docker build`; it auto-detects your architecture (override with `--profile`) and bootstraps the cache via a minimal Docker image when needed. If pip hits TLS errors during bootstrap, the script automatically runs `scripts/export_company_certs.py` in the background to capture your trusted chain and retries. The `fmu/` directory is generated on demand; cloning the repo starts without the `artifacts/` subtree.
@@ -129,25 +148,6 @@ sudo usermod -aG docker $USER  # re-login afterwards
 git clone https://github.com/janlv/cads-fmi-demo
 cd cads-fmi-demo
 docker compose up --build orchestrator
-```
-
-## Repo layout
-
-```
-cads-fmi-demo/
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── .gitignore
-├── fmu/
-│   ├── models/      # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)
-│   └── artifacts/   (generated)
-│       ├── cache/   # pythonfmu binaries cached by scripts/install_platform_resources.py
-│       └── build/   # FMUs built locally or inside Docker (Producer.fmu, Consumer.fmu)
-├── orchestrator/
-│   └── run.py
-└── data/
-    └── (created at runtime)
 ```
 
 ## Notes
