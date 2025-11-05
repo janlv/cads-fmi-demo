@@ -16,6 +16,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections import deque
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,111 @@ CERT_ERROR_PATTERNS = (
 CERTS_DIR = ROOT / "certs"
 EXPORT_SCRIPT = ROOT / "scripts" / "export_company_certs.py"
 
+
+class StageWindow:
+    """Render streaming command output in a compact Colima-style window."""
+
+    def __init__(
+        self,
+        title: str,
+        *,
+        prefix: str = "[bootstrap]",
+        max_lines: int | None = 6,
+    ) -> None:
+        self.title = title
+        self.prefix = prefix
+        self.max_lines = max_lines if (max_lines is None or max_lines > 0) else None
+        self._buffer: deque[str]
+        if self.max_lines is None:
+            self._buffer = deque()
+        else:
+            self._buffer = deque(maxlen=self.max_lines)
+        self._is_tty = sys.stdout.isatty()
+        self._term_width = (
+            shutil.get_terminal_size(fallback=(80, 24)).columns if self._is_tty else None
+        )
+        self._line_width = max((self._term_width or 0) - 6, 16)
+        self._lines_rendered = 1
+        self._closed = False
+        self._grey = "\033[90m" if self._is_tty else ""
+        self._reset = "\033[0m" if self._is_tty else ""
+        self._start()
+
+    def _start(self) -> None:
+        print(f"{self.prefix} {self.title}")
+        sys.stdout.flush()
+
+    def _truncate(self, text: str) -> str:
+        if self._term_width is None or len(text) <= self._line_width:
+            return text
+        return text[: self._line_width - 3] + "..."
+
+    def feed(self, message: str) -> None:
+        if self._closed:
+            return
+        cleaned = message.strip()
+        if not cleaned:
+            return
+        if not self._is_tty:
+            print(f"{self.prefix}   {cleaned}")
+            return
+        self._buffer.append(self._truncate(cleaned))
+        self._render()
+
+    def _render(self) -> None:
+        for _ in range(self._lines_rendered - 1):
+            sys.stdout.write("\033[F\033[K")
+        for line in self._buffer:
+            sys.stdout.write("\033[K")
+            sys.stdout.write(f"   {self._grey}{line}{self._reset}\n")
+        sys.stdout.flush()
+        self._lines_rendered = 1 + len(self._buffer)
+
+    def finalize(self, *, success: bool, message: str | None = None) -> None:
+        if self._closed:
+            return
+        summary = message or self.title
+        if not self._is_tty:
+            status = "ok" if success else "fail"
+            print(f"[{status}] {summary}")
+            self._closed = True
+            return
+        for _ in range(self._lines_rendered):
+            sys.stdout.write("\033[F")
+        sys.stdout.write("\033[J")
+        sys.stdout.write(f"[{ 'ok' if success else 'fail' }] {summary}\n")
+        sys.stdout.flush()
+        self._buffer.clear()
+        self._lines_rendered = 1
+        self._closed = True
+
+
+def _run_with_stage(cmd: list[str], stage: StageWindow) -> tuple[int, str]:
+    captured: list[str] = []
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        assert proc.stdout is not None
+        for chunk in proc.stdout:
+            captured.append(chunk)
+            normalized = chunk.replace("\r", "\n")
+            for raw_line in normalized.splitlines():
+                stage.feed(raw_line)
+        return proc.wait(), "".join(captured)
+    except BaseException:
+        proc.kill()
+        proc.wait()
+        raise
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
 
 def detect_profile() -> str:
     system = platform.system().lower()
@@ -138,7 +244,13 @@ def _profile_resources_dir(profile: str) -> Path:
     return CACHE_ROOT / profile / "pythonfmu_resources"
 
 
-def bootstrap_source(source: str, *, verbose: bool = False, auto_certs: bool = True) -> None:
+def bootstrap_source(
+    source: str,
+    *,
+    verbose: bool = False,
+    auto_certs: bool = True,
+    stage_window_lines: int | None = None,
+) -> None:
     src_dir = _profile_resources_dir(source)
     if src_dir.exists() and any(src_dir.iterdir()):
         return
@@ -152,9 +264,8 @@ def bootstrap_source(source: str, *, verbose: bool = False, auto_certs: bool = T
     if src_dir.exists():
         shutil.rmtree(src_dir)
 
-    print(f"- Bootstrapping resources for '{source}' using Docker ({platform_flag})")
-
     retried_with_certs = False
+    attempt = 1
 
     while True:
         certs_mount, certs_snippet, certs_env, have_certs = _certs_handling()
@@ -165,52 +276,56 @@ def bootstrap_source(source: str, *, verbose: bool = False, auto_certs: bool = T
         docker_script = (
             "set -euo pipefail\n"
             "echo '[bootstrap] Updating apt cache' >&2\n"
-            f"{'apt-get update' if verbose else 'apt-get update >/dev/null'}\n"
+            "apt-get update\n"
             f"{certs_snippet}"
             f"{certs_env}"
             "echo '[bootstrap] Installing build prerequisites' >&2\n"
-            f"{'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake unzip' if verbose else 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake unzip >/dev/null'}\n"
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake unzip\n"
             "echo '[bootstrap] Installing pythonfmu' >&2\n"
-            f"{'pip install --no-cache-dir pythonfmu=='+PYTHONFMU_VERSION if verbose else 'pip install --no-cache-dir pythonfmu=='+PYTHONFMU_VERSION+' >/dev/null'}\n"
+            f"pip install --no-cache-dir pythonfmu=={PYTHONFMU_VERSION}\n"
             "PYFMI_EXPORT_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/pythonfmu-export\n"
             "cd \"$PYFMI_EXPORT_DIR\"\n"
             "chmod +x build_unix.sh\n"
             "echo '[bootstrap] Building pythonfmu-export native library' >&2\n"
-            f"{'./build_unix.sh' if verbose else './build_unix.sh >/dev/null'}\n"
+            "./build_unix.sh\n"
             "rm -rf build\n"
             "rm -rf /out/pythonfmu_resources\n"
             "cp -a /usr/local/lib/python3.11/site-packages/pythonfmu/resources /out/pythonfmu_resources\n"
         )
 
         docker_cmd = _build_docker_cmd(destination_root, platform_flag, certs_mount, docker_script)
-        result = subprocess.run(
-            docker_cmd,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
+        attempt_label = f" (attempt {attempt})" if attempt > 1 else ""
+        if stage_window_lines is None:
+            max_lines = 50 if verbose else 6
+        elif stage_window_lines <= 0:
+            max_lines = None
+        else:
+            max_lines = stage_window_lines
+        stage = StageWindow(
+            f"Bootstrapping resources for '{source}' using Docker ({platform_flag}){attempt_label}",
+            max_lines=max_lines,
         )
-        if result.returncode == 0:
-            if verbose and result.stdout:
-                print(result.stdout)
+        returncode, output = _run_with_stage(docker_cmd, stage)
+
+        if returncode == 0:
+            stage.finalize(success=True, message=f"Resources for '{source}' ready")
             break
 
-        output = result.stdout or ""
-        if verbose and output:
-            print(output)
+        stage.finalize(success=False, message=f"Bootstrap failed (exit {returncode})")
 
         if auto_certs and not retried_with_certs and _is_cert_error(output):
             print("[bootstrap] TLS certificate error detected during pip install.")
             if ensure_company_certs(verbose=verbose):
                 retried_with_certs = True
                 print("[bootstrap] Retrying bootstrap with freshly exported certificates.")
+                attempt += 1
                 continue
             else:
                 print("[bootstrap] Automatic certificate export failed; will fall back to original error.")
 
         raise SystemExit(
             f"Failed to bootstrap resources for '{source}'. "
-            f"Docker exited with {result.returncode}. Output:\n{output}"
+            f"Docker exited with {returncode}. Output:\n{output}"
         )
 
     if not src_dir.exists() or not any(src_dir.iterdir()):
@@ -224,6 +339,7 @@ def install(
     allow_bootstrap: bool = True,
     verbose: bool = False,
     auto_certs: bool = True,
+    stage_window_lines: int | None = None,
 ) -> None:
     try:
         sources = PROFILE_SOURCES[profile]
@@ -252,7 +368,12 @@ def install(
             missing_caches.append(cache_dir)
             print(f"- Cache missing at {cache_dir}; run scripts/install_platform_resources.py to bootstrap it.")
             if allow_bootstrap:
-                bootstrap_source(source_name, verbose=verbose, auto_certs=auto_certs)
+                bootstrap_source(
+                    source_name,
+                    verbose=verbose,
+                    auto_certs=auto_certs,
+                    stage_window_lines=stage_window_lines,
+                )
             else:
                 raise SystemExit(
                     f"Cache directory missing or empty: {cache_dir}\n"
@@ -294,6 +415,15 @@ def main() -> None:
         action="store_true",
         help="Disable automatic company certificate export when pip SSL errors are detected.",
     )
+    parser.add_argument(
+        "--stage-window-lines",
+        type=int,
+        default=None,
+        help=(
+            "Number of log lines to retain in the live stage window. "
+            "Defaults to 6 (50 when --verbose). Use 0 for unlimited."
+        ),
+    )
     args = parser.parse_args()
 
     profile = args.profile or detect_profile()
@@ -303,6 +433,7 @@ def main() -> None:
         allow_bootstrap=not args.no_bootstrap,
         verbose=args.verbose,
         auto_certs=not args.no_auto_certs,
+        stage_window_lines=args.stage_window_lines,
     )
 
 

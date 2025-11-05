@@ -47,22 +47,32 @@ scripts/install_platform_resources.py --verbose
 
 ## Quick Start (Docker)
 
-```bash
-# Populate fmu/artifacts/cache/<profile>/... for the host architecture (once per machine)
-scripts/install_platform_resources.py
+1. Build the FMUs and image:
+   ```bash
+   ./build.sh
+   ```
+2. Run the orchestrator (no rebuild unless models changed):
+   ```bash
+   docker compose up orchestrator
+   ```
 
-# Build container using the cached resources
-docker build -t cads-fmi-demo .
-docker run --rm -it -v "$PWD/data:/app/data" cads-fmi-demo
+### build.sh in detail
+
+- **What it does:**  
+  1. calls `scripts/install_platform_resources.py` to bootstrap the pythonfmu toolchain/cache for your host;  
+  2. runs `docker compose build` (default target: `orchestrator`), which copies the repo into the image and rebuilds the FMUs with architecture-specific binaries.
+- **Args before `--docker`:** forwarded to the install script. Example: `./build.sh --profile apple`.
+- **Args after `--docker`:** passed verbatim to `docker compose build`. Example: `./build.sh --docker --no-cache orchestrator`.
+
+You can replicate the same steps manually:
+
+```bash
+scripts/install_platform_resources.py  # bootstrap host-side cache
+docker compose build orchestrator       # copy sources, rebuild FMUs in-container
+docker compose up orchestrator          # run the simulation
 ```
 
 During the Docker build, the same bootstrap sequence runs inside the image after requirements are installed; if the cache is present it is copied in first, otherwise pythonfmu is rebuilt from source so the resulting FMUs match the container’s architecture. The cert-export retry ensures pip can reach its indexes even behind corporate TLS proxies.
-
-or with Compose:
-
-```bash
-docker compose up --build
-```
 
 ## Build & test on macOS (Apple Silicon)
 
@@ -79,17 +89,21 @@ The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`
    docker context show    # expect "colima"
    docker ps              # connectivity check, expect header row output
    ```
-2. Build & test the orchestrator (rebuilds the FMUs for arm64 automatically):
+2. Build the FMUs and container image (rebuilds the exporter for arm64 automatically):
    ```bash
-   docker compose up --build orchestrator
+   ./build.sh
+   ```
+3. Run the orchestrator:
+   ```bash
+   docker compose up orchestrator
    ```
    The run finishes when you see the Consumer summary and the container exits with code `0`.
-3. Verify outputs:
+4. Verify outputs:
    ```bash
    cat data/producer_result.json
    cat data/consumer_result.json
    ```
-4. Repeat runs without rebuilding unless model code changed:
+5. Repeat runs without rebuilding unless model code changed:
    ```bash
    docker compose up orchestrator
    ```
