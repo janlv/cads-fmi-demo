@@ -24,6 +24,12 @@ scripts/install_platform_resources.py --profile apple
 
 The Docker image runs the equivalent logic automatically based on the target architecture, so you only need this when developing locally or rebuilding FMUs on the host.
 
+For more visibility during bootstrapping, pass `--verbose` to stream the underlying `apt-get`, `pip`, and build output:
+
+```bash
+scripts/install_platform_resources.py --verbose
+```
+
 ### Company certificate helpers
 
 If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building or running the bootstrap script:
@@ -37,6 +43,12 @@ scripts/export_company_certs.py --platform linux --subject "NORCE"
 ```
 
 Certificates are written as individual `certs/company-<fingerprint>.crt` files and are picked up automatically by the Docker build step.
+
+For more visibility during bootstrapping, pass `--verbose` to stream the underlying `apt-get`, `pip`, and build output:
+
+```bash
+scripts/install_platform_resources.py --verbose
+```
 
 ## Quick Start (Docker)
 

@@ -53,7 +53,7 @@ def detect_profile() -> str:
     return "linux"
 
 
-def bootstrap_source(source: str) -> None:
+def bootstrap_source(source: str, *, verbose: bool = False) -> None:
     src_dir = PLATFORM_RESOURCES / source / "pythonfmu_resources"
     if src_dir.exists() and any(src_dir.iterdir()):
         return
@@ -117,19 +117,18 @@ def bootstrap_source(source: str) -> None:
         "-lc",
         "set -euo pipefail\n"
         "echo '[bootstrap] Updating apt cache' >&2\n"
-        "apt-get update >/dev/null\n"
+        f"{'apt-get update' if verbose else 'apt-get update >/dev/null'}\n"
         f"{certs_snippet}"
         f"{certs_env}"
         "echo '[bootstrap] Installing build prerequisites' >&2\n"
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
-        "build-essential cmake unzip >/dev/null\n"
+        f"{'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake unzip' if verbose else 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake unzip >/dev/null'}\n"
         "echo '[bootstrap] Installing pythonfmu' >&2\n"
-        f"pip install --no-cache-dir pythonfmu=={PYTHONFMU_VERSION} >/dev/null\n"
+        f"{'pip install --no-cache-dir pythonfmu=='+PYTHONFMU_VERSION if verbose else 'pip install --no-cache-dir pythonfmu=='+PYTHONFMU_VERSION+' >/dev/null'}\n"
         "PYFMI_EXPORT_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/pythonfmu-export\n"
         "cd \"$PYFMI_EXPORT_DIR\"\n"
         "chmod +x build_unix.sh\n"
         "echo '[bootstrap] Building pythonfmu-export native library' >&2\n"
-        "./build_unix.sh >/dev/null\n"
+        f"{'./build_unix.sh' if verbose else './build_unix.sh >/dev/null'}\n"
         "rm -rf build\n"
         "rm -rf /out/pythonfmu_resources\n"
         "cp -a /usr/local/lib/python3.11/site-packages/pythonfmu/resources /out/pythonfmu_resources\n",
@@ -143,7 +142,7 @@ def bootstrap_source(source: str) -> None:
         raise SystemExit(f"Bootstrapping did not produce expected directory: {src_dir}")
 
 
-def install(profile: str, *, dry_run: bool = False, allow_bootstrap: bool = True) -> None:
+def install(profile: str, *, dry_run: bool = False, allow_bootstrap: bool = True, verbose: bool = False) -> None:
     try:
         sources = PROFILE_SOURCES[profile]
     except KeyError as exc:
@@ -155,7 +154,7 @@ def install(profile: str, *, dry_run: bool = False, allow_bootstrap: bool = True
         src = PLATFORM_RESOURCES / source_name / "pythonfmu_resources"
         if not src.exists() or not any(src.iterdir()):
             if allow_bootstrap:
-                bootstrap_source(source_name)
+                bootstrap_source(source_name, verbose=verbose)
             else:
                 raise SystemExit(
                     f"Source directory missing or empty: {src}\n"
@@ -191,10 +190,15 @@ def main() -> None:
         action="store_true",
         help="Fail if cached resources are missing instead of generating them via Docker.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose bootstrap logs (apt/pip output).",
+    )
     args = parser.parse_args()
 
     profile = args.profile or detect_profile()
-    install(profile, dry_run=args.dry_run, allow_bootstrap=not args.no_bootstrap)
+    install(profile, dry_run=args.dry_run, allow_bootstrap=not args.no_bootstrap, verbose=args.verbose)
 
 
 if __name__ == "__main__":
