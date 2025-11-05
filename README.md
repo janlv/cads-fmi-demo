@@ -35,11 +35,15 @@ scripts/install_platform_resources.py --verbose
 If outbound HTTPS (e.g. `pip install`) is gated by internal certificate authorities, export the PEM files into `certs/` before building or running the bootstrap script:
 
 ```bash
-# macOS – pulls matching certs from System/login keychains (repeat --subject as needed)
-scripts/export_company_certs.py --platform mac --subject "NORCE"
+# Auto-detect platform, export trusted certs, and capture TLS chain from pypi.org by default
+scripts/export_company_certs.py
 
-# Linux – copies matching certs from /usr/local/share/ca-certificates
-scripts/export_company_certs.py --platform linux --subject "NORCE"
+# Force macOS or Linux mode explicitly
+scripts/export_company_certs.py --platform mac
+scripts/export_company_certs.py --platform linux
+
+# Probe an additional internal endpoint (host[:port])
+scripts/export_company_certs.py --probe-host private-registry.local:8443
 ```
 
 Certificates are written as individual `certs/company-<fingerprint>.crt` files and are picked up automatically by the Docker build step.
