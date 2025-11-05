@@ -11,7 +11,7 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
 
 ## Platform resources
 
-Platform-specific pythonfmu binaries are cached under `fmu_artifacts/cache/<profile>/` (ignored by git). Run the helper script before local FMU builds or `docker build`; it auto-detects your architecture (override with `--profile`) and bootstraps the cache via a minimal Docker image when needed. If pip hits TLS errors during bootstrap, the script automatically runs `scripts/export_company_certs.py` in the background to capture your trusted chain and retries. The `fmu_artifacts/` directory itself is generated on demand; cloning the repo starts without it.
+Platform-specific pythonfmu binaries are cached under `fmu/artifacts/cache/<profile>/` (ignored by git). Run the helper script before local FMU builds or `docker build`; it auto-detects your architecture (override with `--profile`) and bootstraps the cache via a minimal Docker image when needed. If pip hits TLS errors during bootstrap, the script automatically runs `scripts/export_company_certs.py` in the background to capture your trusted chain and retries. The `fmu/` directory is generated on demand; cloning the repo starts without the `artifacts/` subtree.
 
 ```bash
 # Populate/refresh the cache (auto-detect profile; override with --profile linux|apple)
@@ -29,7 +29,7 @@ scripts/install_platform_resources.py --verbose
 ## Quick Start (Docker)
 
 ```bash
-# Populate fmu_artifacts/cache/<profile>/... for the host architecture (once per machine)
+# Populate fmu/artifacts/cache/<profile>/... for the host architecture (once per machine)
 scripts/install_platform_resources.py
 
 # Build container using the cached resources
@@ -82,14 +82,14 @@ The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`
 
 ### Local rebuilds outside Docker (optional)
 
-If you want to rebuild or simulate FMUs on the host Python interpreter, stage the platform resources first (populates `fmu_artifacts/cache/<profile>/...`):
+If you want to rebuild or simulate FMUs on the host Python interpreter, stage the platform resources first (populates `fmu/artifacts/cache/<profile>/...`):
 
 ```bash
 scripts/install_platform_resources.py  # auto-detect profile
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m pythonfmu build -f fmusrc/producer_fmu.py -d fmu_artifacts/build
-python -m pythonfmu build -f fmusrc/consumer_fmu.py -d fmu_artifacts/build
+python -m pythonfmu build -f fmu/models/producer_fmu.py -d fmu/artifacts/build
+python -m pythonfmu build -f fmu/models/consumer_fmu.py -d fmu/artifacts/build
 python orchestrator/run.py
 ```
 
@@ -139,14 +139,13 @@ cads-fmi-demo/
 ├── docker-compose.yml
 ├── requirements.txt
 ├── .gitignore
-├── fmu_artifacts/  (generated)
-│   ├── cache/      # pythonfmu binaries cached by scripts/install_platform_resources.py
-│   └── build/      # FMUs built locally or inside Docker (Producer.fmu, Consumer.fmu)
+├── fmu/
+│   ├── models/      # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)
+│   └── artifacts/   (generated)
+│       ├── cache/   # pythonfmu binaries cached by scripts/install_platform_resources.py
+│       └── build/   # FMUs built locally or inside Docker (Producer.fmu, Consumer.fmu)
 ├── orchestrator/
 │   └── run.py
-├── fmusrc/
-│   ├── producer_fmu.py
-│   └── consumer_fmu.py
 └── data/
     └── (created at runtime)
 ```
@@ -155,4 +154,4 @@ cads-fmi-demo/
 
 - The Producer will generate `data/measurements.csv` automatically if missing.
 - To use your own CSV, drop a file at `data/measurements.csv` with header: `timestamp,value`.
-- For a faster demo, reduce `duration_sec` inside `fmusrc/producer_fmu.py`.
+- For a faster demo, reduce `duration_sec` inside `fmu/models/producer_fmu.py`.

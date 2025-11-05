@@ -5,7 +5,7 @@ __pycache__/
 *.py[cod]
 
 # FMU build artifacts
-fmu_artifacts/
+fmu/artifacts/
 
 # Runtime outputs
 data/

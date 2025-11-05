@@ -3,11 +3,13 @@ from fmpy import simulate_fmu
 
 def build_paths():
     base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    artifacts_root = os.path.join(base, "fmu_artifacts")
+    fmu_root = os.path.join(base, "fmu")
+    artifacts_root = os.path.join(fmu_root, "artifacts")
     build_dir = os.path.join(artifacts_root, "build")
     os.makedirs(build_dir, exist_ok=True)
     return {
         "base": base,
+        "fmu_root": fmu_root,
         "artifacts": artifacts_root,
         "build": build_dir,
         "producer_fmu": os.path.join(build_dir, "Producer.fmu"),
