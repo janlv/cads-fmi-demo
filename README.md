@@ -37,6 +37,7 @@ Notes:
 - The Producer will generate `data/measurements.csv` automatically if missing.
 - To use your own CSV, drop a file at `data/measurements.csv` with header: `timestamp,value`.
 - For a faster demo, reduce `duration_sec` inside `fmu/models/producer_fmu.py`.
+- Run `./clean.sh` to remove generated artifacts and stop containers between test runs.
 
 ## Preparing Linux hosts
 
@@ -133,10 +134,12 @@ python orchestrator/run.py
 
 ```
 cads-fmi-demo/
-├── build.sh          # One-stop helper to refresh platform cache and rebuild Docker image/FMUs
+├── clean.sh           # Remove generated artifacts and stop containers
+├── prepare.sh         # Host preparation helper
+├── build.sh           # One-stop helper to refresh platform cache and rebuild Docker image/FMUs
 ├── Dockerfile         # Container image build for the co-simulation demo
 ├── docker-compose.yml # Compose stack to orchestrate Producer/Consumer runs
-├── requirements.txt   # Python dependencies used for local builds/tests
+├── requirements.txt   # Python dependencies used for builds/tests
 ├── scripts/           # Helper utilities for cache bootstrap, cert export, etc.
 ├── fmu/
 │   ├── models/        # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Export organisation certificate authorities into the repo's ``certs/`` folder.
+Export organisation certificate authorities into the repo's ``scripts/certs/`` folder.
 
 Usage examples:
     scripts/export_company_certs.py
     scripts/export_company_certs.py --platform mac
     scripts/export_company_certs.py --probe-host private-registry.local:8443
-    scripts/export_company_certs.py --dest certs
+    scripts/export_company_certs.py --dest scripts/certs
 
 Mac mode uses the ``security`` CLI to pull certificates from the provided
 keychains (System + login by default). Linux mode copies matching ``*.crt`` or
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DEST = ROOT / "certs"
+DEFAULT_DEST = ROOT / "scripts" / "certs"
 
 
 @dataclass
@@ -274,7 +274,7 @@ def detect_platform() -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="Output directory (default: ./certs)")
+    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="Output directory (default: ./scripts/certs)")
     parser.add_argument("--platform", choices=["auto", "mac", "linux"], default="auto",
                         help="Force a specific platform export (default: auto-detect)")
     parser.add_argument("--mac-keychain", dest="mac_keychains", action="append",

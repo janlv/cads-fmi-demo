@@ -20,7 +20,7 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 
 # Python deps
 COPY requirements.txt /tmp/requirements.txt
-COPY certs/ /tmp/certs/
+COPY scripts/certs/ /tmp/certs/
 RUN set -eux; \
     FOUND_CERT=$(find /tmp/certs -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \
     if [ -n "$FOUND_CERT" ]; then \
@@ -64,7 +64,7 @@ COPY . /app
 
 # Refresh trusted certificates if provided in repo
 RUN set -eux; \
-    CERT_SRC=/app/certs; \
+    CERT_SRC=/app/scripts/certs; \
     FIRST_CERT=""; \
     if [ -d "$CERT_SRC" ]; then \
         FIRST_CERT=$(find "$CERT_SRC" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \

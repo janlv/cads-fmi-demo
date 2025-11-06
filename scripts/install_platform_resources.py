@@ -45,7 +45,7 @@ CERT_ERROR_PATTERNS = (
     "httpsconnectionpool",
 )
 
-CERTS_DIR = ROOT / "certs"
+CERTS_DIR = ROOT / "scripts" / "certs"
 EXPORT_SCRIPT = ROOT / "scripts" / "export_company_certs.py"
 
 
