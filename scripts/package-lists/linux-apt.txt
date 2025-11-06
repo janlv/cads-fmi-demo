@@ -1,0 +1,7 @@
+podman
+podman-docker
+uidmap
+slirp4netns
+fuse-overlayfs
+git
+python3-pip
