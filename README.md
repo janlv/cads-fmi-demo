@@ -52,7 +52,7 @@ The script installs the packages listed in `scripts/package-lists/linux-apt.txt`
 
 ```bash
 sudo apt-get update
-xargs -a scripts/package-lists/linux-apt.txt sudo apt-get install -y
+sudo apt-get install -y $(< scripts/package-lists/linux-apt.txt)
 ```
 
 `podman-docker` exposes a Docker-compatible CLI shim so the repo’s scripts keep working unchanged. If the package is unavailable, add `alias docker=podman` and `alias docker-compose='podman compose'` to your shell session before running the commands below.
