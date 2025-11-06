@@ -20,6 +20,7 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
    ```bash
    ./build.sh
    ```
+   Add `--copy-fmu` to stage `fmu/artifacts/build` on the host after the image build.
 3. Run the orchestrator (reuses the build unless model code changed):
    ```bash
    docker compose up orchestrator   # or: podman compose up orchestrator
@@ -34,10 +35,12 @@ Artifacts written to `data/producer_result.json` and `data/consumer_result.json`
 The helper script stages the pythonfmu cache automatically and retries with exported corporate TLS certificates if pip hits SSL issues.
 
 Notes:
+- Tune Producer inputs via `config/producer.yaml` (e.g., set `num_points`).
 - The Producer will generate `data/measurements.csv` automatically if missing.
 - To use your own CSV, drop a file at `data/measurements.csv` with header: `timestamp,value`.
 - For a faster demo, reduce `duration_sec` inside `fmu/models/producer_fmu.py`.
 - Run `./clean.sh` to remove generated artifacts and stop containers between test runs.
+- When running via Podman (`docker` shim), the `compose up` command stays attached after the FMUs finish; press `Ctrl+C` or invoke `podman compose run --rm orchestrator` for a one-shot run.
 
 ## Preparing Linux hosts
 

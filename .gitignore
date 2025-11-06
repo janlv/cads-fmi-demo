@@ -16,3 +16,6 @@ data/
 # 
 *.so
 *.dll
+
+# Ignore virtual environments
+.venv*
