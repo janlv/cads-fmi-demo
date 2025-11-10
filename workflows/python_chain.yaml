@@ -1,0 +1,31 @@
+steps:
+  - name: producer
+    fmu: fmu/models/Producer.fmu
+    start_time: 0.0
+    stop_time: 1.0
+    step_size: 1.0
+    start_values:
+      num_points: 10000
+    outputs:
+      - mean
+      - std
+      - vmin
+      - vmax
+      - rollingMean
+    result: data/producer_result.json
+
+  - name: consumer
+    fmu: fmu/models/Consumer.fmu
+    start_time: 0.0
+    stop_time: 1.0
+    step_size: 1.0
+    start_from:
+      mean_in: producer.mean
+      std_in: producer.std
+      min_in: producer.vmin
+      max_in: producer.vmax
+      rm_in: producer.rollingMean
+    outputs:
+      - health_score
+      - anomaly
+    result: data/consumer_result.json

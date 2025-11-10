@@ -1,185 +1,227 @@
-# CADS FMI Co‑Sim Demo
+# CADS FMI Workflow Demo
 
-Two simple Python models packaged as **FMUs (FMI 2.0 Co‑Simulation)** and orchestrated in sequence:
+This repository showcases how CADS can separate **FMU creation** from the
+**workflow runtime** while remaining friendly to off-the-shelf tooling. Bring
+your own FMUs and declarative workflow definitions, then let the Go/FM IL runner
+handle orchestration:
 
-- **Producer.fmu** reads/creates a CSV time‑series, computes features (mean/std/min/max/rolling mean) and
-  intentionally runs ~30s wall‑clock for demo visibility.
-- **Consumer.fmu** starts automatically after Producer finishes; it receives Producer's outputs as start values,
-  computes a simple health score and an anomaly flag.
+- `create_fmu/` contains everything needed to build the Python demo FMUs with
+  `pythonfmu`. The resulting `.fmu` files live alongside the rest of the FMUs in
+  `fmu/models/`.
+- `workflows/` stores declarative pipeline definitions. Each step names an FMU
+  (Python-built or external, such as the bundled Simulink `CITest.fmu`), a few
+  optional overrides, and an output location.
+- `orchestrator/service/internal/fmi` together with the Go CLIs
+  (`cads-workflow-runner`, `cads-workflow-service`) load workflow files and
+  execute FMUs directly through FMIL via cgo. Only FMI **Co-Simulation** FMUs
+  are supported because that mirrors the target CADS architecture; Python now
+  lives solely on the FMU-generation edge.
 
-Artifacts written to `data/producer_result.json` and `data/consumer_result.json`.
+The remaining Docker/compose helpers are kept for parity with previous demos,
+but the focus is now on workflow-driven execution using FMUs you provide (drop
+them under `fmu/models/`) and YAML workflows you define under `workflows/`.
 
-## Quick Start
+---
 
-1. Prepare your host (run once per machine):
-   ```bash
-   ./prepare.sh              # auto-detects; use --platform linux|mac to override
-   ```
-   See the platform preparation guides below for background and manual steps.
-2. Build the FMUs and container image:
-   ```bash
-   ./build.sh
-   ```
-   Add `--copy-fmu` to stage `fmu/artifacts/build` on the host after the image build.
-3. Run the orchestrator (reuses the build unless model code changed):
-   ```bash
-   docker compose up orchestrator   # or: podman compose up orchestrator
-   ```
-4. Review the results:
-   ```bash
-   cat data/producer_result.json
-   cat data/consumer_result.json
-   ```
-5. For repeat simulations, just rerun `docker compose up orchestrator`.
+## Quick start
 
-The helper script stages the pythonfmu cache automatically and retries with exported corporate TLS certificates if pip hits SSL issues.
+### Step 0 – Prepare the environment
 
-Notes:
-- Tune Producer inputs via `config/producer.yaml` (e.g., set `num_points`).
-- The Producer will generate `data/measurements.csv` automatically if missing.
-- To use your own CSV, drop a file at `data/measurements.csv` with header: `timestamp,value`.
-- For a faster demo, reduce `duration_sec` inside `fmu/models/producer_fmu.py`.
-- Run `./clean.sh` to remove generated artifacts and stop containers between test runs.
-- When running via Podman (`docker` shim), the `compose up` command stays attached after the FMUs finish; press `Ctrl+C` or invoke `podman compose run --rm orchestrator` for a one-shot run.
-
-## Preparing Linux hosts
-
-Run the helper to install prerequisites automatically (explicit override shown for clarity; the script skips work when everything is already in place):
+Bootstrap the host (system packages, Go ≥ 1.22, FMIL) via:
 
 ```bash
 ./prepare.sh --platform linux
 ```
 
-The script installs the packages listed in `scripts/package-lists/linux-apt.txt`, runs `podman system migrate`, attempts to start the rootless Podman socket, and flags missing subordinate ID ranges. Use the manual checklist below if you prefer to run the commands yourself or need finer control.
+On macOS the script provisions the package list but leaves Go/FM IL setup manual.
+See [PREPARE.md](PREPARE.md) for overrides or manual instructions.
 
-### Package prerequisites
-
-```bash
-sudo apt-get update
-sudo apt-get install -y $(< scripts/package-lists/linux-apt.txt)
-```
-
-`podman-docker` exposes a Docker-compatible CLI shim so the repo’s scripts keep working unchanged. If the package is unavailable, add `alias docker=podman` and `alias docker-compose='podman compose'` to your shell session before running the commands below.
-
-### Rootless containers
-
-Rootless Podman needs subordinate UID/GID ranges so it can map the container users onto your host account. Add a unique range (coordinate with IT if centrally managed):
+Once preparation succeeds, run:
 
 ```bash
-sudo usermod --add-subuids 10000000-10098999 "$USER"
-sudo usermod --add-subgids 10000000-10098999 "$USER"
+./build.sh            # installs FMIL under ./.fmil if missing and builds Go binaries
+./build.sh --fmil-home "$HOME/fmil"   # optional: reuse an existing FMIL install
 ```
 
-Verify there is no overlap by sorting `/etc/subuid` and `/etc/subgid`:
+`build.sh` installs FMIL when needed, exports the CGO variables, and compiles the
+Go workflow binaries into `bin/`. Details live in [DEV.md](DEV.md).
+
+### Step 1 – Build the FMUs (Python edge)
+
+Run the helper script to produce the demo FMUs (Python is only used here to
+generate FMUs). If you have custom FMUs, drop them into `fmu/models/` instead:
 
 ```bash
-sudo sort -t: -k2n /etc/subuid
-sudo sort -t: -k2n /etc/subgid
+./create_fmu/build_python_fmus.sh
 ```
 
-Finish the rootless setup:
+External FMUs (for example `fmu/models/CITest.fmu` exported from Simulink) are
+simply copied into `fmu/models/`.
+
+### Step 2 – Define the workflow (YAML)
+
+Edit or copy one of the YAML files under `workflows/` (e.g.,
+`workflows/python_chain.yaml`). Each step references one of the FMUs under
+`fmu/models/` (chain as many steps/FMUs as you need), declares outputs to
+capture, and can pass values downstream via `start_from`. Use `start_values`
+for literal inputs and `result` to persist outputs. The same YAML file is used
+everywhere (CLI, container, Kubernetes, Argo), so no extra metadata is required.
+Once the workflow matches your scenario, you are ready to run it in the container.
+
+### Step 3 – Run the containerized workflow (Kubernetes + Argo default)
+
+`build.sh` has already produced the Go binaries and ensured FMIL is available.
+The `Dockerfile` bundles everything—FMUs, workflows, FMIL libs, and the Go
+runner/service—so the resulting image is ready for your Kubernetes stack:
+
+- **Kubernetes/minikube (default)** – Tag/push the image (or build inside
+  minikube via `eval "$(minikube docker-env)"`). Generate and apply the Job
+  manifest with:
+
+  ```bash
+  ./scripts/run_k8s_workflow.sh --workflow workflows/python_chain.yaml --image cads-fmi-demo:latest
+  ```
+
+  ```yaml
+  apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: cads-workflow
+  spec:
+    template:
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: runner
+            image: ghcr.io/your-org/cads-fmi-demo:latest
+            command: ["/app/bin/cads-workflow-runner"]
+            args: ["--workflow", "workflows/python_chain.yaml"]
+  ```
+
+- **Argo Workflows** – Install Argo in the same cluster and reference this image
+  from a `container` template. Submit directly via:
+
+  ```bash
+  ./scripts/run_argo_workflow.sh --workflow workflows/python_chain.yaml --image cads-fmi-demo:latest
+  ```
+
+  ```yaml
+  apiVersion: argoproj.io/v1alpha1
+  kind: Workflow
+  metadata:
+    name: cads-workflow
+  spec:
+    entrypoint: run-fmu
+    templates:
+      - name: run-fmu
+        container:
+          image: ghcr.io/your-org/cads-fmi-demo:latest
+          command: ["/app/bin/cads-workflow-runner"]
+          args: ["--workflow", "workflows/python_chain.yaml"]
+  ```
+- **Local Podman/Docker (optional smoke test)** – Use the commands below only if
+  you want to verify the image before pushing it to Kubernetes/Argo.
+
+Local Podman/PDocker smoke test (optional):
 
 ```bash
-podman system migrate
-systemctl --user enable --now podman.socket   # compose talks to this socket
+podman build -t cads-fmi-demo .
+podman run --rm -v "$(pwd)/data:/app/data" cads-fmi-demo \
+    /app/bin/cads-workflow-runner --workflow workflows/citest.yaml
 ```
 
-If you have access to the Docker daemon instead of Podman, install `docker.io docker-compose-plugin` and skip the rootless mapping steps; the rest of the workflow is identical. If you plan to run the FMUs directly on the host (see below), also install `python3-venv`.
+Inside the container:
 
-The Quick Start commands above handle building and running the demo once the environment is prepared.
+- `/app/fmu/models/` holds the FMUs you built or provided.
+- `/app/workflows/` (or mounted files) supply the YAML definitions.
+- `/app/bin/cads-workflow-runner` executes the workflow; `/app/bin/cads-workflow-service`
+  exposes the HTTP API. Both use the same FMIL-backed Go engine, so running in
+  Podman, minikube, or Argo only swaps the scheduler—not the code.
+- `./scripts/generate_manifests.sh` writes the rendered YAML to `deploy/k8s/` and
+  `deploy/argo/` so you can inspect or tweak them before applying.
 
-## Preparing macOS (Apple Silicon) hosts
+---
 
-Run the helper to install prerequisites automatically (explicit override shown for clarity; the script skips work when everything is already in place):
+## Optional local smoke tests
+
+Quick checks for local development:
 
 ```bash
-./prepare.sh --platform mac
+# CLI runner
+./cads-workflow-runner --workflow workflows/python_chain.yaml
+
+# HTTP service
+./cads-workflow-service --serve --addr :8080 &
+curl -X POST localhost:8080/run \
+     -H 'Content-Type: application/json' \
+     -d '{"workflow":"workflows/python_chain.yaml"}'
 ```
 
-The script installs the packages listed in `scripts/package-lists/macports.txt` and reminds you to start Colima and switch the Docker context. Use the manual checklist below if you prefer to run the commands yourself.
+The CLI is handy for verifying workflows on the host; the service exercises the
+REST interface. Use `--json-output` when you only need the final payload.
 
-### Package prerequisites
+---
 
-```bash
-sudo port install $(< scripts/package-lists/macports.txt)
-colima start
-docker context use colima
+## Workflow format
+
+Each file in `workflows/` contains a minimal schema:
+
+```yaml
+steps:
+  - name: producer
+    fmu: fmu/models/Producer.fmu
+    start_values:
+      num_points: 100000
+    outputs:
+      - mean
+      - std
+    result: data/producer_result.json
+
+  - name: consumer
+    fmu: fmu/models/Consumer.fmu
+    start_from:
+      mean_in: producer.mean
+      std_in: producer.std
+    outputs:
+      - health_score
+      - anomaly
+    result: data/consumer_result.json
 ```
 
-Optional sanity checks:
+All keys are optional except `name` and `fmu`:
 
-```bash
-docker context show    # expect "colima"
-docker ps              # connectivity check, expect header row output
-```
+- `outputs` – list of variables to capture. If omitted, the runner gathers every
+  variable whose causality is `output` or `calculatedParameter` (falling back to
+  `time` when nothing matches).
+- `start_values` – literal start values to feed into the FMU.
+- `start_from` – copy start values from previous steps using `step.variable`
+  references. The runner validates that the upstream step recorded the
+  requested variable.
+- `result` – optional JSON target path. The runner persists the final snapshot
+  there (directories are created automatically).
+- `start_time`, `stop_time`, `step_size` – rarely needed overrides when an FMU
+  lacks a `DefaultExperiment`. Otherwise the runner uses the FMU’s defaults.
 
-The Quick Start commands above handle building and running the demo once Colima and the Docker CLI are configured.
+All relative paths are resolved from the repository root, so FMUs and artifacts
+can be checked in or mounted during container runs without tweaking the YAML.
 
-Notes:
-- The Docker image rebuilds `libpythonfmu-export.so` during `docker compose build`, so the FMUs generated inside the container are native `arm64` binaries.
+---
 
-## Optional: Run FMUs directly on the host
-
-This path is useful when you need to debug or profile the FMU Python code without rebuilding containers. After staging platform resources you can build and execute the FMUs directly on the host interpreter:
-
-```bash
-scripts/install_platform_resources.py  # auto-detect profile
-python3 -m venv .venv && source .venv/bin/activate  # requires python3-venv on Linux
-pip install -r requirements.txt
-python -m pythonfmu build -f fmu/models/producer_fmu.py -d fmu/artifacts/build
-python -m pythonfmu build -f fmu/models/consumer_fmu.py -d fmu/artifacts/build
-python orchestrator/run.py
-```
-
-## Implementation details
-
-### Repo layout
+## Repository layout
 
 ```
-cads-fmi-demo/
-├── clean.sh           # Remove generated artifacts and stop containers
-├── prepare.sh         # Host preparation helper
-├── build.sh           # One-stop helper to refresh platform cache and rebuild Docker image/FMUs
-├── Dockerfile         # Container image build for the co-simulation demo
-├── docker-compose.yml # Compose stack to orchestrate Producer/Consumer runs
-├── requirements.txt   # Python dependencies used for builds/tests
-├── scripts/           # Helper utilities for cache bootstrap, cert export, etc.
+.
+├── create_fmu/             # pythonfmu build helpers, cached exporters
 ├── fmu/
-│   ├── models/        # Python sources for each FMU (producer_fmu.py, consumer_fmu.py)
-│   └── artifacts/     # Generated outputs
-│       ├── cache/     # pythonfmu toolchain cached by scripts/
-│       └── build/     # Built FMUs (Producer.fmu, Consumer.fmu) for current architecture
+│   └── models/             # Python FMU sources + ready-to-run .fmu files
+├── workflows/              # YAML workflows consumed by the runner/service
 ├── orchestrator/
-│   └── run.py         # Coordinates FMU execution and writes summary JSON
-└── data/              # Runtime data/setpoints/results; created on demand
-    └── (created at runtime)
+│   └── service/            # Go workflow runner + HTTP service (FMIL via cgo)
+│       ├── internal/fmi    # FMIL bindings shared by the binaries
+│       └── cmd/            # cads-workflow-runner + cads-workflow-service CLIs
+├── scripts/                # Shared helper utilities
+└── deploy/ (future)        # K8s/Argo manifests for the full CADS showcase
 ```
 
-### build.sh in detail
-
-- **What it does:**  
-  1. calls `scripts/install_platform_resources.py` to bootstrap the pythonfmu toolchain/cache for your host;  
-  2. runs `docker compose build` (default target: `orchestrator`), which copies the repo into the image and rebuilds the FMUs with architecture-specific binaries.
-- **Args before `--docker`:** forwarded to the install script. Example: `./build.sh --profile apple`.
-- **Args after `--docker`:** passed verbatim to `docker compose build`. Example: `./build.sh --docker --no-cache orchestrator`.
-
-You can replicate the same steps manually:
-
-```bash
-scripts/install_platform_resources.py  # bootstrap host-side cache
-docker compose build orchestrator       # copy sources, rebuild FMUs in-container
-docker compose up orchestrator          # run the simulation (podman compose also works)
-```
-
-During the Docker build, the same bootstrap sequence runs inside the image after requirements are installed; if the cache is present it is copied in first, otherwise pythonfmu is rebuilt from source so the resulting FMUs match the container’s architecture. The cert-export retry ensures pip can reach its indexes even behind corporate TLS proxies.
-
-### Platform resources
-
-Platform-specific pythonfmu binaries are cached under `fmu/artifacts/cache/<profile>/` (ignored by git). Run the helper script before local FMU builds or `docker build`; it auto-detects your architecture (override with `--profile`) and bootstraps the cache via a minimal Docker image when needed. If pip hits TLS errors during bootstrap, the script automatically runs `scripts/export_company_certs.py` in the background to capture your trusted chain and retries. The `fmu/` directory is generated on demand; cloning the repo starts without the `artifacts/` subtree.
-
-```bash
-# Populate/refresh the cache (auto-detect profile; override with --profile linux|apple)
-scripts/install_platform_resources.py [--profile linux|apple]
-```
-
-The Docker image runs the equivalent logic automatically based on the target architecture, so you only need this when developing locally or rebuilding FMUs on the host. For more visibility during bootstrapping, pass `--verbose` to stream the underlying `apt-get`, `pip`, and build output.
+Future work focuses on the deployment side (Argo/minikube manifests, Podman/K8s
+pipelines) now that the workflow runtime is fully native Go + FMIL.***

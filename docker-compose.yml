@@ -5,5 +5,4 @@ services:
     container_name: cads-fmi-orchestrator
     volumes:
       - ./data:/app/data
-      - ./config:/app/config:ro
-    command: ["python", "orchestrator/run.py"]
+    command: ["/app/bin/cads-workflow-runner", "--workflow", "workflows/python_chain.yaml"]

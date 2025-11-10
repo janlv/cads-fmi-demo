@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+DEFAULT_FMIL_HOME="${FMIL_HOME:-$ROOT_DIR/.fmil}"
+FMIL_HOME_ARG=""
+
 if ! command -v docker >/dev/null 2>&1; then
     echo "[error] docker command not found in PATH" >&2
     exit 1
@@ -17,6 +20,15 @@ while (($#)); do
     case "$1" in
         --copy-fmu)
             COPY_FMU=true
+            shift
+            ;;
+        --fmil-home)
+            shift
+            FMIL_HOME_ARG="${1:-}"
+            if [ -z "$FMIL_HOME_ARG" ]; then
+                echo "[error] --fmil-home expects a path" >&2
+                exit 1
+            fi
             shift
             ;;
         --docker)
@@ -40,6 +52,28 @@ while (($#)); do
     esac
 done
 
+if [ -n "$FMIL_HOME_ARG" ]; then
+    FMIL_HOME="$FMIL_HOME_ARG"
+elif [ -z "${FMIL_HOME:-}" ]; then
+    FMIL_HOME="$DEFAULT_FMIL_HOME"
+fi
+
+export FMIL_HOME
+
+have_fmil() {
+    [ -d "$FMIL_HOME/include/FMI" ] && [ -f "$FMIL_HOME/lib/libfmilib_shared.so" ]
+}
+
+if ! have_fmil; then
+    echo "[build] FMIL not found under \$FMIL_HOME ($FMIL_HOME); installing..."
+    bash "$ROOT_DIR/scripts/install_fmil.sh" --prefix "$FMIL_HOME"
+fi
+
+export CGO_ENABLED="${CGO_ENABLED:-1}"
+export CGO_CFLAGS="${CGO_CFLAGS:--I${FMIL_HOME}/include}"
+export CGO_CXXFLAGS="${CGO_CXXFLAGS:--I${FMIL_HOME}/include}"
+export CGO_LDFLAGS="${CGO_LDFLAGS:--L${FMIL_HOME}/lib}"
+
 if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
     DOCKER_ARGS=(orchestrator)
 fi
@@ -51,6 +85,14 @@ else
     echo "==> Staging platform resources (scripts/install_platform_resources.py ${INSTALL_ARGS[*]})"
     "$ROOT_DIR/scripts/install_platform_resources.py" "${INSTALL_ARGS[@]}"
 fi
+
+echo "==> Building Go workflow binaries"
+(
+    cd "$ROOT_DIR/orchestrator/service"
+    GO_ENV=(GOOS= GOARCH= CGO_ENABLED=1 GOCACHE="${GOCACHE:-/tmp/go-build}" GOMODCACHE="${GOMODCACHE:-/tmp/go-mod}")
+    "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
+    "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+)
 
 if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
     echo "==> Building docker compose targets"
@@ -68,12 +110,14 @@ if $COPY_FMU; then
         echo "[warn] Unable to determine image name; skipping FMU copy" >&2
     else
         TMP_CONTAINER="cads-fmi-fmu-extract-$$"
+        TMP_DIR=$(mktemp -d)
         echo "==> Copying FMUs from image ($IMAGE_NAME) to host"
         CONTAINER_ID=$(docker create --name "$TMP_CONTAINER" "$IMAGE_NAME")
-        mkdir -p fmu/artifacts
-        rm -rf fmu/artifacts/build
-        docker cp "$CONTAINER_ID":/app/fmu/artifacts/build ./fmu/artifacts/
+        docker cp "$CONTAINER_ID":/app/fmu/models "$TMP_DIR"
         docker rm "$TMP_CONTAINER" >/dev/null
-        echo "==> FMUs copied to fmu/artifacts/build"
+        mkdir -p fmu/models
+        find "$TMP_DIR/models" -maxdepth 1 -type f -name '*.fmu' -exec cp {} fmu/models/ \;
+        rm -rf "$TMP_DIR"
+        echo "==> FMUs copied to fmu/models"
     fi
 fi

@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIST_DIR="$ROOT_DIR/scripts/package-lists"
 
+GO_VERSION_REQUIRED="${GO_VERSION_REQUIRED:-1.22.2}"
+GO_INSTALL_PREFIX="${GO_INSTALL_PREFIX:-/usr/local}"
+GO_DOWNLOAD_BASE="${GO_DOWNLOAD_BASE:-https://go.dev/dl}"
+DEFAULT_FMIL_HOME="${FMIL_HOME:-$ROOT_DIR/.fmil}"
+
 usage() {
     cat <<'EOF'
 Usage: ./prepare.sh [--platform <platform>]
@@ -19,6 +24,71 @@ performs lightweight sanity checks. Running build.sh afterwards builds and
 executes the demo containers. Without --platform, the tool attempts to detect
 the host automatically.
 EOF
+}
+
+version_ge() {
+    local current="$1" required="$2"
+    [[ "$(printf '%s\n' "$required" "$current" | sort -V | head -n1)" == "$required" ]]
+}
+
+detect_go_arch() {
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64|amd64) echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *)
+            echo "[error] Unsupported architecture for Go tarball: $arch" >&2
+            exit 1
+            ;;
+    esac
+}
+
+install_go() {
+    ensure_cmd curl "curl required to download Go"
+    ensure_cmd sudo "sudo required to install Go to $GO_INSTALL_PREFIX"
+    local arch tarball url tmp
+    arch="$(detect_go_arch)"
+    tarball="go${GO_VERSION_REQUIRED}.linux-${arch}.tar.gz"
+    url="${GO_DOWNLOAD_BASE}/${tarball}"
+    tmp="$(mktemp -d)"
+    echo "==> Downloading Go ${GO_VERSION_REQUIRED} (${arch})"
+    curl -fsSL "$url" -o "$tmp/$tarball"
+    echo "==> Installing Go to $GO_INSTALL_PREFIX/go"
+    sudo rm -rf "${GO_INSTALL_PREFIX}/go"
+    sudo tar -C "$GO_INSTALL_PREFIX" -xzf "$tmp/$tarball"
+    rm -rf "$tmp"
+    echo "==> Go ${GO_VERSION_REQUIRED} installed. Add ${GO_INSTALL_PREFIX}/go/bin to PATH if not already present."
+}
+
+ensure_go() {
+    if command -v go >/dev/null 2>&1; then
+        local current
+        current="$(go version | awk '{print $3}' | sed 's/^go//')"
+        if version_ge "$current" "$GO_VERSION_REQUIRED"; then
+            echo "==> Go ${current} already satisfies requirement (${GO_VERSION_REQUIRED})"
+            return
+        fi
+        echo "[warn] Go ${current} detected, but ${GO_VERSION_REQUIRED} required. Reinstalling."
+    else
+        echo "==> Go not found; installing ${GO_VERSION_REQUIRED}"
+    }
+    install_go
+}
+
+have_fmil() {
+    local prefix="$1"
+    [[ -d "$prefix/include/FMI" && -f "$prefix/lib/libfmilib_shared.so" ]]
+}
+
+ensure_fmil() {
+    local prefix="$1"
+    if have_fmil "$prefix"; then
+        echo "==> FMIL already present at $prefix"
+        return
+    fi
+    echo "==> Installing FMIL to $prefix"
+    FMIL_HOME="$prefix" bash "$ROOT_DIR/scripts/install_fmil.sh" --prefix "$prefix"
 }
 
 require_file() {
@@ -171,6 +241,9 @@ case "$PLATFORM" in
             echo "  [warn] systemctl not available; start the service manually when needed:"
             echo "         podman system service --time=0 unix://\${XDG_RUNTIME_DIR}/podman/podman.sock"
         fi
+
+        ensure_go
+        ensure_fmil "$DEFAULT_FMIL_HOME"
 
         cat <<'EOF'
 

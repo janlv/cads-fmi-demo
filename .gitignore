@@ -5,7 +5,7 @@ __pycache__/
 *.py[cod]
 
 # FMU build artifacts
-fmu/artifacts/
+create_fmu/artifacts/
 
 # Runtime outputs
 data/
@@ -13,7 +13,14 @@ data/
 # Local tooling
 .DS_Store
 
-# 
+# Go binaries
+orchestrator/service/cads-workflow-runner
+orchestrator/service/cads-workflow-service
+
+# Local environment overrides
+.env
+
+#
 *.so
 *.dll
 

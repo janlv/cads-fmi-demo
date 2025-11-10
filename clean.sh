@@ -52,19 +52,21 @@ log "Cleaning generated artifacts"
 cleanup_path "data"
 ensure_dir "data"
 
-cleanup_path "fmu/artifacts/build"
-cleanup_path "fmu/artifacts/cache"
-ensure_dir "fmu/artifacts"
+cleanup_path "create_fmu/artifacts/build"
+cleanup_path "create_fmu/artifacts/cache"
+ensure_dir "create_fmu/artifacts"
 
 if [[ -d scripts/certs ]]; then
     log "Clearing exported certificates"
     find scripts/certs -mindepth 1 -type f -delete
 fi
 
-if [[ -d ".venv" ]]; then
-    log "Removing Python virtual environment (.venv)"
-    cleanup_path ".venv"
-fi
+for VENV in ".venv" "create_fmu/.venv"; do
+    if [[ -d "$VENV" ]]; then
+        log "Removing Python virtual environment ($VENV)"
+        cleanup_path "$VENV"
+    fi
+done
 
 DOCKER_BIN=""
 if command -v docker >/dev/null 2>&1; then
