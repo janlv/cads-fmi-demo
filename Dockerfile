@@ -19,6 +19,19 @@ RUN apt-get update \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Ensure custom CA certificates are trusted before network downloads (e.g. Go tarball)
+COPY scripts/certs/ /tmp/certs/
+RUN set -eux; \
+    FOUND_CERT=$(find /tmp/certs -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \
+    if [ -n "$FOUND_CERT" ]; then \
+        cp -a /tmp/certs/. /usr/local/share/ca-certificates/; \
+        update-ca-certificates; \
+    fi
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+
 # Install Go toolchain
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz
@@ -43,14 +56,9 @@ ENV GOWORK=off
 
 # Python dependencies
 COPY create_fmu/requirements.txt /tmp/pythonfmu-requirements.txt
-COPY scripts/certs/ /tmp/certs/
-RUN set -eux; \
-    FOUND_CERT=$(find /tmp/certs -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \
-    if [ -n "$FOUND_CERT" ]; then \
-        cp -a /tmp/certs/. /usr/local/share/ca-certificates/; \
-        update-ca-certificates; \
-    fi
+COPY create_fmu/patch_pythonfmu_export.py /tmp/patch_pythonfmu_export.py
 RUN pip install --no-cache-dir -r /tmp/pythonfmu-requirements.txt
+RUN python /tmp/patch_pythonfmu_export.py
 
 # Rebuild pythonfmu exporter for the active architecture so generated FMUs ship
 # with matching binaries.
@@ -80,13 +88,38 @@ RUN set -eux; \
 RUN set -eux; \
     CACHE_ROOT=/app/create_fmu/artifacts/cache; \
     TARGET_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/resources; \
-    if [ -d "$CACHE_ROOT/linux/pythonfmu_resources" ]; then \
-        rm -rf "$TARGET_DIR"; \
-        mkdir -p "$TARGET_DIR"; \
-        cp -a "$CACHE_ROOT/linux/pythonfmu_resources/." "$TARGET_DIR/"; \
-        if [ "$TARGETARCH" = "arm64" ] && [ -d "$CACHE_ROOT/apple/pythonfmu_resources" ]; then \
-            cp -a "$CACHE_ROOT/apple/pythonfmu_resources/." "$TARGET_DIR/"; \
+    PY_VERSION=$(python3 -c 'import platform; print(platform.python_version())'); \
+    copied_any=false; \
+    copy_profile() { \
+        local src="$1" profile="$2" host_version; \
+        if [ ! -d "$src" ]; then \
+            return 1; \
         fi; \
+        if [ ! -f "$src/.python-version" ]; then \
+            echo "[pythonfmu] Skipping cache for ${profile}: missing .python-version metadata." >&2; \
+            return 1; \
+        fi; \
+        host_version="$(cat "$src/.python-version")"; \
+        if [ "$host_version" != "$PY_VERSION" ]; then \
+            echo "[pythonfmu] Skipping cache for ${profile}: host Python ${host_version} != image Python ${PY_VERSION}." >&2; \
+            return 1; \
+        fi; \
+        if [ "$copied_any" = false ]; then \
+            rm -rf "$TARGET_DIR"; \
+            mkdir -p "$TARGET_DIR"; \
+        fi; \
+        echo "[pythonfmu] Installing cached resources for ${profile} (Python ${host_version})."; \
+        cp -a "$src/." "$TARGET_DIR/"; \
+        copied_any=true; \
+        return 0; \
+    }; \
+    if copy_profile "$CACHE_ROOT/linux/pythonfmu_resources" "linux"; then \
+        if [ "$TARGETARCH" = "arm64" ]; then \
+            copy_profile "$CACHE_ROOT/apple/pythonfmu_resources" "apple" || true; \
+        fi; \
+    fi; \
+    if [ "$copied_any" = false ]; then \
+        echo "[pythonfmu] No compatible cached resources; keeping exporter output built in this image." >&2; \
     fi
 
 # Build FMUs with pythonfmu
@@ -95,11 +128,12 @@ RUN mkdir -p fmu/models && \
     python -m pythonfmu build -f fmu/models/consumer_fmu.py -d fmu/models && \
     echo 'Built FMUs to /app/fmu/models'
 
-# Build Go workflow binaries (FMIL via cgo)
-RUN mkdir -p /app/bin && \
-    cd /app && \
-    go build -o /app/bin/cads-workflow-runner ./orchestrator/service/cmd/cads-workflow-runner && \
-    go build -o /app/bin/cads-workflow-service ./orchestrator/service/cmd/cads-workflow-service
+# Build Go workflow binaries (FMIL via cgo). The Go module lives under orchestrator/service.
+RUN set -eux; \
+    mkdir -p /app/bin; \
+    cd /app/orchestrator/service; \
+    go build -o /app/bin/cads-workflow-runner ./cmd/cads-workflow-runner; \
+    go build -o /app/bin/cads-workflow-service ./cmd/cads-workflow-service
 
 # Default command
 CMD ["/app/bin/cads-workflow-runner", "--workflow", "workflows/python_chain.yaml"]

@@ -25,4 +25,20 @@ orchestrator/service/cads-workflow-service
 *.dll
 
 # Ignore virtual environments
-.venv*
+.venv*/
+
+# Ignore local install directories
+.local/
+
+# Ignore built binaries
+bin/
+
+# Ignore deployment manifests
+deploy/
+
+# Ignore FMU binaries
+*.fmu
+
+# Ignore Go build cache
+orchestrator/service/.gocache/
+orchestrator/service/.gomodcache/

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$ROOT_DIR/scripts/lib/logging.sh"
 FMU_DIR="$ROOT_DIR/fmu/models"
 VENV_DIR="$SCRIPT_DIR/.venv"
 REQ_FILE="$SCRIPT_DIR/requirements.txt"
@@ -54,20 +55,26 @@ while (($#)); do
 done
 
 if [[ ! -d "$FMU_DIR" ]]; then
-    echo "[error] FMU directory not found: $FMU_DIR" >&2
+    log_error "FMU directory not found: $FMU_DIR"
     exit 1
 fi
 
 if [[ ! -d "$VENV_DIR" ]]; then
-    echo "==> Creating virtualenv at $VENV_DIR"
+    log_step "Creating virtualenv at $VENV_DIR"
     "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
 
 source "$VENV_DIR/bin/activate"
+log_step "Upgrading pip in virtualenv"
 pip install --upgrade pip >/dev/null
+log_step "Installing pythonfmu requirements"
 pip install -r "$REQ_FILE"
 
+log_step "Patching pythonfmu exporter (ensures libpython linkage)"
+python "$SCRIPT_DIR/patch_pythonfmu_export.py"
+
+log_step "Building Producer/Consumer FMUs via pythonfmu"
 python -m pythonfmu build -f "$FMU_DIR/producer_fmu.py" -d "$FMU_DIR"
 python -m pythonfmu build -f "$FMU_DIR/consumer_fmu.py" -d "$FMU_DIR"
 
-echo "==> FMUs built under $FMU_DIR"
+log_ok "FMUs built under $FMU_DIR"

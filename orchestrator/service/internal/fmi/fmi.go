@@ -11,7 +11,6 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"sort"
 	"unsafe"
 )
@@ -50,7 +49,6 @@ func Run(cfg Config) (map[string]any, error) {
 		cCfg.step_size = C.double(*cfg.StepSize)
 	}
 
-	var assignmentStorage []C.cads_assignment
 	var assignmentBacking []*C.char
 	if len(cfg.StartValues) > 0 {
 		keys := make([]string, 0, len(cfg.StartValues))
@@ -58,27 +56,37 @@ func Run(cfg Config) (map[string]any, error) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		assignmentStorage = make([]C.cads_assignment, len(keys))
+		mem := C.malloc(C.size_t(len(keys)) * C.size_t(C.sizeof_cads_assignment))
+		if mem == nil {
+			return nil, fmt.Errorf("fmi: failed to allocate start value buffer")
+		}
+		defer C.free(mem)
+		assignments := unsafe.Slice((*C.cads_assignment)(mem), len(keys))
 		for i, key := range keys {
 			value := cfg.StartValues[key]
 			nameC := C.CString(key)
 			valueC := C.CString(value)
 			assignmentBacking = append(assignmentBacking, nameC, valueC)
-			assignmentStorage[i] = C.cads_assignment{name: nameC, value: valueC}
+			assignments[i] = C.cads_assignment{name: nameC, value: valueC}
 		}
-		cCfg.start_values = (*C.cads_assignment)(unsafe.Pointer(&assignmentStorage[0]))
-		cCfg.start_value_count = C.size_t(len(assignmentStorage))
+		cCfg.start_values = (*C.cads_assignment)(mem)
+		cCfg.start_value_count = C.size_t(len(keys))
 	}
 
-	var outputPtrs []*C.char
 	if len(cfg.Outputs) > 0 {
-		outputPtrs = make([]*C.char, len(cfg.Outputs))
+		ptrSize := unsafe.Sizeof((*C.char)(nil))
+		mem := C.malloc(C.size_t(len(cfg.Outputs)) * C.size_t(ptrSize))
+		if mem == nil {
+			return nil, fmt.Errorf("fmi: failed to allocate outputs buffer")
+		}
+		defer C.free(mem)
+		outputPtrs := unsafe.Slice((**C.char)(mem), len(cfg.Outputs))
 		for i, name := range cfg.Outputs {
 			cstr := C.CString(name)
 			assignmentBacking = append(assignmentBacking, cstr)
 			outputPtrs[i] = cstr
 		}
-		cCfg.outputs = (**C.char)(unsafe.Pointer(&outputPtrs[0]))
+		cCfg.outputs = (**C.char)(mem)
 		cCfg.output_count = C.size_t(len(outputPtrs))
 	}
 
@@ -92,9 +100,6 @@ func Run(cfg Config) (map[string]any, error) {
 	var errOut *C.char
 
 	code := C.cads_run_fmu(&cCfg, &jsonOut, &errOut)
-
-	runtime.KeepAlive(assignmentStorage)
-	runtime.KeepAlive(outputPtrs)
 
 	if code != 0 {
 		if errOut != nil {

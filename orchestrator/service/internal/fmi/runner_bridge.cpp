@@ -12,13 +12,17 @@
 #include <JM/jm_callbacks.h>
 
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
-#include <filesystem>
+#include <cstdarg>
 #include <cstring>
+#include <filesystem>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -52,6 +56,60 @@ struct OutputValue {
 struct FmuExecutionResult {
     std::map<std::string, OutputValue> values;
 };
+
+void preloadLibPythonIfAvailable() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        auto tryLoad = [](const char* candidate) -> bool {
+            if (!candidate || candidate[0] == '\0') {
+                return false;
+            }
+            void* handle = dlopen(candidate, RTLD_NOW | RTLD_GLOBAL);
+            if (handle) {
+                static std::vector<void*> loadedHandles;
+                loadedHandles.push_back(handle);
+                return true;
+            }
+            return false;
+        };
+
+        const char* envHint = std::getenv("CADS_LIBPYTHON_HINT");
+        if (tryLoad(envHint)) {
+            return;
+        }
+
+        constexpr const char* kDefaultCandidates[] = {
+            "libpython3.12.so.1.0",
+            "libpython3.12.so",
+            "libpython3.11.so.1.0",
+            "libpython3.11.so",
+            "libpython3.10.so.1.0",
+            "libpython3.10.so",
+        };
+        for (const char* candidate : kDefaultCandidates) {
+            if (tryLoad(candidate)) {
+                return;
+            }
+        }
+    });
+}
+
+void fmi2LoggerCallback(
+    fmi2_component_environment_t,
+    fmi2_string_t instanceName,
+    fmi2_status_t,
+    fmi2_string_t category,
+    fmi2_string_t message,
+    ...) {
+    va_list args;
+    va_start(args, message);
+    const char* inst = instanceName ? instanceName : "-";
+    const char* cat = category ? category : "-";
+    std::fprintf(stderr, "[FMI2][%s][%s] ", inst, cat);
+    std::vfprintf(stderr, message, args);
+    std::fprintf(stderr, "\n");
+    va_end(args);
+}
 
 [[noreturn]] void fail(const std::string& msg) {
     throw std::runtime_error(msg);
@@ -327,7 +385,7 @@ FmuExecutionResult runFmi2(const Config& cfg, const std::string& unpackDir, fmi_
     fmi2_callback_functions_t callbacks{};
     callbacks.allocateMemory = calloc;
     callbacks.freeMemory = free;
-    callbacks.logger = nullptr;
+    callbacks.logger = fmi2LoggerCallback;
     callbacks.componentEnvironment = nullptr;
 
     if (fmi2_import_create_dllfmu(fmu.fmu, fmi2_fmu_kind_cs, &callbacks) != jm_status_success) {
@@ -572,6 +630,8 @@ Config fromCConfig(const cads_fmu_config& cfg) {
 }
 
 std::string runConfiguredFmu(const Config& cfg) {
+    preloadLibPythonIfAvailable();
+
     if (!fs::exists(cfg.fmuPath)) {
         fail("FMU not found: " + cfg.fmuPath);
     }

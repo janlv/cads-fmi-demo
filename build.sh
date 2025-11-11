@@ -3,12 +3,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
+source "$ROOT_DIR/scripts/lib/logging.sh"
 
-DEFAULT_FMIL_HOME="${FMIL_HOME:-$ROOT_DIR/.fmil}"
+DEFAULT_FMIL_HOME="${FMIL_HOME:-$ROOT_DIR/.local}"
 FMIL_HOME_ARG=""
 
 if ! command -v docker >/dev/null 2>&1; then
-    echo "[error] docker command not found in PATH" >&2
+    log_error "docker command not found in PATH"
     exit 1
 fi
 
@@ -65,7 +66,7 @@ have_fmil() {
 }
 
 if ! have_fmil; then
-    echo "[build] FMIL not found under \$FMIL_HOME ($FMIL_HOME); installing..."
+    log_step "FMIL not found under \$FMIL_HOME ($FMIL_HOME); installing..."
     bash "$ROOT_DIR/scripts/install_fmil.sh" --prefix "$FMIL_HOME"
 fi
 
@@ -79,45 +80,43 @@ if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
 fi
 
 if [ ${#INSTALL_ARGS[@]} -eq 0 ]; then
-    echo "==> Staging platform resources (scripts/install_platform_resources.py)"
-    "$ROOT_DIR/scripts/install_platform_resources.py"
+    log_stream_cmd "Staging platform resources (scripts/install_platform_resources.py)" \
+        "$ROOT_DIR/scripts/install_platform_resources.py"
 else
-    echo "==> Staging platform resources (scripts/install_platform_resources.py ${INSTALL_ARGS[*]})"
-    "$ROOT_DIR/scripts/install_platform_resources.py" "${INSTALL_ARGS[@]}"
+    log_stream_cmd "Staging platform resources (scripts/install_platform_resources.py ${INSTALL_ARGS[*]})" \
+        "$ROOT_DIR/scripts/install_platform_resources.py" "${INSTALL_ARGS[@]}"
 fi
 
-echo "==> Building Go workflow binaries"
+log_step "Building Go workflow binaries"
 (
     cd "$ROOT_DIR/orchestrator/service"
     GO_ENV=(GOOS= GOARCH= CGO_ENABLED=1 GOCACHE="${GOCACHE:-/tmp/go-build}" GOMODCACHE="${GOMODCACHE:-/tmp/go-mod}")
-    "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
-    "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+    run_with_log_tail env "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
+    run_with_log_tail env "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
 )
 
 if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
-    echo "==> Building docker compose targets"
-    docker compose build
+    log_stream_cmd "Building docker compose targets" docker compose build
 else
-    echo "==> Building docker compose targets (${DOCKER_ARGS[*]})"
-    docker compose build "${DOCKER_ARGS[@]}"
+    log_stream_cmd "Building docker compose targets (${DOCKER_ARGS[*]})" docker compose build "${DOCKER_ARGS[@]}"
 fi
 
 if $COPY_FMU; then
-    echo "==> Determining image for FMU extraction"
+    log_step "Determining image for FMU extraction"
     IMAGE_NAME=$(docker compose config --images "${DOCKER_ARGS[@]}") || IMAGE_NAME=""
     IMAGE_NAME=$(echo "$IMAGE_NAME" | head -n 1)
     if [ -z "$IMAGE_NAME" ]; then
-        echo "[warn] Unable to determine image name; skipping FMU copy" >&2
+        log_warn "Unable to determine image name; skipping FMU copy"
     else
         TMP_CONTAINER="cads-fmi-fmu-extract-$$"
         TMP_DIR=$(mktemp -d)
-        echo "==> Copying FMUs from image ($IMAGE_NAME) to host"
+        log_step "Copying FMUs from image ($IMAGE_NAME) to host"
         CONTAINER_ID=$(docker create --name "$TMP_CONTAINER" "$IMAGE_NAME")
         docker cp "$CONTAINER_ID":/app/fmu/models "$TMP_DIR"
         docker rm "$TMP_CONTAINER" >/dev/null
         mkdir -p fmu/models
         find "$TMP_DIR/models" -maxdepth 1 -type f -name '*.fmu' -exec cp {} fmu/models/ \;
         rm -rf "$TMP_DIR"
-        echo "==> FMUs copied to fmu/models"
+        log_ok "FMUs copied to fmu/models"
     fi
 fi

@@ -54,6 +54,20 @@ It creates a virtualenv inside `create_fmu/.venv`, installs
 `create_fmu/requirements.txt`, and runs `pythonfmu` to produce the demo
 `Producer.fmu` and `Consumer.fmu` files under `fmu/models/`.
 
+Helper scripts stream the last few log lines by default; export
+`CADS_LOG_TAIL_LINES=0` if you prefer the full command output instead of the
+rolling “tail window”.
+
+Because the runtime FMU executor is pure Go/FM IL (no embedded Python
+interpreter), the FMUs must include exporter binaries that link against
+`libpython`. Upstream `pythonfmu` builds its exporter as a regular CPython
+extension, so we patch the installed copy **immediately after pip install**
+(`create_fmu/patch_pythonfmu_export.py`). The script rewrites
+`pythonfmu-export/CMakeLists.txt` to request the `Development.Embed` component
+and link `Python3::Python`, then rebuilds via `build_unix.sh`. The helper script
+invokes the patch before every FMU build, and the Docker/installer workflows do
+the same so all environments stay consistent.
+
 Tips:
 
 - Delete `create_fmu/.venv` when upgrading Python or `requirements.txt`.
@@ -84,6 +98,9 @@ Tips:
 - `scripts/run_k8s_workflow.sh --workflow workflows/foo.yaml` runs the generator
   and applies the job via `kubectl`. Tail logs with `kubectl logs -f job/...`.
 - `scripts/run_argo_workflow.sh --workflow workflows/foo.yaml` renders and submits
-  the workflow via `argo submit`, then follows it with `argo watch`.
+  the workflow via `argo submit`, ensures the Argo Workflows CRD/controller are installed
+  (unless `ARGO_AUTO_INSTALL=false`), and then follows it with `argo watch`.
 - Customize the manifests (additional env vars, volumes, secrets) by editing the
   generated files before applying or by extending the generator script.
+- `run.sh workflows/foo.yaml --mode k8s|argo|local` is a shortcut that
+  rebuilds the image via `build.sh` and then invokes the corresponding helper.

@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CREATE_FMU_ROOT = ROOT / "create_fmu"
 ARTIFACTS_ROOT = CREATE_FMU_ROOT / "artifacts"
 CACHE_ROOT = ARTIFACTS_ROOT / "cache"
+PATCH_SCRIPT = CREATE_FMU_ROOT / "patch_pythonfmu_export.py"
 PYTHONFMU_VERSION = "0.6.9"
 
 PROFILE_SOURCES = {
@@ -220,6 +221,8 @@ def _certs_handling() -> tuple[list[str], str, str, bool]:
 
 
 def _build_docker_cmd(destination_root: Path, platform_flag: str, certs_mount: list[str], script: str) -> list[str]:
+    if not PATCH_SCRIPT.exists():
+        raise SystemExit(f"Missing patch script: {PATCH_SCRIPT}")
     return [
         "docker",
         "run",
@@ -227,6 +230,8 @@ def _build_docker_cmd(destination_root: Path, platform_flag: str, certs_mount: l
         f"--platform={platform_flag}",
         "-v",
         f"{destination_root.resolve()}:/out",
+        "-v",
+        f"{PATCH_SCRIPT.resolve()}:/tmp/patch_pythonfmu_export.py:ro",
         *certs_mount,
         "python:3.11-slim",
         "bash",
@@ -283,6 +288,7 @@ def bootstrap_source(
             "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake unzip\n"
             "echo '[bootstrap] Installing pythonfmu' >&2\n"
             f"pip install --no-cache-dir pythonfmu=={PYTHONFMU_VERSION}\n"
+            "python /tmp/patch_pythonfmu_export.py\n"
             "PYFMI_EXPORT_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/pythonfmu-export\n"
             "cd \"$PYFMI_EXPORT_DIR\"\n"
             "chmod +x build_unix.sh\n"
@@ -291,6 +297,11 @@ def bootstrap_source(
             "rm -rf build\n"
             "rm -rf /out/pythonfmu_resources\n"
             "cp -a /usr/local/lib/python3.11/site-packages/pythonfmu/resources /out/pythonfmu_resources\n"
+            "python3 - <<'PY'\n"
+            "from pathlib import Path\n"
+            "import platform\n"
+            "Path('/out/pythonfmu_resources/.python-version').write_text(platform.python_version())\n"
+            "PY\n"
         )
 
         docker_cmd = _build_docker_cmd(destination_root, platform_flag, certs_mount, docker_script)
