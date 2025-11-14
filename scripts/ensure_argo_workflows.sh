@@ -1,23 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="${ARGO_NAMESPACE:-argo}"
-AUTO_INSTALL="${ARGO_AUTO_INSTALL:-true}"
-ARGO_VERSION_DEFAULT="${ARGO_VERSION_REQUIRED:-v3.5.6}"
-ARGO_VERSION="${ARGO_VERSION:-$ARGO_VERSION_DEFAULT}"
-MANIFEST_URL_DEFAULT="https://github.com/argoproj/argo-workflows/releases/download/${ARGO_VERSION}/install.yaml"
-MANIFEST_URL="${ARGO_MANIFEST_URL:-$MANIFEST_URL_DEFAULT}"
-ROLL_OUT_TIMEOUT="${ARGO_ROLLOUT_TIMEOUT:-180s}"
+NAMESPACE="argo"
+ARGO_VERSION="v3.5.6"
+MANIFEST_URL="https://github.com/argoproj/argo-workflows/releases/download/${ARGO_VERSION}/install.yaml"
+ROLL_OUT_TIMEOUT="180s"
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/ensure_argo_workflows.sh [--namespace name]
+
+Installs (or verifies) the Argo Workflows controller inside the provided namespace.
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --namespace)
+            shift
+            NAMESPACE="${1:-}"
+            if [[ -z "$NAMESPACE" ]]; then
+                echo "[error] --namespace expects a value" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "[error] Unknown argument: $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+    shift || true
+done
 
 log() {
     printf '[argo] %s\n' "$1"
 }
 
 require_cmd() {
-    local cmd="$1"
-    local msg="$2"
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        printf '[error] %s\n' "$msg" >&2
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf '[error] Required command not found: %s\n' "$1" >&2
         exit 1
     fi
 }
@@ -31,16 +57,6 @@ ensure_namespace() {
 }
 
 install_argo() {
-    if [[ "$AUTO_INSTALL" != "true" ]]; then
-        cat <<EOF >&2
-[error] Argo Workflows CRD (workflows.argoproj.io) not found in the cluster.
-Set ARGO_AUTO_INSTALL=true to allow automatic installation or install it manually:
-  kubectl create namespace ${NAMESPACE}
-  kubectl apply -n ${NAMESPACE} -f ${MANIFEST_URL}
-EOF
-        exit 1
-    fi
-
     log "Installing Argo Workflows ${ARGO_VERSION} (namespace='${NAMESPACE}')"
     ensure_namespace
     kubectl apply -n "$NAMESPACE" -f "$MANIFEST_URL"
@@ -57,14 +73,12 @@ EOF
 }
 
 main() {
-    require_cmd kubectl "kubectl is required to verify/install Argo Workflows."
-
+    require_cmd kubectl
     if kubectl get crd workflows.argoproj.io >/dev/null 2>&1; then
         ensure_namespace
-        log "Argo Workflows CRD already present."
+        log "Argo Workflows CRD already installed."
         return
     fi
-
     install_argo
 }
 

@@ -4,7 +4,8 @@ ARG TARGETARCH
 ARG GOLANG_VERSION=1.22.2
 
 # System dependencies for FMIL, Go build, and pythonfmu
-RUN apt-get update \
+RUN echo "[image] Installing base system dependencies" \
+    && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
@@ -22,6 +23,7 @@ RUN apt-get update \
 # Ensure custom CA certificates are trusted before network downloads (e.g. Go tarball)
 COPY scripts/certs/ /tmp/certs/
 RUN set -eux; \
+    echo "[image] Syncing bootstrap certificates from /tmp/certs"; \
     FOUND_CERT=$(find /tmp/certs -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \
     if [ -n "$FOUND_CERT" ]; then \
         cp -a /tmp/certs/. /usr/local/share/ca-certificates/; \
@@ -34,10 +36,12 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 
 # Install Go toolchain
 ENV PATH="/usr/local/go/bin:${PATH}"
-RUN curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz
+RUN echo "[image] Installing Go ${GOLANG_VERSION}" \
+    && curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz
 
 # Build and install FMIL (fmilib)
-RUN git clone https://github.com/modelon-community/fmi-library.git /tmp/fmi-library \
+RUN echo "[image] Cloning and building FMIL" \
+    && git clone https://github.com/modelon-community/fmi-library.git /tmp/fmi-library \
     && cmake -S /tmp/fmi-library -B /tmp/fmi-library/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/fmil \
@@ -57,12 +61,15 @@ ENV GOWORK=off
 # Python dependencies
 COPY create_fmu/requirements.txt /tmp/pythonfmu-requirements.txt
 COPY create_fmu/patch_pythonfmu_export.py /tmp/patch_pythonfmu_export.py
-RUN pip install --no-cache-dir -r /tmp/pythonfmu-requirements.txt
-RUN python /tmp/patch_pythonfmu_export.py
+RUN echo "[image] Installing pythonfmu requirements inside the image" \
+    && pip install --no-cache-dir -r /tmp/pythonfmu-requirements.txt
+RUN echo "[image] Applying pythonfmu exporter patch" \
+    && python /tmp/patch_pythonfmu_export.py
 
 # Rebuild pythonfmu exporter for the active architecture so generated FMUs ship
 # with matching binaries.
 RUN set -eux; \
+    echo "[image] Compiling pythonfmu exporter artifacts"; \
     PYFMI_EXPORT_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/pythonfmu-export; \
     cd "$PYFMI_EXPORT_DIR"; \
     chmod +x build_unix.sh; \
@@ -74,6 +81,7 @@ COPY . /app
 
 # Refresh trusted certificates if provided in the repo
 RUN set -eux; \
+    echo "[image] Refreshing trusted certificates from repo"; \
     CERT_SRC=/app/scripts/certs; \
     FIRST_CERT=""; \
     if [ -d "$CERT_SRC" ]; then \
@@ -86,6 +94,7 @@ RUN set -eux; \
 
 # Optionally seed pythonfmu runtime resources from cached artifacts
 RUN set -eux; \
+    echo "[image] Checking for cached pythonfmu resource bundles"; \
     CACHE_ROOT=/app/create_fmu/artifacts/cache; \
     TARGET_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu/resources; \
     PY_VERSION=$(python3 -c 'import platform; print(platform.python_version())'); \
@@ -123,13 +132,15 @@ RUN set -eux; \
     fi
 
 # Build FMUs with pythonfmu
-RUN mkdir -p fmu/models && \
+RUN echo "[image] Building bundled demo FMUs" && \
+    mkdir -p fmu/models && \
     python -m pythonfmu build -f fmu/models/producer_fmu.py -d fmu/models && \
     python -m pythonfmu build -f fmu/models/consumer_fmu.py -d fmu/models && \
     echo 'Built FMUs to /app/fmu/models'
 
 # Build Go workflow binaries (FMIL via cgo). The Go module lives under orchestrator/service.
 RUN set -eux; \
+    echo "[image] Compiling Go workflow binaries"; \
     mkdir -p /app/bin; \
     cd /app/orchestrator/service; \
     go build -o /app/bin/cads-workflow-runner ./cmd/cads-workflow-runner; \

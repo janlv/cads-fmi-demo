@@ -2,115 +2,99 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROFILE="${MINIKUBE_PROFILE:-minikube}"
-DEFAULT_CERTS_DIR="$ROOT_DIR/scripts/certs"
-CERTS_DIR="${MINIKUBE_EXTRA_CA_CERTS_DIR:-$DEFAULT_CERTS_DIR}"
-SINGLE_CERT="${MINIKUBE_EXTRA_CA_CERT:-}"
-SINGLE_NAME="${MINIKUBE_EXTRA_CA_NAME:-}"
+PROFILE="minikube"
+CERTS_DIR="$ROOT_DIR/scripts/certs"
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/install_minikube_ca.sh [--profile name]
+
+Copies every .crt/.pem file under scripts/certs/ into the specified Minikube profile.
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --profile)
+            shift
+            PROFILE="${1:-}"
+            if [[ -z "$PROFILE" ]]; then
+                echo "[error] --profile expects a value" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "[error] Unknown argument: $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+    shift || true
+done
 
 log() {
     printf '[minikube-ca] %s\n' "$1"
 }
 
-err() {
-    printf '[error] %s\n' "$1" >&2
-    exit 1
-}
-
-sanitize_name() {
-    local name="$1"
-    name="${name//[^a-zA-Z0-9._-]/-}"
-    if [[ -z "$name" ]]; then
-        name="custom-ca"
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf '[error] Required command not found: %s\n' "$1" >&2
+        exit 1
     fi
-    printf '%s\n' "$name"
 }
 
 collect_cert_files() {
-    local files=()
-    if [[ -n "$SINGLE_CERT" ]]; then
-        if [[ ! -f "$SINGLE_CERT" ]]; then
-            err "MINIKUBE_EXTRA_CA_CERT points to '$SINGLE_CERT', but the file does not exist."
-        fi
-        files+=("$SINGLE_CERT:::${SINGLE_NAME:-}")
+    if [[ ! -d "$CERTS_DIR" ]]; then
+        return
     fi
-    if [[ -d "$CERTS_DIR" ]]; then
-        while IFS= read -r -d '' path; do
-            files+=("$path:::")
-        done < <(find "$CERTS_DIR" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print0 | sort -z)
-    fi
-    printf '%s\n' "${files[@]+"${files[@]}"}"
-}
-
-require_cmd() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        err "Required command not found: $1"
-    fi
+    find "$CERTS_DIR" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print0
 }
 
 install_cert() {
-    local spec="$1"
-    local path="${spec%%:::*}"
-    local name_part="${spec#*:::}"
-    if [[ "$path" == "$name_part" ]]; then
-        name_part=""
-    fi
-    local base_name
-    if [[ -n "$name_part" ]]; then
-        base_name="$name_part"
-    else
-        base_name="$(basename "$path")"
-        base_name="${base_name%.*}"
-    fi
-    local safe_name
-    safe_name="$(sanitize_name "$base_name")"
-    local remote="/usr/local/share/ca-certificates/${safe_name}.crt"
-    if ! command -v base64 >/dev/null 2>&1; then
-        err "base64 command not found; required to transfer certificates."
-    fi
+    local path="$1"
+    local base
+    base="$(basename "$path")"
+    base="${base%.*}"
     local encoded
-    if ! encoded="$(base64 < "$path" | tr -d '\n')"; then
-        err "Failed to encode certificate '$path'"
-    fi
-    local tmp="/tmp/${safe_name}.crt"
-    log "Installing CA '$path' as ${remote}"
+    encoded="$(base64 < "$path" | tr -d '\n')"
+    local remote="/usr/local/share/ca-certificates/${base}.crt"
+    log "Installing $(basename "$path") into profile '${PROFILE}'"
     minikube ssh -p "$PROFILE" \
-        "B64_PAYLOAD='$encoded' TMP='$tmp' REMOTE='$remote' bash -c 'set -euo pipefail; command -v base64 >/dev/null 2>&1; printf \"%s\" \"\$B64_PAYLOAD\" | base64 -d > \"\$TMP\"; sudo install -m 0644 \"\$TMP\" \"\$REMOTE\"; sudo rm -f \"\$TMP\"'"
+        "PAYLOAD='$encoded' REMOTE='$remote' bash -c 'set -euo pipefail; printf \"%s\" \"\$PAYLOAD\" | base64 -d >/tmp/custom-ca.crt; sudo install -m 0644 /tmp/custom-ca.crt \"\$REMOTE\"; rm -f /tmp/custom-ca.crt'"
 }
 
-main() {
-    local specs
-    specs=($(collect_cert_files))
-    if ((${#specs[@]} == 0)); then
-        return 0
-    fi
+require_cmd minikube
+require_cmd base64
 
-    require_cmd minikube
-    if ! minikube status -p "$PROFILE" >/dev/null 2>&1; then
-        err "Minikube profile '$PROFILE' is not running. Start it before installing the CA certificate."
-    fi
+if ! minikube status -p "$PROFILE" >/dev/null 2>&1; then
+    echo "[error] Minikube profile '$PROFILE' is not running." >&2
+    exit 1
+fi
 
-    for spec in "${specs[@]}"; do
-        install_cert "$spec"
-    done
+cert_files=()
+if [[ -d "$CERTS_DIR" ]]; then
+    while IFS= read -r -d '' path; do
+        cert_files+=("$path")
+    done < <(collect_cert_files || true)
+fi
 
-    log "Updating CA trust store inside Minikube"
-    minikube ssh -p "$PROFILE" "if command -v update-ca-certificates >/dev/null 2>&1; then sudo update-ca-certificates >/dev/null 2>&1; elif command -v update-ca-trust >/dev/null 2>&1; then sudo update-ca-trust extract >/dev/null 2>&1; else sudo /usr/sbin/update-ca-certificates >/dev/null 2>&1 || true; fi" >/dev/null 2>&1
+if ((${#cert_files[@]} == 0)); then
+    log "No custom certificates found under $CERTS_DIR; skipping CA sync."
+    exit 0
+fi
 
-    local restart_runtime_cmd='if command -v systemctl >/dev/null 2>&1; then
-        sudo systemctl restart docker >/dev/null 2>&1 ||
-        sudo systemctl restart containerd >/dev/null 2>&1 ||
-        sudo systemctl restart crio >/dev/null 2>&1 || true
-    elif command -v service >/dev/null 2>&1; then
-        sudo service docker restart >/dev/null 2>&1 ||
-        sudo service containerd restart >/dev/null 2>&1 ||
-        sudo service crio restart >/dev/null 2>&1 || true
-    fi'
+for cert in "${cert_files[@]}"; do
+    install_cert "$cert"
+done
 
-    log "Restarting container runtime inside Minikube to pick up the new CA"
-    minikube ssh -p "$PROFILE" "$restart_runtime_cmd >/dev/null 2>&1" >/dev/null 2>&1
+log "Refreshing CA trust store inside Minikube"
+minikube ssh -p "$PROFILE" "sudo update-ca-certificates >/dev/null 2>&1 || sudo update-ca-trust extract >/dev/null 2>&1 || true" >/dev/null 2>&1
 
-    log "Custom CA installation complete."
-}
+log "Restarting container runtime to pick up the new certificates"
+minikube ssh -p "$PROFILE" "if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker >/dev/null 2>&1 || sudo systemctl restart containerd >/dev/null 2>&1 || true; else sudo service docker restart >/dev/null 2>&1 || sudo service containerd restart >/dev/null 2>&1 || true; fi" >/dev/null 2>&1 || true
 
-main "$@"
+log "Custom CA installation complete."

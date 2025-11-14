@@ -10,19 +10,17 @@ REQ_FILE="$SCRIPT_DIR/requirements.txt"
 
 usage() {
     cat <<'EOF'
-Usage: create_fmu/build_python_fmus.sh [--venv <path>] [--python <python3>] [--max-lines N]
+Usage: create_fmu/build_python_fmus.sh [--venv <path>] [--python <python3>]
 
 Builds the demo Python FMUs (Producer/Consumer) and drops them into fmu/models/.
 
 Options:
   --venv        Path to the pythonfmu virtualenv (default: create_fmu/.venv)
   --python      Python interpreter to use when creating the venv (default: python3)
-  --max-lines N Control how many log lines are kept in the tail window (0 disables)
 EOF
 }
 
 PYTHON_BIN="python3"
-LOG_MAX_LINES=""
 
 while (($#)); do
     case "$1" in
@@ -48,15 +46,6 @@ while (($#)); do
             fi
             shift || true
             ;;
-        --max-lines)
-            shift
-            LOG_MAX_LINES="${1:-}"
-            if [[ -z "$LOG_MAX_LINES" ]]; then
-                echo "[error] --max-lines expects a value" >&2
-                exit 1
-            fi
-            shift || true
-            ;;
         *)
             echo "[error] Unknown argument: $1" >&2
             usage
@@ -64,12 +53,6 @@ while (($#)); do
             ;;
     esac
 done
-
-if [[ -n "$LOG_MAX_LINES" ]]; then
-    if ! cads_set_log_tail_lines "$LOG_MAX_LINES"; then
-        exit 1
-    fi
-fi
 
 if [[ ! -d "$FMU_DIR" ]]; then
     log_error "FMU directory not found: $FMU_DIR"

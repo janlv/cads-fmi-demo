@@ -4,302 +4,175 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/lib/logging.sh"
+
 LOCAL_BIN_DIR="$ROOT_DIR/.local/bin"
-export PATH="$LOCAL_BIN_DIR:$PATH"
+LOCAL_GO_BIN="$ROOT_DIR/.local/go/bin"
+export PATH="$LOCAL_GO_BIN:$LOCAL_BIN_DIR:$PATH"
 
-DEFAULT_FMIL_HOME="${FMIL_HOME:-$ROOT_DIR/.local}"
-FMIL_HOME_ARG=""
-MODE=""
+DEFAULT_FMIL_HOME="$ROOT_DIR/.local"
+FMIL_HOME_OVERRIDE=""
 IMAGE="cads-fmi-demo:latest"
-LOG_MAX_LINES=""
-MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-minikube}"
-MINIKUBE_IMAGE_LOAD="${MINIKUBE_IMAGE_LOAD:-true}"
+MINIKUBE_PROFILE="minikube"
+ARGO_NAMESPACE="argo"
+CONTAINER_TOOL=""
 
-INSTALL_ARGS=()
-DOCKER_ARGS=()
-COPY_FMU=false
-PREPARE_ARGO_ENV=false
+usage() {
+    cat <<'EOF'
+Usage: ./build.sh [--image image:tag] [--fmil-home path]
+
+Builds the CADS FMI demo container image, ensures the Argo controller is
+installed in Minikube, and loads the freshly built image into the cluster.
+EOF
+}
 
 while (($#)); do
     case "$1" in
-        --max-lines)
-            shift
-            LOG_MAX_LINES="${1:-}"
-            if [ -z "$LOG_MAX_LINES" ]; then
-                echo "[error] --max-lines expects a value" >&2
-                exit 1
-            fi
-            shift
-            ;;
-        --mode)
-            shift
-            MODE="${1:-}"
-            if [ -z "$MODE" ]; then
-                echo "[error] --mode expects a value" >&2
-                exit 1
-            fi
-            shift
+        -h|--help)
+            usage
+            exit 0
             ;;
         --image)
             shift
             IMAGE="${1:-}"
-            if [ -z "$IMAGE" ]; then
-                echo "[error] --image expects a value" >&2
+            if [[ -z "$IMAGE" ]]; then
+                log_error "--image expects a value"
                 exit 1
             fi
-            shift
-            ;;
-        --copy-fmu)
-            COPY_FMU=true
-            shift
+            shift || true
             ;;
         --fmil-home)
             shift
-            FMIL_HOME_ARG="${1:-}"
-            if [ -z "$FMIL_HOME_ARG" ]; then
-                echo "[error] --fmil-home expects a path" >&2
+            FMIL_HOME_OVERRIDE="${1:-}"
+            if [[ -z "$FMIL_HOME_OVERRIDE" ]]; then
+                log_error "--fmil-home expects a path"
                 exit 1
             fi
-            shift
-            ;;
-        --docker)
-            shift
-            while (($#)); do
-                case "$1" in
-                    --*)
-                        break
-                        ;;
-                    *)
-                        DOCKER_ARGS+=("$1")
-                        shift
-                        ;;
-                esac
-            done
+            shift || true
             ;;
         *)
-            INSTALL_ARGS+=("$1")
-            shift
+            log_error "Unknown argument: $1"
+            usage
+            exit 1
             ;;
     esac
 done
 
-BUILD_COMPOSE=true
-BUILD_LOCAL_IMAGE=false
-
-if [ -n "$MODE" ]; then
-    case "$MODE" in
-        argo)
-            BUILD_COMPOSE=true
-            BUILD_LOCAL_IMAGE=false
-            PREPARE_ARGO_ENV=true
-            ;;
-        local)
-            BUILD_COMPOSE=false
-            BUILD_LOCAL_IMAGE=true
-            ;;
-        *)
-            log_error "Unsupported mode: $MODE"
-            exit 1
-            ;;
-    esac
+if [[ -n "$FMIL_HOME_OVERRIDE" ]]; then
+    FMIL_HOME="$FMIL_HOME_OVERRIDE"
+elif [[ -n "${FMIL_HOME:-}" ]]; then
+    FMIL_HOME="$FMIL_HOME"
 else
-    PREPARE_ARGO_ENV=true
-fi
-
-if [ -n "$LOG_MAX_LINES" ]; then
-    if ! cads_set_log_tail_lines "$LOG_MAX_LINES"; then
-        exit 1
-    fi
-fi
-
-if [ -n "$FMIL_HOME_ARG" ]; then
-    FMIL_HOME="$FMIL_HOME_ARG"
-elif [ -z "${FMIL_HOME:-}" ]; then
     FMIL_HOME="$DEFAULT_FMIL_HOME"
 fi
-
 export FMIL_HOME
 
 require_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
-        log_error "Required command '$1' not found in PATH"
+        log_error "Required command '$1' not found in PATH."
         exit 1
     fi
 }
 
-build_local_image() {
-    require_cmd podman
-    log_stream_cmd "Building local container image $IMAGE" podman build -t "$IMAGE" "$ROOT_DIR"
+have_fmil() {
+    [[ -d "$FMIL_HOME/include/FMI" && -f "$FMIL_HOME/lib/libfmilib_shared.so" ]]
 }
 
-ensure_minikube_image_tag() {
-    local target="$IMAGE"
-    local inspect_cmd=(minikube -p "$MINIKUBE_PROFILE" ssh -- docker image inspect)
-    if "${inspect_cmd[@]}" "$target" >/dev/null 2>&1; then
+ensure_fmil() {
+    if have_fmil; then
+        log_step "FMIL already present under $FMIL_HOME"
         return
     fi
+    log_step "Installing FMIL under $FMIL_HOME"
+    bash "$ROOT_DIR/scripts/install_fmil.sh" --prefix "$FMIL_HOME"
+}
 
-    local repo="$target"
-    local tag="latest"
-    if [[ "$target" == *:* ]]; then
-        repo="${target%:*}"
-        tag="${target##*:}"
+stage_platform_resources() {
+    if ! log_stream_cmd "Staging pythonfmu resources" "$ROOT_DIR/scripts/install_platform_resources.py"; then
+        exit 1
     fi
+}
 
-    local candidates=()
-    candidates+=("docker.io/localhost/${repo##localhost/}:${tag}")
-    candidates+=("localhost/${repo##localhost/}:${tag}")
-    candidates+=("docker.io/${repo}:${tag}")
+build_go_binaries() {
+    log_step "Building Go workflow binaries"
+    mkdir -p "$ROOT_DIR/bin"
+    local -a go_env=(
+        "GOOS="
+        "GOARCH="
+        "CGO_ENABLED=1"
+        "GOCACHE=${GOCACHE:-/tmp/go-build}"
+        "GOMODCACHE=${GOMODCACHE:-/tmp/go-mod}"
+    )
+    (
+        cd "$ROOT_DIR/orchestrator/service"
+        run_with_logged_output env "${go_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
+        run_with_logged_output env "${go_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+    )
+}
 
-    for candidate in "${candidates[@]}"; do
-        if "${inspect_cmd[@]}" "$candidate" >/dev/null 2>&1; then
-            log_step "Tagging Minikube image $candidate as $target"
-            if minikube -p "$MINIKUBE_PROFILE" ssh -- docker image tag "$candidate" "$target" >/dev/null 2>&1; then
-                return
-            else
-                log_warn "Failed to tag $candidate as $target inside Minikube"
-                return
-            fi
-        fi
-    done
+build_container_image() {
+    if command -v podman >/dev/null 2>&1; then
+        CONTAINER_TOOL="podman"
+        log_stream_cmd "Building container image $IMAGE (podman)" podman build -t "$IMAGE" "$ROOT_DIR"
+        return
+    fi
+    if command -v docker >/dev/null 2>&1; then
+        CONTAINER_TOOL="docker"
+        log_stream_cmd "Building container image $IMAGE (docker)" docker build -t "$IMAGE" "$ROOT_DIR"
+        return
+    fi
+    log_error "Neither podman nor docker is available to build the container image."
+    exit 1
+}
 
-    log_warn "Image $target not present inside Minikube even after load/build"
+install_ca_into_minikube() {
+    log_step "Syncing custom CA certificates into Minikube"
+    if ! bash "$ROOT_DIR/scripts/install_minikube_ca.sh" --profile "$MINIKUBE_PROFILE"; then
+        log_warn "Unable to install custom CA certificates inside Minikube; continuing without them."
+    fi
+}
+
+ensure_argo_controller() {
+    log_step "Ensuring Argo Workflows is installed in Minikube"
+    bash "$ROOT_DIR/scripts/ensure_argo_workflows.sh" --namespace "$ARGO_NAMESPACE"
 }
 
 load_image_into_minikube() {
-    if [ "$MINIKUBE_IMAGE_LOAD" != true ]; then
-        return
-    fi
     if ! command -v minikube >/dev/null 2>&1; then
-        log_warn "minikube command not found; skipping image load into cluster"
+        log_warn "minikube command not found; skipping image load"
         return
     fi
-
-    local loaded=false
-
-    if command -v podman >/dev/null 2>&1 && podman image exists "$IMAGE" >/dev/null 2>&1; then
-        log_step "Loading image $IMAGE from podman into Minikube profile ${MINIKUBE_PROFILE}"
-        if podman save "$IMAGE" | minikube -p "$MINIKUBE_PROFILE" image load -; then
-            loaded=true
-        else
-            log_warn "Failed to stream image from podman; will try alternative methods."
+    log_step "Loading $IMAGE into Minikube profile ${MINIKUBE_PROFILE}"
+    if minikube image load -p "$MINIKUBE_PROFILE" "$IMAGE" >/dev/null 2>&1; then
+        return
+    fi
+    log_warn "minikube image load failed; falling back to streaming the image."
+    if [[ "$CONTAINER_TOOL" == "podman" ]] && command -v podman >/dev/null 2>&1; then
+        if podman image exists "$IMAGE" >/dev/null 2>&1; then
+            if podman save "$IMAGE" | minikube -p "$MINIKUBE_PROFILE" image load -; then
+                return
+            fi
+        fi
+    elif [[ "$CONTAINER_TOOL" == "docker" ]] && command -v docker >/dev/null 2>&1; then
+        if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            if docker save "$IMAGE" | minikube -p "$MINIKUBE_PROFILE" image load -; then
+                return
+            fi
         fi
     fi
-
-    if [ "$loaded" = false ] && command -v docker >/dev/null 2>&1 && docker image inspect "$IMAGE" >/dev/null 2>&1; then
-        log_step "Loading image $IMAGE from docker into Minikube profile ${MINIKUBE_PROFILE}"
-        if docker save "$IMAGE" | minikube -p "$MINIKUBE_PROFILE" image load -; then
-            loaded=true
-        else
-            log_warn "Failed to stream image from docker; will try building inside Minikube."
-        fi
-    fi
-
-    if [ "$loaded" = false ]; then
-        log_step "Building image $IMAGE directly inside Minikube profile ${MINIKUBE_PROFILE}"
-        if ! minikube -p "$MINIKUBE_PROFILE" image build -t "$IMAGE" "$ROOT_DIR"; then
-            log_warn "Unable to build image inside Minikube; workflows may hit ErrImagePull"
-        fi
-    fi
-
-    ensure_minikube_image_tag
+    log_warn "Unable to preload $IMAGE into Minikube; workflows may need to pull the tag manually."
 }
 
-ensure_kube_context() {
-    require_cmd kubectl
-    if ! kubectl config current-context >/dev/null 2>&1; then
-        local cfg_hint="${KUBECONFIG:-$HOME/.kube/config}"
-        log_error "kubectl cannot determine the current context."
-        log_info "Ensure your kubeconfig exists and set KUBECONFIG if needed (current hint: $cfg_hint)."
-        exit 1
-    fi
-}
+ensure_fmil
+export CGO_ENABLED=1
+export CGO_CFLAGS="-I${FMIL_HOME}/include"
+export CGO_CXXFLAGS="-I${FMIL_HOME}/include"
+export CGO_LDFLAGS="-L${FMIL_HOME}/lib"
 
-prepare_argo_environment() {
-    log_step "Ensuring Kubernetes context is active (required before touching Minikube or installing Argo)"
-    ensure_kube_context
-    log_step "Syncing custom CA certificates into Minikube so image pulls honor corporate trust settings"
-    "$ROOT_DIR/scripts/install_minikube_ca.sh"
-    log_step "Ensuring Argo Workflows controller/namespace is installed and ready"
-    "$ROOT_DIR/scripts/ensure_argo_workflows.sh"
-}
+stage_platform_resources
+build_go_binaries
+build_container_image
+install_ca_into_minikube
+ensure_argo_controller
+load_image_into_minikube
 
-if [ "$BUILD_COMPOSE" = true ] || [ "$COPY_FMU" = true ]; then
-    require_cmd docker
-fi
-
-have_fmil() {
-    [ -d "$FMIL_HOME/include/FMI" ] && [ -f "$FMIL_HOME/lib/libfmilib_shared.so" ]
-}
-
-if ! have_fmil; then
-    log_step "Installing FMIL toolchain (required for Go FMI bindings at $FMIL_HOME)"
-    bash "$ROOT_DIR/scripts/install_fmil.sh" --prefix "$FMIL_HOME"
-fi
-
-export CGO_ENABLED="${CGO_ENABLED:-1}"
-export CGO_CFLAGS="${CGO_CFLAGS:--I${FMIL_HOME}/include}"
-export CGO_CXXFLAGS="${CGO_CXXFLAGS:--I${FMIL_HOME}/include}"
-export CGO_LDFLAGS="${CGO_LDFLAGS:--L${FMIL_HOME}/lib}"
-
-if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
-    if [ "$BUILD_COMPOSE" = true ] || [ "$COPY_FMU" = true ]; then
-        DOCKER_ARGS=(orchestrator)
-    fi
-fi
-
-if [ ${#INSTALL_ARGS[@]} -eq 0 ]; then
-    log_stream_cmd "Staging platform resources (preparing pythonfmu caches, certificates, etc.)" \
-        "$ROOT_DIR/scripts/install_platform_resources.py"
-else
-    log_stream_cmd "Staging platform resources with extra args (${INSTALL_ARGS[*]})" \
-        "$ROOT_DIR/scripts/install_platform_resources.py" "${INSTALL_ARGS[@]}"
-fi
-
-log_step "Building Go workflow binaries (runner + service used by every container)"
-(
-    cd "$ROOT_DIR/orchestrator/service"
-    GO_ENV=(GOOS= GOARCH= CGO_ENABLED=1 GOCACHE="${GOCACHE:-/tmp/go-build}" GOMODCACHE="${GOMODCACHE:-/tmp/go-mod}")
-    run_with_log_tail env "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
-    run_with_log_tail env "${GO_ENV[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
-)
-
-if [ "$BUILD_COMPOSE" = true ]; then
-    if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
-        log_stream_cmd "Building docker compose targets (produces container image consumed by workflows)" docker compose build
-    else
-        log_stream_cmd "Building docker compose targets (${DOCKER_ARGS[*]}) (ensures requested services are rebuilt)" docker compose build "${DOCKER_ARGS[@]}"
-    fi
-fi
-
-if [ "$PREPARE_ARGO_ENV" = true ]; then
-    prepare_argo_environment
-fi
-
-if [ "$PREPARE_ARGO_ENV" = true ]; then
-    load_image_into_minikube
-fi
-
-if $COPY_FMU; then
-    log_step "Determining image for FMU extraction"
-    IMAGE_NAME=$(docker compose config --images "${DOCKER_ARGS[@]}") || IMAGE_NAME=""
-    IMAGE_NAME=$(echo "$IMAGE_NAME" | head -n 1)
-    if [ -z "$IMAGE_NAME" ]; then
-        log_warn "Unable to determine image name; skipping FMU copy"
-    else
-        TMP_CONTAINER="cads-fmi-fmu-extract-$$"
-        TMP_DIR=$(mktemp -d)
-        log_step "Copying FMUs from image ($IMAGE_NAME) to host"
-        CONTAINER_ID=$(docker create --name "$TMP_CONTAINER" "$IMAGE_NAME")
-        docker cp "$CONTAINER_ID":/app/fmu/models "$TMP_DIR"
-        docker rm "$TMP_CONTAINER" >/dev/null
-        mkdir -p fmu/models
-        find "$TMP_DIR/models" -maxdepth 1 -type f -name '*.fmu' -exec cp {} fmu/models/ \;
-        rm -rf "$TMP_DIR"
-        log_ok "FMUs copied to fmu/models"
-    fi
-fi
-
-if [ "$BUILD_LOCAL_IMAGE" = true ]; then
-    build_local_image
-fi
+log_ok "Build complete. Use ./run.sh <workflow.yaml> to submit a workflow."

@@ -3,10 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_BIN_DIR="$ROOT_DIR/.local/bin"
-export PATH="$LOCAL_BIN_DIR:$PATH"
+LOCAL_GO_BIN="$ROOT_DIR/.local/go/bin"
+export PATH="$LOCAL_GO_BIN:$LOCAL_BIN_DIR:$PATH"
 IMAGE="cads-fmi-demo:latest"
 WORKFLOW=""
-NAMESPACE="${ARGO_NAMESPACE:-argo}"
+NAMESPACE="argo"
 
 usage() {
     cat <<'USAGE'
@@ -53,10 +54,15 @@ if [[ -z "$NAMESPACE" ]]; then
     exit 1
 fi
 
-"$ROOT_DIR/scripts/generate_manifests.sh" --workflow "$WORKFLOW" --image "$IMAGE"
+bash "$ROOT_DIR/scripts/generate_manifests.sh" --workflow "$WORKFLOW" --image "$IMAGE"
 NAME="$(basename "$WORKFLOW")"
 NAME="${NAME%.*}"
 ARGO_FILE="$ROOT_DIR/deploy/argo/${NAME}-workflow.yaml"
+PVC_FILE="$ROOT_DIR/deploy/storage/data-pvc.yaml"
+
+if [[ -f "$PVC_FILE" ]]; then
+    kubectl apply -f "$PVC_FILE" >/dev/null
+fi
 
 sanitize_resource_name() {
     local value="$1"

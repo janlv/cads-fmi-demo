@@ -2,22 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-K8S_DIR="$ROOT_DIR/deploy/k8s"
 ARGO_DIR="$ROOT_DIR/deploy/argo"
+STORAGE_DIR="$ROOT_DIR/deploy/storage"
 IMAGE="cads-fmi-demo:latest"
 WORKFLOW=""
-SERVICE_ACCOUNT="${ARGO_SERVICE_ACCOUNT:-argo}"
-DATA_MOUNT_PATH="${DATA_MOUNT_PATH:-/app/data}"
-DATA_PVC_NAME="${DATA_PVC_NAME:-cads-data-pvc}"
-DATA_PVC_SIZE="${DATA_PVC_SIZE:-1Gi}"
-DATA_STORAGE_CLASS="${DATA_STORAGE_CLASS:-}"
+SERVICE_ACCOUNT="argo"
+DATA_MOUNT_PATH="/app/data"
+DATA_PVC_NAME="cads-data-pvc"
+DATA_PVC_SIZE="1Gi"
 
 usage() {
     cat <<'USAGE'
 Usage: scripts/generate_manifests.sh --workflow workflows/example.yaml [--image image:tag]
 
-Generates Kubernetes Job and Argo Workflow manifests that run the specified workflow
-using the container built for this repo.
+Generates the Argo Workflow and PVC manifests for the given workflow file.
 USAGE
 }
 
@@ -54,57 +52,18 @@ if [[ ! -f "$ROOT_DIR/$WORKFLOW" ]]; then
     exit 1
 fi
 
-mkdir -p "$K8S_DIR" "$ARGO_DIR"
-BASENAME=$(basename "$WORKFLOW")
+mkdir -p "$ARGO_DIR" "$STORAGE_DIR"
+BASENAME="$(basename "$WORKFLOW")"
 NAME="${BASENAME%.*}"
+SANITIZED_NAME="$(echo "cads-${NAME}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9.-' '-')"
+RESOURCE_NAME="${SANITIZED_NAME#-}"
+RESOURCE_NAME="${RESOURCE_NAME%-}"
+if [[ -z "$RESOURCE_NAME" ]]; then
+    RESOURCE_NAME="cads-workflow"
+fi
 
-sanitize_resource_name() {
-    local value="$1"
-    value="${value,,}"
-    value="$(echo "$value" | tr -c 'a-z0-9.-' '-')"
-    while [[ "$value" =~ ^[^a-z0-9]+ ]]; do
-        value="${value#?}"
-    done
-    while [[ "$value" =~ [^a-z0-9]+$ ]]; do
-        value="${value%?}"
-    done
-    if [[ -z "$value" ]]; then
-        value="workflow"
-    fi
-    printf '%s\n' "$value"
-}
-
-SANITIZED_NAME="$(sanitize_resource_name "$NAME")"
-RESOURCE_NAME="cads-${SANITIZED_NAME}"
-K8S_OUT="$K8S_DIR/${NAME}-job.yaml"
 ARGO_OUT="$ARGO_DIR/${NAME}-workflow.yaml"
-STORAGE_DIR="$ROOT_DIR/deploy/storage"
-mkdir -p "$STORAGE_DIR"
 PVC_OUT="$STORAGE_DIR/data-pvc.yaml"
-
-cat >"$K8S_OUT" <<YAML
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: ${RESOURCE_NAME}
-spec:
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: cads-workflow
-          image: ${IMAGE}
-          imagePullPolicy: IfNotPresent
-          command: ["/app/bin/cads-workflow-runner"]
-          args: ["--workflow", "${WORKFLOW}"]
-          volumeMounts:
-            - name: workflow-data
-              mountPath: ${DATA_MOUNT_PATH}
-      volumes:
-        - name: workflow-data
-          persistentVolumeClaim:
-            claimName: ${DATA_PVC_NAME}
-YAML
 
 cat >"$ARGO_OUT" <<YAML
 apiVersion: argoproj.io/v1alpha1
@@ -130,8 +89,7 @@ spec:
             mountPath: ${DATA_MOUNT_PATH}
 YAML
 
-{
-cat <<YAML
+cat >"$PVC_OUT" <<YAML
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -140,19 +98,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-YAML
-if [[ -n "$DATA_STORAGE_CLASS" ]]; then
-cat <<YAML
-  storageClassName: ${DATA_STORAGE_CLASS}
-YAML
-fi
-cat <<YAML
   resources:
     requests:
       storage: ${DATA_PVC_SIZE}
 YAML
-} >"$PVC_OUT"
 
-echo "[manifests] Kubernetes: $K8S_OUT"
-echo "[manifests] Argo:        $ARGO_OUT"
-echo "[manifests] Data PVC:    $PVC_OUT"
+echo "[manifests] Argo:     $ARGO_OUT"
+echo "[manifests] Data PVC: $PVC_OUT"

@@ -27,32 +27,23 @@ them under `fmu/models/`) and YAML workflows you define under `workflows/`.
 
 ### Step 0 – Prepare the environment
 
-Bootstrap the host (system packages, Go ≥ 1.22, FMIL) via:
+Provision the host (Debian/Ubuntu) with the tooling used by the demo:
 
 ```bash
-./prepare.sh --platform linux               # default local scope (FMIL/.local, CLI tools under ./.local/bin)
-# add --podman (default) or --docker to pick the Minikube driver explicitly
-# or install under /usr/local (requires sudo):
-./prepare.sh --platform linux --global
+./prepare.sh              # installs packages + CLIs under ./.local and starts Minikube
 ```
 
-On macOS the script provisions the package list but leaves Go/FM IL setup manual.
-See [PREPARE.md](PREPARE.md) for overrides or manual instructions.
+The script targets Linux hosts, installs Podman plus helper packages via `apt`,
+downloads Go/Argo/kubectl/Minikube into `./.local/`, and starts a rootless
+Minikube profile named `minikube`. Place any corporate TLS certificates under
+`scripts/certs/` so future builds sync them into the cluster. See
+[PREPARE.md](PREPARE.md) for manual steps if you need to adapt the flow.
+Because this is a self-contained demo, Minikube is always started/reset by the
+scripts so every run begins from a known-good cluster.
 
-Once preparation succeeds, run:
-
-```bash
-./build.sh            # installs FMIL under ./.local if missing and builds Go binaries
-./build.sh --fmil-home "$HOME/fmil"   # optional: reuse an existing FMIL install
-```
-
-`build.sh` installs FMIL when needed, exports the CGO variables, and compiles the
-Go workflow binaries into `bin/`. Details live in [DEV.md](DEV.md). The helper
-scripts install the required CLIs (`argo`, `kubectl`, `minikube`) under
-`./.local/bin` in local mode and automatically prepend that directory to `PATH`.
-`prepare.sh` also boots a local Minikube cluster (driver `docker`) so `kubectl`
-and Argo commands have a ready kubecontext; set `MINIKUBE_AUTO_START=false` if
-you plan to target an existing cluster instead.
+The helper scripts automatically prepend `./.local/bin` and `./.local/go/bin` to
+`PATH` so the freshly installed CLIs are available during the rest of the
+workflow.
 
 ### Step 1 – Build the FMUs (Python edge)
 
@@ -70,10 +61,6 @@ available when the FMUs are loaded, so the exporter must provide those symbols
 itself. The patch step runs automatically every time the virtualenv (or Docker
 image) installs pythonfmu.
 
-Most helper scripts display long-running sub-commands in a compact “tail
-window”. Pass `--max-lines 0` to print every line or tweak the rolling window size
-(`6` by default).
-
 External FMUs (for example `fmu/models/CITest.fmu` exported from Simulink) are
 simply copied into `fmu/models/`.
 
@@ -89,62 +76,28 @@ Once the workflow matches your scenario, you are ready to run it in the containe
 
 ### Step 3 – Run the containerized workflow (Kubernetes + Argo)
 
-Run `build.sh` first so the Go binaries, container image, and cluster prerequisites are ready.
-Use `--mode argo` (or omit `--mode`, which defaults to the same behavior) to build
-the Docker Compose target, sync Minikube CA certificates, load the resulting image into
-the Minikube profile, and ensure the Argo Workflows controller is installed. Run `build.sh --mode local --image ...` separately when you also
-need the Podman image for `run.sh --mode local`. Then use `run.sh` in Argo mode—which automatically schedules pods on Kubernetes
-(Argo sits on top of K8s, so you get both layers with a single command):
+Run `build.sh` to (re)build the image, sync CA certificates into Minikube,
+ensure the Argo controller exists, and load the freshly built image into the
+cluster. Then submit a workflow via `run.sh`:
 
 ```bash
-./build.sh --mode argo                  # or just ./build.sh
-./run.sh workflows/python_chain.yaml    # defaults to --mode argo
+./build.sh
+./run.sh workflows/python_chain.yaml
 ```
 
-`run.sh --mode argo` assumes you have executed `build.sh --mode argo` since the last time
-you changed the Kubernetes cluster, CA certificates, or Argo installation.
+Use `--image` on either script when you want a different tag and
+`--fmil-home` on `build.sh` to reuse an existing FMIL installation. `run.sh`
+verifies that the current kube-context is reachable, applies the PVC manifest
+generated earlier, and submits the workflow through the Argo CLI. Workflow pods
+store their `/app/data` contents inside the PVC (`cads-data-pvc` in the `argo`
+namespace) so runs remain durable across executions.
 
-Optional Podman image for local runs:
-
-```bash
-./build.sh --mode local --image cads-fmi-demo:latest
-```
-
-`run.sh` still validates that the Kubernetes client is configured right before submission and
-applies the data PVC manifest so `/app/data` remains durable between runs. Finished workflows
-automatically copy the contents of `/app/data` from the PVC into `data/run-artifacts/<run-id>`
-on the host (override the destination via `DATA_COLLECTION_PATH`). Customize the build/run
-prep with:
-
-- `ARGO_NAMESPACE=<ns>` – install/watch Argo Workflows in a different namespace.
-- `ARGO_AUTO_INSTALL=false` – skip the automatic Argo install (the build will stop if the CRD is missing).
-- `ARGO_MANIFEST_URL=<url>` – point at a pinned/custom Argo manifest.
-- `MINIKUBE_EXTRA_CA_CERT=/path/to/proxy-ca.crt` – add an extra CA file (with optional
-  `MINIKUBE_EXTRA_CA_NAME`) to Minikube’s trust store before workloads run. The helper
-  also installs every `.crt`/`.pem` under `scripts/certs/` by default; override that directory
-  with `MINIKUBE_EXTRA_CA_CERTS_DIR`.
-- `MINIKUBE_IMAGE_LOAD=false` – skip automatically loading the freshly built image into Minikube.
-- `DATA_PVC_NAME`, `DATA_PVC_SIZE`, `DATA_COLLECTION_PATH`, `DATA_MOUNT_PATH` – control the persistent
-  volume claim name/size and where copied artifacts are stored on the host.
-
-Under the hood `run.sh` generates the manifests, submits the workflow via the
-Argo CLI, and Argo starts the pods on your cluster. Use `--mode k8s` if you want
-to see the raw Kubernetes Job instead, or `--mode local` for a Podman/Docker
-smoke test. In every case the same container image and workflow YAML are used.
-
-Local Podman/Docker smoke test (optional):
-
-```bash
-./build.sh --mode local --image cads-fmi-demo:latest --max-lines 0
-./run.sh workflows/python_chain.yaml --mode local --max-lines 0
-```
-
-If you prefer to drive Podman manually:
+For manual container testing you can still drive Podman or Docker yourself:
 
 ```bash
 podman build -t cads-fmi-demo .
 podman run --rm -v "$(pwd)/data:/app/data" cads-fmi-demo \
-    /app/bin/cads-workflow-runner --workflow workflows/citest.yaml
+    /app/bin/cads-workflow-runner --workflow workflows/python_chain.yaml
 ```
 
 Inside the container:
@@ -153,31 +106,10 @@ Inside the container:
 - `/app/workflows/` (or mounted files) supply the YAML definitions.
 - `/app/bin/cads-workflow-runner` executes the workflow; `/app/bin/cads-workflow-service`
   exposes the HTTP API. Both use the same FMIL-backed Go engine, so running in
-  Podman, minikube, or Argo only swaps the scheduler—not the code.
-- `./scripts/generate_manifests.sh` writes the rendered YAML to `deploy/k8s/` and
-  `deploy/argo/` so you can inspect or tweak them before applying.
-
----
-
-## Optional local smoke tests
-
-Quick checks for local development:
-
-```bash
-# CLI runner
-./cads-workflow-runner --workflow workflows/python_chain.yaml
-
-# HTTP service
-./cads-workflow-service --serve --addr :8080 &
-curl -X POST localhost:8080/run \
-     -H 'Content-Type: application/json' \
-     -d '{"workflow":"workflows/python_chain.yaml"}'
-```
-
-The CLI is handy for verifying workflows on the host; the service exercises the
-REST interface. Use `--json-output` when you only need the final payload.
-
----
+  Podman, Minikube, or Argo only swaps the scheduler—not the code.
+- `./scripts/generate_manifests.sh` writes the rendered Argo workflow and PVC
+  definitions to `deploy/argo/` and `deploy/storage/` so you can inspect or tweak
+  them before applying.
 
 ## Workflow format
 

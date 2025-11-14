@@ -54,9 +54,6 @@ It creates a virtualenv inside `create_fmu/.venv`, installs
 `create_fmu/requirements.txt`, and runs `pythonfmu` to produce the demo
 `Producer.fmu` and `Consumer.fmu` files under `fmu/models/`.
 
-Helper scripts stream the last few log lines by default; pass `--max-lines 0`
-to print the full command output instead of the rolling “tail window”.
-
 Because the runtime FMU executor is pure Go/FM IL (no embedded Python
 interpreter), the FMUs must include exporter binaries that link against
 `libpython`. Upstream `pythonfmu` builds its exporter as a regular CPython
@@ -78,14 +75,13 @@ Tips:
 
 ## Container image tweaks
 
-- `docker compose build` (or `podman`) uses the local sources plus the binaries
-  produced by `build.sh`. Rebuild whenever you touch the Go code or FMUs.
-- `./build.sh --mode local --image cads-fmi-demo:latest` builds only the Podman image
-  consumed by `run.sh --mode local`. Run `./build.sh --mode argo` (or omit `--mode`)
-  when you need the Docker/Compose image for Kubernetes/Argo flows—the same command now
-  also syncs Minikube CA certs, ensures the Argo controller is installed, and loads the
-  freshly built image into the Minikube profile so workloads can pull it. Override
-  `--image` if you use a different tag (the loader honors that tag as well).
+- `build.sh` compiles the Go binaries, builds the container image (preferring
+  Podman but falling back to Docker), syncs custom CA certificates into
+  Minikube, installs Argo if missing, and loads the freshly built image into
+  the active Minikube profile. Re-run it whenever you change the Go code, FMUs,
+  or Dockerfile contents.
+- Override `--image` to push/tag alternative names and `--fmil-home` to reuse an
+  existing FMIL installation rather than installing under `./.local/`.
 - To debug inside the container, start an interactive shell:
 
   ```bash
@@ -99,14 +95,12 @@ Tips:
 ## Kubernetes / Argo manifests
 
 - `scripts/generate_manifests.sh --workflow workflows/foo.yaml --image cads-fmi-demo:latest`
-  renders the K8s Job and Argo Workflow YAML into `deploy/k8s/` and `deploy/argo/`.
-- `scripts/run_k8s_workflow.sh --workflow workflows/foo.yaml` runs the generator
-  and applies the job via `kubectl`. Tail logs with `kubectl logs -f job/...`.
+  renders the Argo Workflow and data PVC manifests into `deploy/argo/` and
+  `deploy/storage/`.
 - `scripts/run_argo_workflow.sh --workflow workflows/foo.yaml` renders and submits
-  the workflow via `argo submit`, ensures the Argo Workflows CRD/controller are installed
-  (unless `ARGO_AUTO_INSTALL=false`), and then follows it with `argo watch`.
+  the workflow via `argo submit`, creates the PVC if needed, and shows progress
+  with `argo watch`.
 - Customize the manifests (additional env vars, volumes, secrets) by editing the
   generated files before applying or by extending the generator script.
-- `run.sh workflows/foo.yaml --mode k8s|argo|local` validates the environment and
-  invokes the corresponding helper. For `--mode local` run `build.sh --mode local`
-  first so the Podman image already exists.
+- `run.sh workflows/foo.yaml` validates the kube context, applies the PVC manifest,
+  and delegates to `scripts/run_argo_workflow.sh`.
