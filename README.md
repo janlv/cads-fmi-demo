@@ -1,9 +1,15 @@
 # CADS FMI Workflow Demo
 
 This repository showcases how CADS can separate **FMU creation** from the
-**workflow runtime** while remaining friendly to off-the-shelf tooling. Bring
-your own FMUs and declarative workflow definitions, then let the Go/FMIL runner
-handle orchestration:
+**workflow runtime** while remaining friendly to off-the-shelf tooling. Your
+only inputs are FMI **Co-Simulation** FMUs (for example a Simulink-exported
+`CITest.fmu`) and declarative workflow descriptions written as YAML files.
+Drop FMUs under `fmu/models/`, author workflows under `workflows/`, and let the
+Go/FMIL runner orchestrate the pipeline. For demonstration purposes this repo
+also ships a native Python FMU builder so you can generate sample FMUs without
+leaving the project.
+
+The key directories are:
 
 - `create_fmu/` contains everything needed to build the Python demo FMUs with
   `pythonfmu`. The resulting `.fmu` files live alongside the rest of the FMUs in
@@ -18,8 +24,8 @@ handle orchestration:
   lives solely on the FMU-generation edge.
 
 The remaining Docker/compose helpers are kept for parity with previous demos,
-but the focus is now on workflow-driven execution using FMUs you provide (drop
-them under `fmu/models/`) and YAML workflows you define under `workflows/`.
+but the focus is now on workflow-driven execution using FMUs you supply and YAML
+workflows you define.
 
 ---
 
@@ -176,3 +182,21 @@ can be checked in or mounted during container runs without tweaking the YAML.
 
 Future work focuses on richer deployment examples (multi-step Argo DAGs, Helm
 charts, etc.) now that the workflow runtime is fully native Go + FMIL.***
+
+## Documentation map
+
+- `PREPARE.md` – manual breakdown of what `prepare.sh` does so you can adapt it
+  to bespoke hosts or reuse portions (certificate handling, Minikube bootstrap,
+  CLI installs).
+- `BUILD.md` – detailed description of the container build, where FMUs and
+  workflows land inside the image, and the optional flags exposed by `build.sh`.
+- `RUN.md` – how to submit workflows once an image exists, covering Argo,
+  Podman, and direct CLI invocation, plus the expected data directories.
+- `TROUBLESHOOTING.md` – known failure modes (Minikube resets, FMIL linkage,
+  PVC provisioning) with diagnostic steps and commands.
+- `DEV.md` – contributor-focused notes: Go module layout, lint/test targets, and
+  how to iterate on the orchestrator locally.
+- `create_fmu/README.md` – specifics of the Python demo FMUs, exporter patches,
+  and how to substitute your own models.
+- `orchestrator/service/README.md` – details about the Go services and CLIs,
+  configuration knobs, and runtime environment variables.
