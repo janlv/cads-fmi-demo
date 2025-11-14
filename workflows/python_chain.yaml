@@ -5,7 +5,7 @@ steps:
     stop_time: 1.0
     step_size: 1.0
     start_values:
-      num_points: 10000
+      num_points: 200001
     outputs:
       - mean
       - std

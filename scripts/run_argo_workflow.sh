@@ -54,16 +54,6 @@ if [[ -z "$NAMESPACE" ]]; then
     exit 1
 fi
 
-bash "$ROOT_DIR/scripts/generate_manifests.sh" --workflow "$WORKFLOW" --image "$IMAGE"
-NAME="$(basename "$WORKFLOW")"
-NAME="${NAME%.*}"
-ARGO_FILE="$ROOT_DIR/deploy/argo/${NAME}-workflow.yaml"
-PVC_FILE="$ROOT_DIR/deploy/storage/data-pvc.yaml"
-
-if [[ -f "$PVC_FILE" ]]; then
-    kubectl apply -f "$PVC_FILE" >/dev/null
-fi
-
 sanitize_resource_name() {
     local value="$1"
     value="${value,,}"
@@ -79,6 +69,24 @@ sanitize_resource_name() {
     fi
     printf '%s\n' "$value"
 }
+
+NAME="$(basename "$WORKFLOW")"
+NAME="${NAME%.*}"
+SANITIZED_NAME="$(sanitize_resource_name "$NAME")"
+WORKFLOW_CM="cads-${SANITIZED_NAME}-spec"
+
+kubectl delete configmap "$WORKFLOW_CM" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+kubectl create configmap "$WORKFLOW_CM" -n "$NAMESPACE" --from-file=workflow="$ROOT_DIR/$WORKFLOW"
+
+bash "$ROOT_DIR/scripts/generate_manifests.sh" --workflow "$WORKFLOW" --image "$IMAGE" --workflow-configmap "$WORKFLOW_CM"
+NAME="$(basename "$WORKFLOW")"
+NAME="${NAME%.*}"
+ARGO_FILE="$ROOT_DIR/deploy/argo/${NAME}-workflow.yaml"
+PVC_FILE="$ROOT_DIR/deploy/storage/data-pvc.yaml"
+
+if [[ -f "$PVC_FILE" ]]; then
+    kubectl apply -f "$PVC_FILE" >/dev/null
+fi
 
 RESOURCE_NAME="cads-$(sanitize_resource_name "$NAME")"
 

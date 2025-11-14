@@ -78,7 +78,9 @@ Once the workflow matches your scenario, you are ready to run it in the containe
 
 Run `build.sh` to (re)build the image, sync CA certificates into Minikube,
 ensure the Argo controller exists, and load the freshly built image into the
-cluster. Then submit a workflow via `run.sh`:
+cluster. Then submit a workflow via `run.sh`, which automatically packages the
+selected workflow YAML into a ConfigMap so edits take effect without rebuilding
+the container:
 
 ```bash
 ./build.sh
