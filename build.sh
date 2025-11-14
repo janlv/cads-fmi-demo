@@ -216,11 +216,11 @@ ensure_kube_context() {
 }
 
 prepare_argo_environment() {
-    log_step "Ensuring Kubernetes context is active"
+    log_step "Ensuring Kubernetes context is active (required before touching Minikube or installing Argo)"
     ensure_kube_context
-    log_step "Syncing custom CA certificates into Minikube (if configured)"
+    log_step "Syncing custom CA certificates into Minikube so image pulls honor corporate trust settings"
     "$ROOT_DIR/scripts/install_minikube_ca.sh"
-    log_step "Ensuring Argo Workflows controller is installed"
+    log_step "Ensuring Argo Workflows controller/namespace is installed and ready"
     "$ROOT_DIR/scripts/ensure_argo_workflows.sh"
 }
 
@@ -233,7 +233,7 @@ have_fmil() {
 }
 
 if ! have_fmil; then
-    log_step "FMIL not found under \$FMIL_HOME ($FMIL_HOME); installing..."
+    log_step "Installing FMIL toolchain (required for Go FMI bindings at $FMIL_HOME)"
     bash "$ROOT_DIR/scripts/install_fmil.sh" --prefix "$FMIL_HOME"
 fi
 
@@ -249,14 +249,14 @@ if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
 fi
 
 if [ ${#INSTALL_ARGS[@]} -eq 0 ]; then
-    log_stream_cmd "Staging platform resources (scripts/install_platform_resources.py)" \
+    log_stream_cmd "Staging platform resources (preparing pythonfmu caches, certificates, etc.)" \
         "$ROOT_DIR/scripts/install_platform_resources.py"
 else
-    log_stream_cmd "Staging platform resources (scripts/install_platform_resources.py ${INSTALL_ARGS[*]})" \
+    log_stream_cmd "Staging platform resources with extra args (${INSTALL_ARGS[*]})" \
         "$ROOT_DIR/scripts/install_platform_resources.py" "${INSTALL_ARGS[@]}"
 fi
 
-log_step "Building Go workflow binaries"
+log_step "Building Go workflow binaries (runner + service used by every container)"
 (
     cd "$ROOT_DIR/orchestrator/service"
     GO_ENV=(GOOS= GOARCH= CGO_ENABLED=1 GOCACHE="${GOCACHE:-/tmp/go-build}" GOMODCACHE="${GOMODCACHE:-/tmp/go-mod}")
@@ -266,9 +266,9 @@ log_step "Building Go workflow binaries"
 
 if [ "$BUILD_COMPOSE" = true ]; then
     if [ ${#DOCKER_ARGS[@]} -eq 0 ]; then
-        log_stream_cmd "Building docker compose targets" docker compose build
+        log_stream_cmd "Building docker compose targets (produces container image consumed by workflows)" docker compose build
     else
-        log_stream_cmd "Building docker compose targets (${DOCKER_ARGS[*]})" docker compose build "${DOCKER_ARGS[@]}"
+        log_stream_cmd "Building docker compose targets (${DOCKER_ARGS[*]}) (ensures requested services are rebuilt)" docker compose build "${DOCKER_ARGS[@]}"
     fi
 fi
 

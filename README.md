@@ -110,11 +110,11 @@ Optional Podman image for local runs:
 ./build.sh --mode local --image cads-fmi-demo:latest
 ```
 
-`run.sh` still validates that the Kubernetes client is configured right before submission.
-The Minikube cluster started by `prepare.sh` exposes a ready context, but if you disable it
-(or want to point somewhere else) ensure `kubectl config current-context` succeeds or set
-`KUBECONFIG`. The heavier prep (Minikube CA sync plus Argo controller install/upgrade)
-now happens in `build.sh --mode argo`. Customize that behavior with:
+`run.sh` still validates that the Kubernetes client is configured right before submission and
+applies the data PVC manifest so `/app/data` remains durable between runs. Finished workflows
+automatically copy the contents of `/app/data` from the PVC into `data/run-artifacts/<run-id>`
+on the host (override the destination via `DATA_COLLECTION_PATH`). Customize the build/run
+prep with:
 
 - `ARGO_NAMESPACE=<ns>` – install/watch Argo Workflows in a different namespace.
 - `ARGO_AUTO_INSTALL=false` – skip the automatic Argo install (the build will stop if the CRD is missing).
@@ -124,6 +124,8 @@ now happens in `build.sh --mode argo`. Customize that behavior with:
   also installs every `.crt`/`.pem` under `scripts/certs/` by default; override that directory
   with `MINIKUBE_EXTRA_CA_CERTS_DIR`.
 - `MINIKUBE_IMAGE_LOAD=false` – skip automatically loading the freshly built image into Minikube.
+- `DATA_PVC_NAME`, `DATA_PVC_SIZE`, `DATA_COLLECTION_PATH`, `DATA_MOUNT_PATH` – control the persistent
+  volume claim name/size and where copied artifacts are stored on the host.
 
 Under the hood `run.sh` generates the manifests, submits the workflow via the
 Argo CLI, and Argo starts the pods on your cluster. Use `--mode k8s` if you want

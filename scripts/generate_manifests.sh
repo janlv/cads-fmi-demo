@@ -7,6 +7,10 @@ ARGO_DIR="$ROOT_DIR/deploy/argo"
 IMAGE="cads-fmi-demo:latest"
 WORKFLOW=""
 SERVICE_ACCOUNT="${ARGO_SERVICE_ACCOUNT:-argo}"
+DATA_MOUNT_PATH="${DATA_MOUNT_PATH:-/app/data}"
+DATA_PVC_NAME="${DATA_PVC_NAME:-cads-data-pvc}"
+DATA_PVC_SIZE="${DATA_PVC_SIZE:-1Gi}"
+DATA_STORAGE_CLASS="${DATA_STORAGE_CLASS:-}"
 
 usage() {
     cat <<'USAGE'
@@ -74,6 +78,9 @@ SANITIZED_NAME="$(sanitize_resource_name "$NAME")"
 RESOURCE_NAME="cads-${SANITIZED_NAME}"
 K8S_OUT="$K8S_DIR/${NAME}-job.yaml"
 ARGO_OUT="$ARGO_DIR/${NAME}-workflow.yaml"
+STORAGE_DIR="$ROOT_DIR/deploy/storage"
+mkdir -p "$STORAGE_DIR"
+PVC_OUT="$STORAGE_DIR/data-pvc.yaml"
 
 cat >"$K8S_OUT" <<YAML
 apiVersion: batch/v1
@@ -90,6 +97,13 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/app/bin/cads-workflow-runner"]
           args: ["--workflow", "${WORKFLOW}"]
+          volumeMounts:
+            - name: workflow-data
+              mountPath: ${DATA_MOUNT_PATH}
+      volumes:
+        - name: workflow-data
+          persistentVolumeClaim:
+            claimName: ${DATA_PVC_NAME}
 YAML
 
 cat >"$ARGO_OUT" <<YAML
@@ -99,6 +113,10 @@ metadata:
   name: ${RESOURCE_NAME}
 spec:
   serviceAccountName: ${SERVICE_ACCOUNT}
+  volumes:
+    - name: workflow-data
+      persistentVolumeClaim:
+        claimName: ${DATA_PVC_NAME}
   entrypoint: run-workflow
   templates:
     - name: run-workflow
@@ -107,7 +125,34 @@ spec:
         imagePullPolicy: IfNotPresent
         command: ["/app/bin/cads-workflow-runner"]
         args: ["--workflow", "${WORKFLOW}"]
+        volumeMounts:
+          - name: workflow-data
+            mountPath: ${DATA_MOUNT_PATH}
 YAML
+
+{
+cat <<YAML
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${DATA_PVC_NAME}
+  namespace: argo
+spec:
+  accessModes:
+    - ReadWriteOnce
+YAML
+if [[ -n "$DATA_STORAGE_CLASS" ]]; then
+cat <<YAML
+  storageClassName: ${DATA_STORAGE_CLASS}
+YAML
+fi
+cat <<YAML
+  resources:
+    requests:
+      storage: ${DATA_PVC_SIZE}
+YAML
+} >"$PVC_OUT"
 
 echo "[manifests] Kubernetes: $K8S_OUT"
 echo "[manifests] Argo:        $ARGO_OUT"
+echo "[manifests] Data PVC:    $PVC_OUT"

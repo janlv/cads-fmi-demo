@@ -15,6 +15,13 @@ WORKFLOW=""
 IMAGE="cads-fmi-demo:latest"
 MODE=""
 LOG_MAX_LINES=""
+DATA_PVC_MANIFEST="${DATA_PVC_MANIFEST:-$ROOT_DIR/deploy/storage/data-pvc.yaml}"
+DATA_PVC_NAME="${DATA_PVC_NAME:-cads-data-pvc}"
+DATA_COLLECTION_PATH="${DATA_COLLECTION_PATH:-$ROOT_DIR/data/run-artifacts}"
+DATA_MOUNT_PATH="${DATA_MOUNT_PATH:-/app/data}"
+DATA_PVC_HELPER_IMAGE="${DATA_PVC_HELPER_IMAGE:-busybox:1.36}"
+ARGO_NAMESPACE="${ARGO_NAMESPACE:-argo}"
+DATA_PVC_MANIFEST="${DATA_PVC_MANIFEST:-$ROOT_DIR/deploy/storage/data-pvc.yaml}"
 
 require_cmd() {
     local name="$1"
@@ -32,6 +39,65 @@ ensure_kube_context() {
         log_info "Ensure your kubeconfig exists and set KUBECONFIG if needed (current hint: $cfg_hint)."
         exit 1
     fi
+}
+
+ensure_data_pvc() {
+    if [[ ! -f "$DATA_PVC_MANIFEST" ]]; then
+        return
+    fi
+    log_step "Ensuring workflow data PVC exists (${DATA_PVC_MANIFEST})"
+    kubectl apply -f "$DATA_PVC_MANIFEST"
+}
+
+copy_data_from_pvc() {
+    if [[ -z "$DATA_PVC_NAME" ]]; then
+        return
+    fi
+    local helper="cads-data-copy-$(date +%s)"
+    local manifest
+    manifest=$(cat <<YAML
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${helper}
+  namespace: ${ARGO_NAMESPACE}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: extractor
+      image: ${DATA_PVC_HELPER_IMAGE}
+      command: ["sleep", "300"]
+      volumeMounts:
+        - name: workflow-data
+          mountPath: /data
+  volumes:
+    - name: workflow-data
+      persistentVolumeClaim:
+        claimName: ${DATA_PVC_NAME}
+YAML
+)
+    echo "$manifest" | kubectl apply -f - >/dev/null
+    if ! kubectl wait --for=condition=Ready "pod/${helper}" -n "$ARGO_NAMESPACE" --timeout=60s >/dev/null 2>&1; then
+        log_warn "Data helper pod ${helper} did not become ready; skipping artifact copy."
+        kubectl delete pod "$helper" -n "$ARGO_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+        return
+    fi
+    local workflow_label
+    workflow_label="$(basename "$WORKFLOW")"
+    workflow_label="${workflow_label%.*}"
+    local dest_root="$DATA_COLLECTION_PATH"
+    mkdir -p "$dest_root"
+    local dest="$dest_root/${workflow_label}-$(date +%Y%m%d%H%M%S)"
+    rm -rf "$dest"
+    mkdir -p "$dest"
+    log_step "Copying workflow data from PVC ${DATA_PVC_NAME} via helper pod ${helper}"
+    if kubectl cp -n "$ARGO_NAMESPACE" "${helper}:/data/." "$dest" >/dev/null 2>&1; then
+        log_ok "Workflow data stored under ${dest}"
+    else
+        log_warn "Unable to copy workflow data from PVC ${DATA_PVC_NAME}; data may still reside in the claim."
+        rm -rf "$dest"
+    fi
+    kubectl delete pod "$helper" -n "$ARGO_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
 }
 
 usage() {
@@ -109,6 +175,7 @@ fi
 if [[ "$MODE" == "k8s" || "$MODE" == "argo" ]]; then
     log_step "Ensuring Kubernetes context is active"
     ensure_kube_context
+    ensure_data_pvc
 fi
 
 if [[ "$MODE" == "argo" ]]; then
@@ -124,7 +191,11 @@ case "$MODE" in
         ./scripts/run_k8s_workflow.sh --workflow "$WORKFLOW" --image "$IMAGE"
         ;;
     argo)
-        ./scripts/run_argo_workflow.sh --workflow "$WORKFLOW" --image "$IMAGE"
+        if ./scripts/run_argo_workflow.sh --workflow "$WORKFLOW" --image "$IMAGE"; then
+            copy_data_from_pvc
+        else
+            exit 1
+        fi
         ;;
     local)
         require_cmd podman
