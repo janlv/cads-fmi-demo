@@ -185,18 +185,20 @@ charts, etc.) now that the workflow runtime is fully native Go + FMIL.***
 
 ## Documentation map
 
-- `PREPARE.md` – manual breakdown of what `prepare.sh` does so you can adapt it
+- [`PREPARE.md`](PREPARE.md) – manual breakdown of what `prepare.sh` does so you can adapt it
   to bespoke hosts or reuse portions (certificate handling, Minikube bootstrap,
   CLI installs).
-- `BUILD.md` – detailed description of the container build, where FMUs and
+- [`BUILD.md`](BUILD.md) – detailed description of the container build, where FMUs and
   workflows land inside the image, and the optional flags exposed by `build.sh`.
-- `RUN.md` – how to submit workflows once an image exists, covering Argo,
+- [`RUN.md`](RUN.md) – how to submit workflows once an image exists, covering Argo,
   Podman, and direct CLI invocation, plus the expected data directories.
-- `TROUBLESHOOTING.md` – known failure modes (Minikube resets, FMIL linkage,
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) – known failure modes (Minikube resets, FMIL linkage,
   PVC provisioning) with diagnostic steps and commands.
-- `DEV.md` – contributor-focused notes: Go module layout, lint/test targets, and
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) – plain-language overview of how the CADS demo is structured
+  (also referenced as `arch.md` in some notes).
+- [`DEV.md`](DEV.md) – contributor-focused notes: Go module layout, lint/test targets, and
   how to iterate on the orchestrator locally.
-- `create_fmu/README.md` – specifics of the Python demo FMUs, exporter patches,
+- [`create_fmu/README.md`](create_fmu/README.md) – specifics of the Python demo FMUs, exporter patches,
   and how to substitute your own models.
-- `orchestrator/service/README.md` – details about the Go services and CLIs,
+- [`orchestrator/service/README.md`](orchestrator/service/README.md) – details about the Go services and CLIs,
   configuration knobs, and runtime environment variables.
