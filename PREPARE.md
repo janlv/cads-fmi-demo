@@ -55,7 +55,7 @@ and then starts a local Kubernetes cluster:
 - When the requested driver is unavailable (e.g., Podman not installed or Docker
   is just a shim), the script automatically swaps to the other option if
   available and logs the decision.
-- Before any Kubernetes jobs run, `run.sh` calls `scripts/install_minikube_ca.sh`
+- Before any Kubernetes jobs run, `build.sh --mode argo` calls `scripts/install_minikube_ca.sh`
   to copy TLS inspection certificates into the Minikube VM. Every `.crt`/`.pem`
   under `scripts/certs/` is installed automatically; set
   `MINIKUBE_EXTRA_CA_CERT=/path/to/file.crt` (and optional
@@ -63,6 +63,9 @@ and then starts a local Kubernetes cluster:
   `MINIKUBE_EXTRA_CA_CERTS_DIR=/custom/dir` to change the directory that gets
   scanned. This keeps `quay.io`/`registry.k8s.io` pulls working behind corporate
   MITM proxies.
+- After the CA sync and controller check, the same build loads the freshly built
+  image into the active Minikube profile so Argo/K8s pods can pull it without hitting
+  `ErrImagePull`. Disable that step by exporting `MINIKUBE_IMAGE_LOAD=false`.
 
 The generated kubecontext (`minikube`) lives in your default kubeconfig, so
 `kubectl config current-context` succeeds and `run.sh` can submit workflows

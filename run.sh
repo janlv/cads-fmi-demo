@@ -14,6 +14,7 @@ chmod 700 "$PODMAN_TMPDIR" >/dev/null 2>&1 || true
 WORKFLOW=""
 IMAGE="cads-fmi-demo:latest"
 MODE=""
+LOG_MAX_LINES=""
 
 require_cmd() {
     local name="$1"
@@ -35,7 +36,7 @@ ensure_kube_context() {
 
 usage() {
     cat <<'USAGE'
-Usage: ./run.sh <workflow.yaml> [--image image:tag] [--mode k8s|argo|local]
+Usage: ./run.sh <workflow.yaml> [--image image:tag] [--mode k8s|argo|local] [--max-lines N]
 
 Runs the full CADS demo after prepare.sh/build.sh:
   - Builds/updates the container image (via build.sh)
@@ -63,6 +64,15 @@ while (($#)); do
             shift
             IMAGE="${1:-}"
             ;;
+        --max-lines)
+            shift
+            LOG_MAX_LINES="${1:-}"
+            if [[ -z "$LOG_MAX_LINES" ]]; then
+                log_error "--max-lines expects a value"
+                usage
+                exit 1
+            fi
+            ;;
         --mode)
             shift
             MODE="${1:-}"
@@ -75,6 +85,12 @@ while (($#)); do
     esac
     shift || true
 done
+
+if [[ -n "$LOG_MAX_LINES" ]]; then
+    if ! cads_set_log_tail_lines "$LOG_MAX_LINES"; then
+        exit 1
+    fi
+fi
 
 if [[ -z "$WORKFLOW" ]]; then
     log_error "Workflow file is required."
@@ -93,8 +109,6 @@ fi
 if [[ "$MODE" == "k8s" || "$MODE" == "argo" ]]; then
     log_step "Ensuring Kubernetes context is active"
     ensure_kube_context
-    log_step "Syncing custom CA certificates into Minikube (if configured)"
-    "$ROOT_DIR/scripts/install_minikube_ca.sh"
 fi
 
 if [[ "$MODE" == "argo" ]]; then
@@ -113,7 +127,13 @@ case "$MODE" in
         ./scripts/run_argo_workflow.sh --workflow "$WORKFLOW" --image "$IMAGE"
         ;;
     local)
-        log_stream_cmd "Building container image $IMAGE for local run" podman build -t "$IMAGE" .
+        require_cmd podman
+        if ! podman image inspect "$IMAGE" >/dev/null 2>&1; then
+            log_error "Container image '$IMAGE' not found."
+            log_info "Run './build.sh --mode local --image $IMAGE' to build it."
+            exit 1
+        fi
+        log_step "Using existing local container image $IMAGE"
         log_stream_cmd "Starting local container for workflow execution" \
             podman run --rm -v "$(pwd)/data:/app/data" "$IMAGE" \
             /app/bin/cads-workflow-runner --workflow "$WORKFLOW"

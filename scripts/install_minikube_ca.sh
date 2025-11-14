@@ -65,8 +65,17 @@ install_cert() {
     local safe_name
     safe_name="$(sanitize_name "$base_name")"
     local remote="/usr/local/share/ca-certificates/${safe_name}.crt"
+    if ! command -v base64 >/dev/null 2>&1; then
+        err "base64 command not found; required to transfer certificates."
+    fi
+    local encoded
+    if ! encoded="$(base64 < "$path" | tr -d '\n')"; then
+        err "Failed to encode certificate '$path'"
+    fi
+    local tmp="/tmp/${safe_name}.crt"
     log "Installing CA '$path' as ${remote}"
-    minikube ssh -p "$PROFILE" "sudo install -m 0644 /dev/stdin '$remote'" < "$path" >/dev/null 2>&1
+    minikube ssh -p "$PROFILE" \
+        "B64_PAYLOAD='$encoded' TMP='$tmp' REMOTE='$remote' bash -c 'set -euo pipefail; command -v base64 >/dev/null 2>&1; printf \"%s\" \"\$B64_PAYLOAD\" | base64 -d > \"\$TMP\"; sudo install -m 0644 \"\$TMP\" \"\$REMOTE\"; sudo rm -f \"\$TMP\"'"
 }
 
 main() {

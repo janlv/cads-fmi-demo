@@ -54,9 +54,8 @@ It creates a virtualenv inside `create_fmu/.venv`, installs
 `create_fmu/requirements.txt`, and runs `pythonfmu` to produce the demo
 `Producer.fmu` and `Consumer.fmu` files under `fmu/models/`.
 
-Helper scripts stream the last few log lines by default; export
-`CADS_LOG_TAIL_LINES=0` if you prefer the full command output instead of the
-rolling “tail window”.
+Helper scripts stream the last few log lines by default; pass `--max-lines 0`
+to print the full command output instead of the rolling “tail window”.
 
 Because the runtime FMU executor is pure Go/FM IL (no embedded Python
 interpreter), the FMUs must include exporter binaries that link against
@@ -81,6 +80,12 @@ Tips:
 
 - `docker compose build` (or `podman`) uses the local sources plus the binaries
   produced by `build.sh`. Rebuild whenever you touch the Go code or FMUs.
+- `./build.sh --mode local --image cads-fmi-demo:latest` builds only the Podman image
+  consumed by `run.sh --mode local`. Run `./build.sh --mode argo` (or omit `--mode`)
+  when you need the Docker/Compose image for Kubernetes/Argo flows—the same command now
+  also syncs Minikube CA certs, ensures the Argo controller is installed, and loads the
+  freshly built image into the Minikube profile so workloads can pull it. Override
+  `--image` if you use a different tag (the loader honors that tag as well).
 - To debug inside the container, start an interactive shell:
 
   ```bash
@@ -102,5 +107,6 @@ Tips:
   (unless `ARGO_AUTO_INSTALL=false`), and then follows it with `argo watch`.
 - Customize the manifests (additional env vars, volumes, secrets) by editing the
   generated files before applying or by extending the generator script.
-- `run.sh workflows/foo.yaml --mode k8s|argo|local` is a shortcut that
-  rebuilds the image via `build.sh` and then invokes the corresponding helper.
+- `run.sh workflows/foo.yaml --mode k8s|argo|local` validates the environment and
+  invokes the corresponding helper. For `--mode local` run `build.sh --mode local`
+  first so the Podman image already exists.

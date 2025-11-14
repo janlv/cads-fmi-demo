@@ -31,10 +31,11 @@ DEFAULT_FMIL_HOME=""
 ARGO_INSTALL_PATH=""
 KUBECTL_INSTALL_PATH=""
 MINIKUBE_INSTALL_PATH=""
+LOG_MAX_LINES=""
 
 usage() {
     cat <<'EOF'
-Usage: ./prepare.sh [--platform <platform>] [--local|--global]
+Usage: ./prepare.sh [--platform <platform>] [--local|--global] [--max-lines N]
 
 Prepare the host for running CADS FMI Co-Sim Demo.
 
@@ -54,6 +55,9 @@ The script installs the package set listed under scripts/package-lists/ and
 performs lightweight sanity checks. Running build.sh afterwards builds and
 executes the demo containers. Without --platform, the tool attempts to detect
 the host automatically.
+
+Additional flags:
+  --max-lines N  Control how many log lines are kept in the rolling tail window (0 disables)
 EOF
 }
 
@@ -458,6 +462,14 @@ while [[ $# -gt 0 ]]; do
             MINIKUBE_DRIVER="docker"
             MINIKUBE_DRIVER_USER_SET=true
             ;;
+        --max-lines)
+            shift
+            LOG_MAX_LINES="${1:-}"
+            if [[ -z "$LOG_MAX_LINES" ]]; then
+                log_error "--max-lines expects a value"
+                exit 1
+            fi
+            ;;
         linux|mac)
             if [[ -n "$PLATFORM" ]]; then
                 log_error "Platform already specified; use --platform to override explicitly."
@@ -473,6 +485,12 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+if [[ -n "$LOG_MAX_LINES" ]]; then
+    if ! cads_set_log_tail_lines "$LOG_MAX_LINES"; then
+        exit 1
+    fi
+fi
 
 if [[ -n "${FMIL_HOME:-}" ]]; then
     DEFAULT_FMIL_HOME="$FMIL_HOME"

@@ -2,7 +2,7 @@
 
 This repository showcases how CADS can separate **FMU creation** from the
 **workflow runtime** while remaining friendly to off-the-shelf tooling. Bring
-your own FMUs and declarative workflow definitions, then let the Go/FM IL runner
+your own FMUs and declarative workflow definitions, then let the Go/FMIL runner
 handle orchestration:
 
 - `create_fmu/` contains everything needed to build the Python demo FMUs with
@@ -71,8 +71,8 @@ itself. The patch step runs automatically every time the virtualenv (or Docker
 image) installs pythonfmu.
 
 Most helper scripts display long-running sub-commands in a compact “tail
-window”. Export full logs (one line per command output) by setting
-`CADS_LOG_TAIL_LINES=0` before invoking the script.
+window”. Pass `--max-lines 0` to print every line or tweak the rolling window size
+(`6` by default).
 
 External FMUs (for example `fmu/models/CITest.fmu` exported from Simulink) are
 simply copied into `fmu/models/`.
@@ -89,31 +89,41 @@ Once the workflow matches your scenario, you are ready to run it in the containe
 
 ### Step 3 – Run the containerized workflow (Kubernetes + Argo)
 
-Run `build.sh` first so the Go binaries and container image are up to date.
-Then use `run.sh` in Argo mode—which automatically schedules pods on Kubernetes
+Run `build.sh` first so the Go binaries, container image, and cluster prerequisites are ready.
+Use `--mode argo` (or omit `--mode`, which defaults to the same behavior) to build
+the Docker Compose target, sync Minikube CA certificates, load the resulting image into
+the Minikube profile, and ensure the Argo Workflows controller is installed. Run `build.sh --mode local --image ...` separately when you also
+need the Podman image for `run.sh --mode local`. Then use `run.sh` in Argo mode—which automatically schedules pods on Kubernetes
 (Argo sits on top of K8s, so you get both layers with a single command):
 
 ```bash
-./build.sh
+./build.sh --mode argo                  # or just ./build.sh
 ./run.sh workflows/python_chain.yaml    # defaults to --mode argo
 ```
 
-`run.sh` validates that the Kubernetes client is configured before submitting a
-job/workflow. The Minikube cluster started by `prepare.sh` exposes a ready
-context, but if you disable it (or want to point somewhere else) ensure
-`kubectl config current-context` succeeds or set `KUBECONFIG`. The first call to
-`scripts/run_argo_workflow.sh` also verifies that the Argo Workflows CRD exists
-and, if missing, applies the upstream install manifest (defaults to namespace
-`argo`). Override this behavior with:
+`run.sh --mode argo` assumes you have executed `build.sh --mode argo` since the last time
+you changed the Kubernetes cluster, CA certificates, or Argo installation.
 
-- `ARGO_NAMESPACE=<ns>` – submit workflows and install Argo into a different namespace.
-- `ARGO_AUTO_INSTALL=false` – skip the automatic install and print the necessary `kubectl` commands instead.
-- `ARGO_MANIFEST_URL=<url>` – point to a pinned/custom manifest (defaults to the
-  release matching the bundled Argo CLI version).
+Optional Podman image for local runs:
+
+```bash
+./build.sh --mode local --image cads-fmi-demo:latest
+```
+
+`run.sh` still validates that the Kubernetes client is configured right before submission.
+The Minikube cluster started by `prepare.sh` exposes a ready context, but if you disable it
+(or want to point somewhere else) ensure `kubectl config current-context` succeeds or set
+`KUBECONFIG`. The heavier prep (Minikube CA sync plus Argo controller install/upgrade)
+now happens in `build.sh --mode argo`. Customize that behavior with:
+
+- `ARGO_NAMESPACE=<ns>` – install/watch Argo Workflows in a different namespace.
+- `ARGO_AUTO_INSTALL=false` – skip the automatic Argo install (the build will stop if the CRD is missing).
+- `ARGO_MANIFEST_URL=<url>` – point at a pinned/custom Argo manifest.
 - `MINIKUBE_EXTRA_CA_CERT=/path/to/proxy-ca.crt` – add an extra CA file (with optional
   `MINIKUBE_EXTRA_CA_NAME`) to Minikube’s trust store before workloads run. The helper
-  also installs every `.crt` / `.pem` found under `scripts/certs/` by default; override
-  that directory with `MINIKUBE_EXTRA_CA_CERTS_DIR`.
+  also installs every `.crt`/`.pem` under `scripts/certs/` by default; override that directory
+  with `MINIKUBE_EXTRA_CA_CERTS_DIR`.
+- `MINIKUBE_IMAGE_LOAD=false` – skip automatically loading the freshly built image into Minikube.
 
 Under the hood `run.sh` generates the manifests, submits the workflow via the
 Argo CLI, and Argo starts the pods on your cluster. Use `--mode k8s` if you want
@@ -121,6 +131,13 @@ to see the raw Kubernetes Job instead, or `--mode local` for a Podman/Docker
 smoke test. In every case the same container image and workflow YAML are used.
 
 Local Podman/Docker smoke test (optional):
+
+```bash
+./build.sh --mode local --image cads-fmi-demo:latest --max-lines 0
+./run.sh workflows/python_chain.yaml --mode local --max-lines 0
+```
+
+If you prefer to drive Podman manually:
 
 ```bash
 podman build -t cads-fmi-demo .

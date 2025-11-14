@@ -54,10 +54,32 @@ if [[ -z "$NAMESPACE" ]]; then
 fi
 
 "$ROOT_DIR/scripts/generate_manifests.sh" --workflow "$WORKFLOW" --image "$IMAGE"
-ARGO_NAMESPACE="$NAMESPACE" "$ROOT_DIR/scripts/ensure_argo_workflows.sh"
 NAME="$(basename "$WORKFLOW")"
 NAME="${NAME%.*}"
 ARGO_FILE="$ROOT_DIR/deploy/argo/${NAME}-workflow.yaml"
 
+sanitize_resource_name() {
+    local value="$1"
+    value="${value,,}"
+    value="$(echo "$value" | tr -c 'a-z0-9.-' '-')"
+    while [[ "$value" =~ ^[^a-z0-9]+ ]]; do
+        value="${value#?}"
+    done
+    while [[ "$value" =~ [^a-z0-9]+$ ]]; do
+        value="${value%?}"
+    done
+    if [[ -z "$value" ]]; then
+        value="workflow"
+    fi
+    printf '%s\n' "$value"
+}
+
+RESOURCE_NAME="cads-$(sanitize_resource_name "$NAME")"
+
+if argo get --namespace "$NAMESPACE" "$RESOURCE_NAME" >/dev/null 2>&1; then
+    echo "[argo] Workflow ${RESOURCE_NAME} already exists; deleting before re-submit"
+    argo delete --namespace "$NAMESPACE" "$RESOURCE_NAME" >/dev/null 2>&1 || true
+fi
+
 argo submit --namespace "$NAMESPACE" "$ARGO_FILE"
-argo watch --namespace "$NAMESPACE" "cads-${NAME}" || true
+argo watch --namespace "$NAMESPACE" "$RESOURCE_NAME" || true
