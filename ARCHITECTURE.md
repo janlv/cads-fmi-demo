@@ -1,88 +1,146 @@
 # CADS Architecture
 
-This document walks through the CADS FMI demo architecture using plain language.
-It explains what each part does, how they cooperate, and where your own models
-and workflows fit in. For hands-on setup commands see the [README](README.md).
+This document explains how the CADS FMI demo is wired when you follow the
+recommended route: running workflows inside Argo Workflows on a local Minikube
+cluster. It is written for non-specialists—no Kubernetes background is needed.
+For step-by-step commands, see the [README](README.md). CADS relies on the FMI
+standard so the runtime can execute FMUs exported from tools like Simulink
+without rewriting the simulation logic—FMIL, the FMI library, handles the low
+level details.
 
-## Big picture
+## FMI and FMU basics
 
-Think of the demo as three concentric layers:
+- **FMI (Functional Mock-up Interface)** is an open standard for exchanging
+  simulation models across tools. It defines how simulators expose inputs,
+  outputs, configuration (start/stop times, step sizes), and binary artifacts.
+- **FMU (Functional Mock-up Unit)** is the packaged model produced by tools such
+  as Simulink, Dymola, or the bundled Python examples. An FMU is simply a ZIP
+  file containing compiled code, metadata, and optional resources. This demo uses
+  the *Co-Simulation* flavor, which means each FMU carries its own solver so the
+  CADS runtime only needs to feed inputs and advance time.
+- **FMIL (FMI Library)** is the shared runtime from Modelon that loads FMUs and
+  exposes them to Go through cgo. The workflow runner links against FMIL, so any
+  FMU that follows the standard can be executed without rewriting the runner.
 
-1. **Models you bring** – ready-made FMUs exported from tools such as Simulink
-   or the included Python FMU samples.
-2. **Workflow descriptions** – small YAML files that describe which FMUs to run,
-   in which order, and which results to capture.
-3. **Execution platform** – a Go application (the CADS workflow runner) packaged
-   into a container image and launched either via the CLI, Podman/Docker, or
-   Argo Workflows on top of Minikube.
+In practice: you export an FMU from your modeling tool, drop it into
+`fmu/models/`, and CADS handles the rest via FMIL.
 
-You provide the first two layers; the repo supplies the third.
+## Core platform terms
 
-## Key roles
+- **Container** – a lightweight package that bundles an application plus its
+  libraries and files. Think of it as a self-contained folder that always runs
+  the same way, no matter which computer hosts it. Pods consume containers; you
+  build the image once and Kubernetes reuses it for every run.
+- **Pod** – the smallest unit Kubernetes starts. It wraps one or more containers
+  with storage, networking, and restart rules. In this demo each pod contains a
+  single CADS container baked with your FMUs, and Argo creates one pod per
+  workflow run.
+- **Manifest** – a YAML file that tells Kubernetes or Argo what to create (pods,
+  volumes, workflows).
+- **Kubernetes (K8s)** – an orchestration platform that starts and supervises
+  containers. It keeps applications running even if a container crashes by
+  launching replacements automatically. In this demo the Kubernetes cluster is
+  provided by Minikube, so “Kubernetes” and “Minikube” refer to the same local
+  environment unless stated otherwise.
+- **Argo Workflows** – a higher-level service that runs on top of Kubernetes.
+  You feed Argo a workflow description, and it asks Kubernetes to run the needed
+  containers in the right order.
 
-- **Model authors** export FMI *Co-Simulation* FMUs (zip files with compiled
-  simulation logic). Place them under `fmu/models/`.
-- **Workflow designers** stitch those FMUs together in YAML files under
-  `workflows/`. Each step chooses one FMU and names the values that should flow
-  to the next step.
-- **Operators** run the helper scripts (`prepare.sh`, `build.sh`, `run.sh`) to
-  install prerequisites, build the container image, and submit workflows.
+Putting it together: you build the container image once (it already includes
+the workflow runner plus your FMUs and workflow YAML files), Argo reads your
+workflow and asks Kubernetes to run it, and Kubernetes launches pods that host
+those containers. Each workflow run is therefore a pod executing that CADS
+container image.
 
-The roles can be fulfilled by the same person, but splitting them clarifies how
-CADS separates model development from runtime orchestration.
+## Key ingredients
 
-## Runtime components
+- **FMUs (`fmu/models/`)** – the simulation packages you supply, whether exported
+  from Simulink or built via the Python helper. They are copied into the
+  container image so the cluster can run them without extra uploads.
+- **Workflow YAML (`workflows/*.yaml`)** – the recipe that lists which FMUs to
+  execute, in what order, and which outputs to keep. The same file drives local
+  tests and Argo runs.
+- **Helper scripts (`prepare.sh`, `build.sh`, `run.sh`)** – automate everything
+  from installing toolchains to submitting Argo workflows so you rarely touch
+  Kubernetes or Docker commands directly.
+- **FMIL** – installed under `./.local` (or another path via `FMIL_HOME`). This
+  shared library understands the FMI standard and lets the Go runner load FMUs.
+- **Go workflow runner (`bin/cads-workflow-runner`)** – compiled during
+  `build.sh` and baked into the container. At runtime it reads the workflow
+  YAML, invokes FMIL, and passes values between steps.
+- **Container image** – produced from the `Dockerfile` by `build.sh`. It bundles
+  the runner, FMUs, workflow files, and certificates so Argo can start pods with
+  everything preloaded.
+- **Persistent volume claim** – rendered into `deploy/storage/` and applied by
+  `run.sh`. It backs `/app/data` in every workflow pod so outputs persist after
+  the container exits.
+- **Argo controller (`argo` namespace)** – installed/verified by `build.sh` in
+  the Minikube cluster. It watches for workflow submissions and launches pods as
+  needed.
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| **FMU library (FMIL)** | Installed under `./.local` by `prepare.sh` or reused via `FMIL_HOME`. | Provides the low-level FMI API that the Go runner calls to load and execute FMUs. |
-| **Workflow runner (CLI)** | `orchestrator/service/cmd/cads-workflow-runner` → `bin/` | Reads a YAML workflow and executes each FMU step sequentially. Used inside containers or locally. |
-| **Workflow service (HTTP)** | `orchestrator/service/cmd/cads-workflow-service` → `bin/` | Wraps the runner with a simple API (`POST /run`) so Argo can trigger workflows via HTTP. |
-| **Python FMU builder** | `create_fmu/` | Optional helper that uses `pythonfmu` to produce sample FMUs (Producer/Consumer) for demos. It patches pythonfmu so the compiled FMUs run without a Python interpreter at runtime. |
-| **Container image** | Built from `Dockerfile` via `build.sh` | Bundles the runner, service, FMUs, workflows, and any certificates into a single image that Argo/Podman can run. |
-| **Argo + Minikube** | Installed/configured by `prepare.sh` + `build.sh` | Provide a lightweight Kubernetes environment where workflows are submitted, executed, and observed. |
-| **Persistent storage (PVC)** | Generated in `deploy/storage/` | Holds `/app/data` so workflow outputs survive across runs. |
+## How the pieces work together
 
-## Data and control flow
+1. **You provide content** – Copy FMUs (e.g., Simulink exports) into
+   `fmu/models/` and define workflows under `workflows/`. These files stay under
+   version control and are later embedded in the container image.
+2. **`prepare.sh` readies the host** – Installs Go, Podman/Docker, Minikube,
+   Argo CLI, and FMIL into `./.local`, ensuring the necessary tools exist
+   without touching system directories. It also starts a Minikube profile named
+   `minikube`.
+3. **`build.sh` wires the cluster**:
+   - Compiles the Go runner/service with FMIL support.
+   - Builds the container image and tags it (default `cads-fmi-demo:latest`).
+   - Copies corporate certificates (if any) into the Minikube VM so image pulls
+     succeed behind proxies.
+   - Installs or verifies Argo Workflows in the cluster.
+   - Pushes the freshly built image into Minikube so pods can start instantly.
+4. **`run.sh` submits a workflow**:
+   - Calls `scripts/generate_manifests.sh` to render an Argo Workflow manifest
+     that references your chosen YAML file and image tag. This translation step
+     keeps the CADS workflow YAML as the source of truth while wrapping it in
+     the heavier Argo manifest (pod specs, volumes, service accounts) so
+     Kubernetes understands how to schedule it.
+   - Applies the PVC manifest so `/app/data` points to durable storage.
+   - Uses the Argo CLI to submit the workflow to the in-cluster controller.
+5. **Argo executes the workflow**:
+   - Argo launches a Kubernetes pod that runs `/app/bin/cads-workflow-runner`
+     inside the container image you built.
+   - The runner reads the workflow YAML (already inside the image), loads FMUs
+     via FMIL, and executes them sequentially, passing results between steps as
+     defined in YAML.
+   - Outputs and JSON snapshots land on `/app/data`, which is backed by the PVC.
+6. **You inspect results** – Use `argo watch`, `kubectl logs`, or mount the PVC
+   to review files under `data/`. `run.sh` also spins up a short-lived helper pod
+   that copies `/app/data` from the PVC down to your local `data/run-artifacts/`
+   folder for convenience. Nothing is stored inside the short-lived workflow pod;
+   everything you care about sits on the shared volume until copied out.
 
-1. **Provide FMUs** – Copy your `.fmu` files into `fmu/models/`. The Python
-   helper can generate demo FMUs but is optional if you already have Simulink
-   (or other) exports.
-2. **Describe the workflow** – In `workflows/*.yaml`, list each step, its FMU,
-   any starting values, and which outputs should be saved. The files are human
-   readable; no code is required.
-3. **Build the platform** – `prepare.sh` installs Go, Argo, Minikube, FMIL, and
-   other prerequisites on the host. `build.sh` compiles the Go binaries, builds
-   the container image, ensures Argo is present in Minikube, and loads the image
-   into the cluster.
-4. **Submit a run** – `run.sh workflows/example.yaml` renders the Argo manifest,
-   applies the persistent volume claim, and submits the workflow. Argo spins up
-   a pod that runs `cads-workflow-runner`, which loads each FMU via FMIL and
-   streams outputs to `/app/data`.
-5. **Collect results** – Workflow steps can write JSON snapshots (via the
-   `result` field) and all intermediate files land on the shared PVC. Inspect
-   them with `kubectl`, Podman bind mounts, or by copying from `data/` locally.
+The key idea: once `run.sh` hands the workflow to Argo, Kubernetes handles the
+heavy lifting—starting pods, restarting on failure, and isolating each run.
 
-## Operational boundaries
+## Data flow in plain terms
 
-- **Python vs. Go** – Python is only used during FMU creation. Once an FMU is
-  built, the runtime uses native Go + FMIL, which keeps the execution
-  environment small and predictable.
-- **Local vs. cluster** – The same runner binary works on a laptop, inside a
-  container, or within Argo. Scripts merely automate packaging and submission.
-- **User responsibilities** – You maintain ownership of the FMU logic and
-  workflow descriptions. CADS does not edit or interpret the math inside your
-  FMUs; it simply orchestrates them.
+- **Inputs**: FMUs (`.fmu` files) and workflow YAML travel from your working
+  copy into the container image. When you call `run.sh`, that image is what the
+  cluster executes.
+- **Runtime data**: During execution, FMUs exchange values through the Go runner
+  (it keeps variable state in memory) and write requested outputs to `/app/data`.
+- **Outputs**: Anything written to `/app/data` persists on the PVC. You can copy
+  it back to your host via `kubectl cp`, run another helper pod to read it, or
+  mount the same PVC from future workflows.
 
-## Why this architecture?
+## Why Kubernetes + Argo?
 
-- **Separation of concerns** – Model experts focus on FMUs; operators focus on
-  infrastructure. YAML workflows provide a thin contract between them.
-- **Reproducibility** – Every run executes the same containerized runner with
-  the same FMUs and workflows, so results can be traced and repeated.
-- **Portability** – FMI is a vendor-neutral standard. By leaning on FMUs and
-  FMIL, the demo remains compatible with tools such as Simulink, Dymola, or any
-  exporter that outputs FMI Co-Simulation packages.
+- **Repeatable runs** – Each workflow becomes a declarative manifest that Argo
+  can replay. Pod specs, storage, and images are versioned alongside your FMUs.
+- **Isolation** – Every workflow runs in its own pod. If an FMU crashes, it
+  affects only that pod, not your host environment.
+- **Scalability** – Although Minikube is single-node, the same manifests work
+  on multi-node clusters without modification.
+- **Observability** – Argo exposes run status (`argo list`, `argo watch`) and
+  Kubernetes supplies detailed logs/events if something fails.
 
-For installation details, quick-start commands, and troubleshooting tips, see
-the [README](README.md) and the supporting docs listed there.
+In short, CADS packages your simulation logic and workflow instructions into a
+container, hands it to Argo inside Minikube, and lets Kubernetes coordinate the
+execution. You stay focused on FMUs and workflow YAML; the scripts and cluster
+handle everything else.
