@@ -134,8 +134,8 @@ RUN set -eux; \
 # Build FMUs with pythonfmu
 RUN echo "[image] Building bundled demo FMUs" && \
     mkdir -p fmu/models && \
-    python -m pythonfmu build -f fmu/models/producer_fmu.py -d fmu/models && \
-    python -m pythonfmu build -f fmu/models/consumer_fmu.py -d fmu/models && \
+    python -m pythonfmu build -f create_fmu/producer_fmu.py -d fmu/models && \
+    python -m pythonfmu build -f create_fmu/consumer_fmu.py -d fmu/models && \
     echo 'Built FMUs to /app/fmu/models'
 
 # Build Go workflow binaries (FMIL via cgo). The Go module lives under orchestrator/service.
