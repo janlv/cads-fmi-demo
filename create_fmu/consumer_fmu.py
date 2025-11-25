@@ -28,7 +28,9 @@ class Consumer(Fmi2Slave):
         )
 
     def enter_initialization_mode(self):
-        # Simple scoring: high variance or big range lowers score, large rolling-mean drift flags anomaly
+        # Simple scoring: 
+        # high variance or big range lowers score, 
+        # large rolling-mean drift flags anomaly
         value_range = max(1e-9, self.max_in - self.min_in)
         self.health_score = max(0.0, 100.0 - (self.std_in * 2.0 + value_range * 0.05))
         if self.std_in > 0:
