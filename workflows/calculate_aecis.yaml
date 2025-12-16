@@ -1,0 +1,10 @@
+steps:
+  - name: calculate_aecis
+    fmu: fmu/models/CalculateAECIs.fmu
+    start_time: 0.0
+    stop_time: 10.0
+    step_size: 0.01
+    outputs:
+      - CIvector
+      - time
+    result: data/calculate_aecis_result.json

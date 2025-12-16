@@ -24,7 +24,12 @@ Minikube profile named `minikube`. Use it before running `build.sh`.
 
 Corporate TLS inspection can break image pulls. Drop any required certificate
 bundles under `scripts/certs/` (`.crt`/`.pem` files) and `build.sh` will sync
-them into the Minikube VM before loading the container image.
+them into the Minikube VM before loading the container image. Host-side tools
+(`kubectl`, `helm`, etc.) can reuse the same bundle by running
+`source scripts/host_ca_env.sh` (optionally pass another target directory, e.g.,
+`source scripts/host_ca_env.sh "$PWD"` or set `CADS_HOST_CA_ROOT=/path`). The helper
+also attempts to harvest certificates automatically via `scripts/export_company_certs.py`
+when the folder is empty.
 
 ## Manual alternatives
 

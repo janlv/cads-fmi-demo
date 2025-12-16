@@ -51,10 +51,12 @@ The helper scripts automatically prepend `./.local/bin` and `./.local/go/bin` to
 `PATH` so the freshly installed CLIs are available during the rest of the
 workflow.
 
-### Step 1 – Build the FMUs (Python edge)
+### Step 1 – Provide FMUs + workflows (bring yours or build the Python demo)
 
-Run the helper script to produce the demo FMUs (Python is only used here to
-generate FMUs). If you have custom FMUs, drop them into `fmu/models/` instead:
+Start by deciding whether you will use externally prepared FMUs together with
+their matching YAML workflows, or whether you want to generate the bundled
+Python FMUs for a quick smoke test. To build the sample FMUs (Python is only
+used here to generate them), run:
 
 ```bash
 ./create_fmu/build_python_fmus.sh
@@ -62,13 +64,16 @@ generate FMUs). If you have custom FMUs, drop them into `fmu/models/` instead:
 
 The helper installs `pythonfmu`, then **patches its exporter CMake files** so
 the generated FMU binaries link against `libpython`. This is required now that
-the workflow runtime runs purely in Go/FM IL—no embedded Python interpreter is
+the workflow runtime runs purely in Go/FMIL—no embedded Python interpreter is
 available when the FMUs are loaded, so the exporter must provide those symbols
 itself. The patch step runs automatically every time the virtualenv (or Docker
 image) installs pythonfmu.
 
-External FMUs (for example `fmu/models/CITest.fmu` exported from Simulink) are
-simply copied into `fmu/models/`.
+If you are supplying FMUs from another toolchain (for example
+`fmu/models/CITest.fmu` exported from Simulink), copy them into `fmu/models/`
+and pair them with the YAML workflows you already authored under `workflows/`.
+This way step 2 can either refine those existing workflows or reuse the sample
+ones alongside your imported FMUs.
 
 ### Step 2 – Define the workflow (YAML)
 
@@ -118,6 +123,65 @@ Inside the container:
 - `./scripts/generate_manifests.sh` writes the rendered Argo workflow and PVC
   definitions to `deploy/argo/` and `deploy/storage/` so you can inspect or tweak
   them before applying.
+- `./scripts/prepare_ui_workflow.sh` emits a PVC/configmap-free workflow manifest
+  (defaulting to `deploy/argo/<workflow>-ui-workflow.yaml`) that can be uploaded
+  directly through hosted Argo UI environments which only expose the demo image.
+  Pass the workflow path as the first argument and it takes care of the sanitized
+  metadata and image reference.
+
+### Using the playground TimescaleDB feed
+
+The Argo playground cluster ships with a managed TimescaleDB instance that
+continuously ingests synthetic points. Use `scripts/fetch_timescaledb_measurements.py`
+to pull the most recent rows into `/app/data/measurements.csv` before running an
+FMU workflow (the bundled Producer FMU already consumes this CSV).
+
+1. Extract credentials from the playground namespace (replace the selector or
+   secret name below with whatever the cluster administrators provided):
+
+   ```bash
+   kubectl -n playground get secret
+   kubectl -n playground get secret playground-timescaledb-superuser \
+       -o jsonpath='{.data.uri}' | base64 -d
+   ```
+
+   Export the resulting URI to `TIMESCALE_CONN` (or break it into the individual
+   host/user/password environment variables the script understands).
+
+2. Run the helper inside the repo (the defaults match the demo data source):
+
+   ```bash
+   python scripts/fetch_timescaledb_measurements.py \
+       --table public.measurements \
+       --time-column ts \
+       --value-column value \
+       --limit 5000
+   ```
+
+   Adjust the table/column names if the playground populated them differently.
+   The script creates `data/measurements.csv`, overwriting any previous file.
+
+3. Chain the helper into an Argo UI workflow by switching the container to run a
+   short shell wrapper. For example edit
+   `deploy/argo/calculate_aecis-ui-workflow.yaml` so the template reads:
+
+   ```yaml
+   command: ["/bin/sh", "-c"]
+   args:
+     - |
+       python scripts/fetch_timescaledb_measurements.py --limit 5000 && \
+       /app/bin/cads-workflow-runner --workflow workflows/calculate_aecis.yaml
+   env:
+     - name: TIMESCALE_CONN
+       valueFrom:
+         secretKeyRef:
+           name: playground-timescaledb-superuser
+           key: uri
+   ```
+
+   Replace the secret name/key with whatever the playground exposes. Because
+   `prepare_ui_workflow.sh` copies the template verbatim, the edited manifest can
+   be re-generated (or hand-tweaked) whenever you need a different workflow file.
 
 ## Workflow format
 

@@ -1,9 +1,0 @@
-steps:
-  - name: citest
-    fmu: fmu/models/CITest.fmu
-    start_time: 0.0
-    stop_time: 1.0
-    step_size: 1.0
-    outputs:
-      - time
-    result: data/citest_result.json

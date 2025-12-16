@@ -90,6 +90,20 @@ probable cause, and recommended fix.
 
 ---
 
+## `kubectl` TLS errors outside Minikube
+
+### `tls: failed to verify certificate: x509: certificate signed by unknown authority`
+- Corporate TLS proxies re-sign outbound traffic, so external clusters (e.g., the Kaizen playground) require your corporate CA when running `kubectl` directly from the host.
+- Run `source scripts/host_ca_env.sh` once per shell. The script targets `scripts/certs/` and `.local/` under the repo by default, but you can point it at another folder (e.g., `Kaizen_CADS`) with `source scripts/host_ca_env.sh "$PWD"` or `CADS_HOST_CA_ROOT=/path/to/dir source scripts/host_ca_env.sh`. If the chosen cert directory already contains `.crt/.pem` files, the script concatenates them and exports `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `GIT_SSL_CAINFO`. When the folder is empty, it attempts to run `scripts/export_company_certs.py` automatically to harvest the certs from your OS trust store before exporting the bundle.
+- Run your command normally afterwards, e.g.:
+  ```bash
+  cd ~/Kaizen_CADS
+  KUBECONFIG=./kubeconfig kubectl get pods
+  ```
+  Any `kubectl`, `helm`, or `curl` invocation in that shell will reuse the injected CA bundle, eliminating the x509 error.
+
+---
+
 ## General tips
 
 - Always run scripts from the repo root; many paths are relative.

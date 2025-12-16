@@ -12,7 +12,6 @@ steps:
       - vmin
       - vmax
       - rollingMean
-    result: data/producer_result.json
 
   - name: consumer
     fmu: fmu/models/Consumer.fmu
@@ -28,4 +27,3 @@ steps:
     outputs:
       - health_score
       - anomaly
-    result: data/consumer_result.json
