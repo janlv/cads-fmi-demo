@@ -2,8 +2,11 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/workflow"
 )
 
 type Server struct {
@@ -38,7 +41,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	results, err := s.Runner.Run(req.Workflow)
 	if err != nil {
 		log.Printf("workflow %s failed: %v", req.Workflow, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, workflow.ErrPathEscapesRoot) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 

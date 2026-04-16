@@ -7,6 +7,7 @@ STORAGE_DIR="$ROOT_DIR/deploy/storage"
 IMAGE="cads-fmi-demo:latest"
 WORKFLOW=""
 WORKFLOW_CONFIGMAP=""
+NAMESPACE="argo"
 SERVICE_ACCOUNT="argo"
 DATA_MOUNT_PATH="/app/data"
 DATA_PVC_NAME="cads-data-pvc"
@@ -15,6 +16,7 @@ DATA_PVC_SIZE="1Gi"
 usage() {
     cat <<'USAGE'
 Usage: scripts/generate_manifests.sh --workflow workflows/example.yaml [--image image:tag]
+                                     [--namespace namespace] [--service-account name]
 
 Generates the Argo Workflow and PVC manifests for the given workflow file.
 USAGE
@@ -38,6 +40,14 @@ while (($#)); do
             shift
             WORKFLOW_CONFIGMAP="${1:-}"
             ;;
+        --namespace)
+            shift
+            NAMESPACE="${1:-}"
+            ;;
+        --service-account)
+            shift
+            SERVICE_ACCOUNT="${1:-}"
+            ;;
         *)
             echo "[error] Unknown argument: $1" >&2
             usage
@@ -54,6 +64,16 @@ fi
 
 if [[ -z "$WORKFLOW_CONFIGMAP" ]]; then
     echo "[error] --workflow-configmap is required" >&2
+    exit 1
+fi
+
+if [[ -z "$NAMESPACE" ]]; then
+    echo "[error] --namespace requires a non-empty value" >&2
+    exit 1
+fi
+
+if [[ -z "$SERVICE_ACCOUNT" ]]; then
+    echo "[error] --service-account requires a non-empty value" >&2
     exit 1
 fi
 
@@ -82,6 +102,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   name: ${RESOURCE_NAME}
+  namespace: ${NAMESPACE}
 spec:
   serviceAccountName: ${SERVICE_ACCOUNT}
   volumes:
@@ -114,7 +135,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: ${DATA_PVC_NAME}
-  namespace: argo
+  namespace: ${NAMESPACE}
 spec:
   accessModes:
     - ReadWriteOnce

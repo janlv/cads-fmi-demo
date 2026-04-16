@@ -8,10 +8,12 @@ export PATH="$LOCAL_GO_BIN:$LOCAL_BIN_DIR:$PATH"
 IMAGE="cads-fmi-demo:latest"
 WORKFLOW=""
 NAMESPACE="argo"
+SERVICE_ACCOUNT="argo"
 
 usage() {
     cat <<'USAGE'
-Usage: scripts/run_argo_workflow.sh --workflow workflows/example.yaml [--image image:tag] [--namespace name]
+Usage: scripts/run_argo_workflow.sh --workflow workflows/example.yaml [--image image:tag]
+                                    [--namespace name] [--service-account name]
 
 Generates the Argo Workflow manifest for the workflow (if needed) and submits it via argo CLI.
 USAGE
@@ -35,6 +37,10 @@ while (($#)); do
             shift
             NAMESPACE="${1:-}"
             ;;
+        --service-account)
+            shift
+            SERVICE_ACCOUNT="${1:-}"
+            ;;
         *)
             echo "[error] Unknown argument: $1" >&2
             usage
@@ -51,6 +57,11 @@ fi
 
 if [[ -z "$NAMESPACE" ]]; then
     echo "[error] --namespace requires a non-empty value" >&2
+    exit 1
+fi
+
+if [[ -z "$SERVICE_ACCOUNT" ]]; then
+    echo "[error] --service-account requires a non-empty value" >&2
     exit 1
 fi
 
@@ -78,7 +89,12 @@ WORKFLOW_CM="cads-${SANITIZED_NAME}-spec"
 kubectl delete configmap "$WORKFLOW_CM" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
 kubectl create configmap "$WORKFLOW_CM" -n "$NAMESPACE" --from-file=workflow="$ROOT_DIR/$WORKFLOW"
 
-bash "$ROOT_DIR/scripts/generate_manifests.sh" --workflow "$WORKFLOW" --image "$IMAGE" --workflow-configmap "$WORKFLOW_CM"
+bash "$ROOT_DIR/scripts/generate_manifests.sh" \
+    --workflow "$WORKFLOW" \
+    --image "$IMAGE" \
+    --workflow-configmap "$WORKFLOW_CM" \
+    --namespace "$NAMESPACE" \
+    --service-account "$SERVICE_ACCOUNT"
 NAME="$(basename "$WORKFLOW")"
 NAME="${NAME%.*}"
 ARGO_FILE="$ROOT_DIR/deploy/argo/${NAME}-workflow.yaml"

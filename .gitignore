@@ -42,3 +42,5 @@ deploy/
 # Ignore Go build cache
 orchestrator/service/.gocache/
 orchestrator/service/.gomodcache/
+
+.codex

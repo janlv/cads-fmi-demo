@@ -14,6 +14,8 @@ import (
 	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/fmi"
 )
 
+var ErrPathEscapesRoot = errors.New("path escapes repository root")
+
 // Executor runs workflow YAML definitions directly against FMUs via FMIL.
 type Executor struct {
 	root   string
@@ -35,7 +37,11 @@ func NewExecutor(repoRoot string, opts ...Option) (*Executor, error) {
 	if repoRoot == "" {
 		return nil, errors.New("workflow executor requires a repository root")
 	}
-	e := &Executor{root: repoRoot}
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workflow root %s: %w", repoRoot, err)
+	}
+	e := &Executor{root: absRoot}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -44,9 +50,9 @@ func NewExecutor(repoRoot string, opts ...Option) (*Executor, error) {
 
 // Run executes a workflow file (relative to repo root unless absolute).
 func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
-	absPath := workflowPath
-	if !filepath.IsAbs(absPath) {
-		absPath = filepath.Join(e.root, workflowPath)
+	absPath, err := e.resolveRepoPath(workflowPath, "workflow")
+	if err != nil {
+		return nil, fmt.Errorf("invalid workflow path: %w", err)
 	}
 	data, err := os.ReadFile(absPath)
 	if err != nil {
@@ -73,9 +79,9 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 			return nil, fmt.Errorf("step %s is missing its fmu path", step.Name)
 		}
 
-		fmuPath := step.FMU
-		if !filepath.IsAbs(fmuPath) {
-			fmuPath = filepath.Join(e.root, fmuPath)
+		fmuPath, err := e.resolveRepoPath(step.FMU, "fmu")
+		if err != nil {
+			return nil, fmt.Errorf("step %s invalid fmu path: %w", step.Name, err)
 		}
 		if _, err := os.Stat(fmuPath); err != nil {
 			return nil, fmt.Errorf("step %s references missing FMU %s: %w", step.Name, fmuPath, err)
@@ -108,7 +114,11 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 
 		results[step.Name] = result
 		if step.ResultPath != "" {
-			if err := writeResultFile(e.resolvePath(step.ResultPath), result); err != nil {
+			resultPath, err := e.resolveRepoPath(step.ResultPath, "result")
+			if err != nil {
+				return nil, fmt.Errorf("step %s invalid result path: %w", step.Name, err)
+			}
+			if err := writeResultFile(resultPath, result); err != nil {
 				return nil, fmt.Errorf("write result for step %s: %w", step.Name, err)
 			}
 		}
@@ -124,11 +134,25 @@ func (e *Executor) logf(format string, args ...any) {
 	}
 }
 
-func (e *Executor) resolvePath(p string) string {
-	if filepath.IsAbs(p) {
-		return p
+func (e *Executor) resolveRepoPath(path string, kind string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("%s path is required", kind)
 	}
-	return filepath.Join(e.root, p)
+
+	resolved := path
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(e.root, resolved)
+	}
+	resolved = filepath.Clean(resolved)
+
+	rel, err := filepath.Rel(e.root, resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s path %q: %w", kind, path, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("%w: %s %q", ErrPathEscapesRoot, kind, path)
+	}
+	return resolved, nil
 }
 
 type workflowFile struct {
@@ -213,7 +237,7 @@ func encodeScalar(value any) (string, error) {
 	case json.Number:
 		return v.String(), nil
 	case string:
-		return v, nil
+		return "", errors.New("string values are not supported by the FMIL runner")
 	default:
 		return "", fmt.Errorf("unsupported value type %T", value)
 	}
