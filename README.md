@@ -31,27 +31,7 @@ workflows you define.
 
 ## Quick start
 
-### Step 0 – Prepare the environment
-
-Provision the host (Debian/Ubuntu) with the tooling used by the demo:
-
-```bash
-./prepare.sh              # installs packages + CLIs under ./.local and starts Minikube
-```
-
-The script targets Linux hosts, installs Podman plus helper packages via `apt`,
-downloads Go/Argo/kubectl/Minikube into `./.local/`, and starts a rootless
-Minikube profile named `minikube`. Place any corporate TLS certificates under
-`scripts/certs/` so future builds sync them into the cluster. See
-[PREPARE.md](PREPARE.md) for manual steps if you need to adapt the flow.
-Because this is a self-contained demo, Minikube is always started/reset by the
-scripts so every run begins from a known-good cluster.
-
-The helper scripts automatically prepend `./.local/bin` and `./.local/go/bin` to
-`PATH` so the freshly installed CLIs are available during the rest of the
-workflow.
-
-### Step 1 – Provide FMUs + workflows (bring yours or build the Python demo)
+### Step 0 – Provide FMUs + workflows (bring yours or build the Python demo)
 
 Start by deciding whether you will use externally prepared FMUs together with
 their matching YAML workflows, or whether you want to generate the bundled
@@ -75,7 +55,7 @@ and pair them with the YAML workflows you already authored under `workflows/`.
 This way step 2 can either refine those existing workflows or reuse the sample
 ones alongside your imported FMUs.
 
-### Step 2 – Define the workflow (YAML)
+### Step 1 – Define the workflow (YAML)
 
 Edit or copy one of the YAML files under `workflows/` (e.g.,
 `workflows/python_chain.yaml`). Each step references one of the FMUs under
@@ -85,25 +65,52 @@ for literal inputs and `result` to persist outputs. The same YAML file is used
 everywhere (CLI, container, Kubernetes, Argo), so no extra metadata is required.
 Once the workflow matches your scenario, you are ready to run it in the container.
 
-### Step 3 – Run the containerized workflow (Kubernetes + Argo)
+### Step 2A – Local Minikube flow
 
-Run `build.sh` to (re)build the image, sync CA certificates into Minikube,
-ensure the Argo controller exists, and load the freshly built image into the
-cluster. Then submit a workflow via `run.sh`, which automatically packages the
-selected workflow YAML into a ConfigMap so edits take effect without rebuilding
-the container:
+Prepare the local toolchain and Minikube cluster, build the image, and submit
+the workflow:
 
 ```bash
+./prepare_local.sh
 ./build.sh
-./run.sh workflows/python_chain.yaml
+./run_local.sh workflows/python_chain.yaml
 ```
 
-Use `--image` on either script when you want a different tag and
-`--fmil-home` on `build.sh` to reuse an existing FMIL installation. `run.sh`
-verifies that the current kube-context is reachable, applies the PVC manifest
-generated earlier, and submits the workflow through the Argo CLI. Workflow pods
-store their `/app/data` contents inside the PVC (`cads-data-pvc` in the `argo`
-namespace) so runs remain durable across executions.
+`prepare_local.sh` installs the Linux packages plus the Go/Argo/kubectl/Minikube
+tooling under `./.local` and starts the `minikube` profile. `build.sh` is now a
+pure build step: it stages pythonfmu resources, builds the Go binaries, and
+builds the container image. `run_local.sh` handles the local-cluster wiring:
+it verifies the Minikube context, syncs custom CAs into Minikube, ensures the
+local Argo controller exists, loads the image into Minikube, submits the
+workflow through Argo, and copies PVC-backed artifacts into `data/run-artifacts/`.
+
+### Step 2B – Remote playground flow
+
+Build the image with a registry tag, validate/publish it, then submit the
+remote workflow:
+
+```bash
+./build.sh --image ghcr.io/org/cads-demo:demo123
+./prepare_remote.sh --image ghcr.io/org/cads-demo:demo123 --kubeconfig ~/Kaizen_CADS/kubeconfig
+./run_remote.sh workflows/python_chain.yaml --image ghcr.io/org/cads-demo:demo123 --kubeconfig ~/Kaizen_CADS/kubeconfig
+```
+
+`prepare_remote.sh` resolves the Argo token from `ARGO_TOKEN` or the supplied
+kubeconfig, validates access against `https://argoworkflows.cads.kzslab.dev`,
+and publishes the selected image tag through the local container engine.
+`run_remote.sh` generates a PVC/configmap-free manifest and submits it directly
+to the hosted Argo server with a unique workflow name.
+
+For browser access to the KAIZEN Argo UI:
+
+- Open `https://argoworkflows.cads.kzslab.dev/`
+- Choose `Client Authentication`
+- Paste `Bearer <token>`
+
+The same bearer token comes from either the `playground-storhy-playground-pg-admin`
+secret or the `playground-admin` entry in the kubeconfig. Remote demos depend on
+Argo server access; direct Kubernetes API access is useful for secrets and raw
+cluster inspection, but it is not required to submit or watch workflows.
 
 For manual container testing you can still drive Podman or Docker yourself:
 
@@ -123,11 +130,17 @@ Inside the container:
 - `./scripts/generate_manifests.sh` writes the rendered Argo workflow and PVC
   definitions to `deploy/argo/` and `deploy/storage/` so you can inspect or tweak
   them before applying.
-- `./scripts/prepare_ui_workflow.sh` emits a PVC/configmap-free workflow manifest
-  (defaulting to `deploy/argo/<workflow>-ui-workflow.yaml`) that can be uploaded
-  directly through hosted Argo UI environments which only expose the demo image.
-  Pass the workflow path as the first argument and it takes care of the sanitized
-  metadata and image reference.
+- `./scripts/generate_remote_workflow.sh` emits a PVC/configmap-free workflow
+  manifest (defaulting to `deploy/argo/<workflow>-remote-workflow.yaml`) for
+  hosted Argo environments which only expose the demo image. The legacy
+  `./scripts/prepare_ui_workflow.sh` name is still available as a compatibility
+  wrapper and preserves the old `-ui-workflow.yaml` default output name.
+
+Compatibility wrappers remain in place during the transition:
+
+- `./prepare.sh` forwards to `./prepare_local.sh`
+- `./run.sh` forwards to `./run_local.sh`
+- `./scripts/prepare_ui_workflow.sh` forwards to `./scripts/generate_remote_workflow.sh`
 
 ### Using the playground TimescaleDB feed
 
@@ -147,6 +160,8 @@ FMU workflow (the bundled Producer FMU already consumes this CSV).
 
    Export the resulting URI to `TIMESCALE_CONN` (or break it into the individual
    host/user/password environment variables the script understands).
+   This step requires direct Kubernetes API access; the remote Argo workflow
+   demo itself only requires Argo server access.
 
 2. Run the helper inside the repo (the defaults match the demo data source):
 
@@ -161,9 +176,9 @@ FMU workflow (the bundled Producer FMU already consumes this CSV).
    Adjust the table/column names if the playground populated them differently.
    The script creates `data/measurements.csv`, overwriting any previous file.
 
-3. Chain the helper into an Argo UI workflow by switching the container to run a
-   short shell wrapper. For example edit
-   `deploy/argo/calculate_aecis-ui-workflow.yaml` so the template reads:
+3. Chain the helper into a remote Argo workflow by switching the container to
+   run a short shell wrapper. For example edit
+   `deploy/argo/calculate_aecis-remote-workflow.yaml` so the template reads:
 
    ```yaml
    command: ["/bin/sh", "-c"]
@@ -180,8 +195,9 @@ FMU workflow (the bundled Producer FMU already consumes this CSV).
    ```
 
    Replace the secret name/key with whatever the playground exposes. Because
-   `prepare_ui_workflow.sh` copies the template verbatim, the edited manifest can
-   be re-generated (or hand-tweaked) whenever you need a different workflow file.
+   `generate_remote_workflow.sh` copies the template verbatim, the edited
+   manifest can be re-generated (or hand-tweaked) whenever you need a different
+   workflow file.
 
 ## Workflow format
 

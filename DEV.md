@@ -75,11 +75,13 @@ Tips:
 
 ## Container image tweaks
 
-- `build.sh` compiles the Go binaries, builds the container image (preferring
-  Podman but falling back to Docker), syncs custom CA certificates into
-  Minikube, installs Argo if missing, and loads the freshly built image into
-  the active Minikube profile. Re-run it whenever you change the Go code, FMUs,
-  or Dockerfile contents.
+- `build.sh` compiles the Go binaries and builds the container image (preferring
+  Podman but falling back to Docker). Re-run it whenever you change the Go code,
+  FMUs, or Dockerfile contents.
+- `run_local.sh` now handles Minikube CA sync, Argo controller installation,
+  image preload, and PVC-backed local submission.
+- `prepare_remote.sh` validates hosted-Argo access and publishes the selected
+  image tag; `run_remote.sh` submits the hosted workflow manifest.
 - Override `--image` to push/tag alternative names and `--fmil-home` to reuse an
   existing FMIL installation rather than installing under `./.local/`.
 - To debug inside the container, start an interactive shell:
@@ -100,7 +102,11 @@ Tips:
 - `scripts/run_argo_workflow.sh --workflow workflows/foo.yaml` renders and submits
   the workflow via `argo submit`, creates the PVC if needed, and shows progress
   with `argo watch`.
+- `scripts/generate_remote_workflow.sh workflows/foo.yaml --image ghcr.io/...`
+  renders the hosted-Argo manifest into `deploy/argo/`.
 - Customize the manifests (additional env vars, volumes, secrets) by editing the
   generated files before applying or by extending the generator script.
-- `run.sh workflows/foo.yaml` validates the kube context, applies the PVC manifest,
-  and delegates to `scripts/run_argo_workflow.sh`.
+- `run_local.sh workflows/foo.yaml` validates the Minikube context, applies the
+  PVC manifest, and delegates to `scripts/run_argo_workflow.sh`.
+- `run_remote.sh workflows/foo.yaml --image ghcr.io/... --kubeconfig ...`
+  generates the hosted manifest and submits it through the remote Argo server.

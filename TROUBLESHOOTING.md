@@ -6,9 +6,9 @@ probable cause, and recommended fix.
 
 ---
 
-## `./prepare.sh` fails
+## `./prepare_local.sh` / `./prepare_remote.sh` fail
 
-### `prepare.sh currently supports Linux hosts only.`
+### `prepare_local.sh currently supports Linux hosts only.`
 - The script relies on Debian/Ubuntu tools (`apt`, rootless Podman). Run it on a
   Linux machine or follow `PREPARE.md` to reproduce the steps manually on your OS.
 
@@ -24,7 +24,7 @@ probable cause, and recommended fix.
 - Typical causes: no container runtime, stale profiles, or rootless Podman not
   configured.
   1. Verify `podman info` (or `docker info`) works.
-  2. `minikube delete -p minikube && ./prepare.sh` to rebuild the profile.
+  2. `minikube delete -p minikube && ./prepare_local.sh` to rebuild the profile.
   3. Check `/etc/subuid` / `/etc/subgid` entries for the current user; Podman
      rootless needs subordinate UID/GID ranges.
 
@@ -33,51 +33,59 @@ probable cause, and recommended fix.
 ## `./build.sh` errors
 
 ### `Required command 'go' not found` or Go version mismatch
-- Re-run `./prepare.sh` so `./.local/go` is reinstated on PATH. Alternatively,
-  install Go ≥ 1.22 and set `PATH` accordingly before running `build.sh`.
+- Re-run `./prepare_local.sh` or `./prepare_remote.sh` so `./.local/go` is
+  reinstated on PATH. Alternatively, install Go ≥ 1.22 and set `PATH`
+  accordingly before running `build.sh`.
 
 ### `FMIL already present` but build still fails
 - Corrupted FMIL installation. Run `./clean.sh` to remove `.local`, then rerun
-  `./prepare.sh` and `./build.sh`. Or pass `--fmil-home /path/to/fmil` to reuse
-  a known-good install.
+  `./prepare_local.sh` and `./build.sh`. Or pass `--fmil-home /path/to/fmil`
+  to reuse a known-good install.
 
 ### `docker` / `podman` not found
 - Install one container runtime (Podman preferred). `prepare.sh` installs
   Podman automatically via apt; confirm it’s on PATH before rerunning `build.sh`.
 
-### Minikube image load failures
-- The script falls back to streaming via `podman save`/`docker save`. If that
-  also fails, run `minikube image load -p minikube cads-fmi-demo:latest` after
-  the build or allow the cluster to pull the tag from a registry you control.
-
-### `scripts/install_minikube_ca.sh` warnings
-- Happens when `scripts/certs/` is empty or Minikube isn’t running. Ensure your
-  Minikube profile is up (`minikube status -p minikube`) before building.
-
 ---
 
-## `./run.sh` or Argo submission problems
+## `./run_local.sh` or local Argo submission problems
 
-### `kubectl cannot determine the current context.`
-- Minikube isn’t running or you switched contexts. Start Minikube (`minikube start`)
+### `Current kubectl context is ...`
+- `run_local.sh` only targets the local Minikube flow. Start Minikube if needed
   and run `kubectl config use-context minikube`.
 
 ### `Workflow file not found`
-- Run `./run.sh` from the repo root and pass relative paths (e.g.,
+- Run `./run_local.sh` from the repo root and pass relative paths (e.g.,
   `workflows/python_chain.yaml`).
 
 ### `argo submit` fails because CRDs are missing
-- Re-run `./build.sh`; it installs Argo via `scripts/ensure_argo_workflows.sh`.
-  Alternatively, run that script manually to reinstall the controller.
+- Re-run `./run_local.sh`; it installs Argo via `scripts/ensure_argo_workflows.sh`
+  before submitting. Alternatively, run that script manually to reinstall the
+  controller.
 
 ### PVC-related errors
-- Delete the PVC and rebuild it with `./run.sh`:
+- Delete the PVC and rebuild it with `./run_local.sh`:
   ```bash
   kubectl delete pvc cads-data-pvc -n argo
-  ./run.sh workflows/python_chain.yaml
+  ./run_local.sh workflows/python_chain.yaml
   ```
   Adjust storage class/size inside `scripts/generate_manifests.sh` if your cluster
   requires custom settings.
+
+---
+
+## `./run_remote.sh` / hosted Argo problems
+
+### `Unable to resolve an Argo token`
+- Pass `--kubeconfig /path/to/kubeconfig` or export `ARGO_TOKEN`.
+- The browser UI expects `Bearer <token>`, but the CLI scripts normalize that
+  prefix automatically if you reused the same value in `ARGO_TOKEN`.
+
+### Remote submission fails before the workflow starts
+- Re-run `./prepare_remote.sh --image ...` to validate Argo access and confirm
+  the selected image tag was published successfully.
+- Confirm the image tag you pass to `run_remote.sh` is the same tag you built
+  and published.
 
 ---
 
@@ -108,6 +116,8 @@ probable cause, and recommended fix.
 
 - Always run scripts from the repo root; many paths are relative.
 - Keep `./scripts/certs/` populated with your corporate CA certs when working
-  behind TLS-inspecting proxies. `build.sh` syncs them into Minikube.
+  behind TLS-inspecting proxies. `run_local.sh` syncs them into Minikube, and
+  `run_remote.sh` / `prepare_remote.sh` source the host CA helper before remote
+  Argo calls.
 - When debugging deeper issues, check the log files under `minikube logs` and
   `kubectl get events -n argo`.

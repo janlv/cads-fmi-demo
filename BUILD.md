@@ -1,10 +1,9 @@
 # Build Pipeline
 
-`build.sh` assembles everything needed to run the CADS FMI demo inside Argo on
-Minikube. It assumes you already ran `./prepare.sh` on a Debian/Ubuntu host so
-the local toolchain (`./.local/go`, `./.local/bin/argo`, …) and the Minikube
-profile exist. The script is idempotent and safe to rerun whenever you touch
-FMUs, Go code, or the Dockerfile.
+`build.sh` is now a pure build step. It is idempotent and safe to rerun whenever
+you touch FMUs, Go code, or the Dockerfile. If the repo-local Go toolchain is
+missing, the script bootstraps it under `./.local/go` automatically; all other
+cluster/registry preparation remains outside `build.sh`.
 
 ```bash
 ./build.sh
@@ -14,8 +13,9 @@ FMUs, Go code, or the Dockerfile.
 ## High-level workflow
 
 1. **Environment detection** – Prepends `./.local/go/bin` and `./.local/bin` to
-   `PATH`, selects the FMIL installation (default `./.local` unless you pass
-   `--fmil-home`), and ensures `$FMIL_HOME` points to the resolved path.
+   `PATH`, bootstraps Go locally when missing, selects the FMIL installation
+   (default `./.local` unless you pass `--fmil-home`), and ensures `$FMIL_HOME`
+   points to the resolved path.
 2. **FMIL toolchain** – If `${FMIL_HOME}/include/FMI` or the fmilib shared
    library is missing, invokes `scripts/install_fmil.sh --prefix "$FMIL_HOME"` to
    clone, build, and install fmilib.
@@ -29,20 +29,15 @@ FMUs, Go code, or the Dockerfile.
 5. **Container image** – Prefers Podman but falls back to Docker; whichever tool
    is found builds the Dockerfile into the requested tag (`cads-fmi-demo:latest`
    by default). The build context is the repo root.
-6. **Minikube CA sync** – Calls `scripts/install_minikube_ca.sh`. Every `.crt`
-   or `.pem` under `scripts/certs/` is copied into the Minikube VM so corporate
-   MITM certificates are trusted before Argo pulls the image.
-7. **Argo controller** – Executes `scripts/ensure_argo_workflows.sh` to install
-   (or verify) the Argo Workflows CRD and controller in the `argo` namespace.
-8. **Image preload** – Attempts `minikube image load -p minikube <tag>`. If the
-   direct load fails, streams the image from Podman/Docker into Minikube. When
-   everything fails, Argo will still pull the tag, but it may hit the registry.
+
+Local cluster preparation now lives in `run_local.sh`, while remote image
+publication lives in `prepare_remote.sh`.
 
 ## Arguments
 
 | Flag | Description |
 |------|-------------|
-| `--image <name:tag>` | Override the image tag used for the build and the subsequent Minikube preload. |
+| `--image <name:tag>` | Override the image tag used for the build. |
 | `--fmil-home <path>` | Reuse an existing fmilib installation instead of writing to `./.local`. |
 | `-h`, `--help` | Display usage. |
 
@@ -50,17 +45,15 @@ FMUs, Go code, or the Dockerfile.
 
 - `bin/cads-workflow-runner` and `bin/cads-workflow-service`
 - Container image tagged as the requested name (default `cads-fmi-demo:latest`)
-- Argo workflow controller installed/verified in Minikube’s `argo` namespace
-- `deploy/argo/<workflow>-workflow.yaml` and `deploy/storage/data-pvc.yaml`
-  refreshed the next time `run.sh` is executed (build generates none itself, but
-  it ensures the PVC/image prerequisites for submission are in place)
+- No cluster-side changes; local Argo/controller setup happens in `run_local.sh`,
+  and remote image publication happens in `prepare_remote.sh`
 
 ## Troubleshooting
 
-- **Missing toolchains** – Re-run `./prepare.sh` to regenerate the local Go/CLI
-  installs. `build.sh` only reuses what already exists under `./.local/`.
+- **Missing toolchains** – Re-run `./prepare_local.sh` or `./prepare_remote.sh`
+  to regenerate the local Go/CLI installs. `build.sh` only reuses what already
+  exists under `./.local/`.
 - **FMIL path issues** – Pass `--fmil-home` pointing to the desired install or
   export `FMIL_HOME` before invoking the script.
-- **Minikube errors** – Ensure `minikube status -p minikube` reports `Running`.
-  Use `./clean.sh` followed by `./prepare.sh` to rebuild a broken profile from
-  scratch.
+- **Container runtime missing** – Install Podman or Docker. `build.sh` needs one
+  of them available locally even for remote-only workflows.
