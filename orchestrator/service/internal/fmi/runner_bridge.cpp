@@ -16,12 +16,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstdarg>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -47,10 +50,13 @@ struct Config {
 };
 
 struct OutputValue {
-    enum class Type { Real, Integer, Boolean } type;
+    enum class Type { Real, Integer, Boolean, RealArray, IntegerArray, BooleanArray } type;
     double realVal{};
-    int intVal{};
+    int64_t intVal{};
     bool boolVal{};
+    std::vector<double> realArray;
+    std::vector<int64_t> intArray;
+    std::vector<bool> boolArray;
 };
 
 struct FmuExecutionResult {
@@ -177,6 +183,14 @@ struct ScopedFmu3 {
     }
 };
 
+void writeJsonFloat(std::ostringstream& oss, double value) {
+    if (std::isfinite(value)) {
+        oss << value;
+        return;
+    }
+    oss << "null";
+}
+
 std::string serializeJson(const FmuExecutionResult& result) {
     std::ostringstream oss;
     oss << "{";
@@ -189,13 +203,43 @@ std::string serializeJson(const FmuExecutionResult& result) {
         oss << "\"" << name << "\":";
         switch (value.type) {
             case OutputValue::Type::Real:
-                oss << value.realVal;
+                writeJsonFloat(oss, value.realVal);
                 break;
             case OutputValue::Type::Integer:
                 oss << value.intVal;
                 break;
             case OutputValue::Type::Boolean:
                 oss << (value.boolVal ? "true" : "false");
+                break;
+            case OutputValue::Type::RealArray:
+                oss << "[";
+                for (size_t i = 0; i < value.realArray.size(); ++i) {
+                    if (i > 0) {
+                        oss << ",";
+                    }
+                    writeJsonFloat(oss, value.realArray[i]);
+                }
+                oss << "]";
+                break;
+            case OutputValue::Type::IntegerArray:
+                oss << "[";
+                for (size_t i = 0; i < value.intArray.size(); ++i) {
+                    if (i > 0) {
+                        oss << ",";
+                    }
+                    oss << value.intArray[i];
+                }
+                oss << "]";
+                break;
+            case OutputValue::Type::BooleanArray:
+                oss << "[";
+                for (size_t i = 0; i < value.boolArray.size(); ++i) {
+                    if (i > 0) {
+                        oss << ",";
+                    }
+                    oss << (value.boolArray[i] ? "true" : "false");
+                }
+                oss << "]";
                 break;
         }
     }
@@ -372,6 +416,163 @@ OutputValue readOutputFmi2(fmi2_import_t* fmu, const std::string& name) {
     return ov;
 }
 
+size_t checkedMultiply(size_t lhs, size_t rhs, const std::string& what) {
+    if (lhs == 0 || rhs == 0) {
+        fail("Array dimension for " + what + " resolved to zero");
+    }
+    if (lhs > std::numeric_limits<size_t>::max() / rhs) {
+        fail("Array size overflow for " + what);
+    }
+    return lhs * rhs;
+}
+
+size_t normalizeDimensionSize(double value, const std::string& what) {
+    if (!std::isfinite(value) || value <= 0.0) {
+        fail("Array dimension for " + what + " must be a positive finite number");
+    }
+    double rounded = std::round(value);
+    if (std::fabs(value - rounded) > 1e-9) {
+        fail("Array dimension for " + what + " must be an integer");
+    }
+    if (rounded > static_cast<double>(std::numeric_limits<size_t>::max())) {
+        fail("Array dimension for " + what + " is too large");
+    }
+    return static_cast<size_t>(rounded);
+}
+
+size_t readFmi3SizeVariable(fmi3_import_t* fmu, fmi3_import_variable_t* var, const std::string& owner) {
+    if (!var) {
+        fail("Missing dimension variable for " + owner);
+    }
+    if (fmi3_import_variable_is_array(var)) {
+        fail("Array-valued dimension variables are not supported for " + owner);
+    }
+
+    fmi3_value_reference_t vr = fmi3_import_get_variable_vr(var);
+    fmi3_base_type_enu_t baseType = fmi3_import_get_variable_base_type(var);
+
+    switch (baseType) {
+        case fmi3_base_type_float64: {
+            fmi3_float64_t value{};
+            if (fmi3_import_get_float64(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading float64 dimension for " + owner);
+            }
+            return normalizeDimensionSize(value, owner);
+        }
+        case fmi3_base_type_float32: {
+            fmi3_float32_t value{};
+            if (fmi3_import_get_float32(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading float32 dimension for " + owner);
+            }
+            return normalizeDimensionSize(value, owner);
+        }
+        case fmi3_base_type_int64: {
+            fmi3_int64_t value{};
+            if (fmi3_import_get_int64(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading int64 dimension for " + owner);
+            }
+            return normalizeDimensionSize(static_cast<double>(value), owner);
+        }
+        case fmi3_base_type_int32: {
+            fmi3_int32_t value{};
+            if (fmi3_import_get_int32(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading int32 dimension for " + owner);
+            }
+            return normalizeDimensionSize(static_cast<double>(value), owner);
+        }
+        case fmi3_base_type_int16: {
+            fmi3_int16_t value{};
+            if (fmi3_import_get_int16(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading int16 dimension for " + owner);
+            }
+            return normalizeDimensionSize(static_cast<double>(value), owner);
+        }
+        case fmi3_base_type_int8: {
+            fmi3_int8_t value{};
+            if (fmi3_import_get_int8(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading int8 dimension for " + owner);
+            }
+            return normalizeDimensionSize(static_cast<double>(value), owner);
+        }
+        case fmi3_base_type_uint64: {
+            fmi3_uint64_t value{};
+            if (fmi3_import_get_uint64(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading uint64 dimension for " + owner);
+            }
+            if (value > std::numeric_limits<size_t>::max()) {
+                fail("Array dimension for " + owner + " is too large");
+            }
+            return static_cast<size_t>(value);
+        }
+        case fmi3_base_type_uint32: {
+            fmi3_uint32_t value{};
+            if (fmi3_import_get_uint32(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading uint32 dimension for " + owner);
+            }
+            return static_cast<size_t>(value);
+        }
+        case fmi3_base_type_uint16: {
+            fmi3_uint16_t value{};
+            if (fmi3_import_get_uint16(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading uint16 dimension for " + owner);
+            }
+            return static_cast<size_t>(value);
+        }
+        case fmi3_base_type_uint8: {
+            fmi3_uint8_t value{};
+            if (fmi3_import_get_uint8(fmu, &vr, 1, &value, 1) != fmi3_status_ok) {
+                fail("Failed reading uint8 dimension for " + owner);
+            }
+            return static_cast<size_t>(value);
+        }
+        default:
+            fail("Unsupported dimension base type for " + owner);
+    }
+}
+
+size_t resolveFmi3ValueCount(fmi3_import_t* fmu, fmi3_import_variable_t* var, const std::string& name) {
+    if (!fmi3_import_variable_is_array(var)) {
+        return 1;
+    }
+
+    fmi3_import_dimension_list_t* dims = fmi3_import_get_variable_dimension_list(var);
+    if (!dims) {
+        fail("Missing dimension metadata for array output " + name);
+    }
+
+    size_t count = 1;
+    size_t dimCount = fmi3_import_get_dimension_list_size(dims);
+    if (dimCount == 0) {
+        fail("Array output " + name + " does not define any dimensions");
+    }
+    for (size_t i = 0; i < dimCount; ++i) {
+        fmi3_import_dimension_t* dim = fmi3_import_get_dimension(dims, i);
+        if (!dim) {
+            fail("Failed reading dimension metadata for array output " + name);
+        }
+
+        size_t dimSize = 0;
+        if (fmi3_import_get_dimension_has_start(dim)) {
+            fmi3_uint64_t start = fmi3_import_get_dimension_start(dim);
+            if (start > std::numeric_limits<size_t>::max()) {
+                fail("Array dimension for " + name + " is too large");
+            }
+            dimSize = static_cast<size_t>(start);
+            if (dimSize == 0) {
+                fail("Array dimension for " + name + " resolved to zero");
+            }
+        } else if (fmi3_import_get_dimension_has_vr(dim)) {
+            fmi3_value_reference_t dimVR = fmi3_import_get_dimension_vr(dim);
+            fmi3_import_variable_t* dimVar = fmi3_import_get_variable_by_vr(fmu, dimVR);
+            dimSize = readFmi3SizeVariable(fmu, dimVar, name);
+        } else {
+            fail("Array dimension for " + name + " is missing both start and valueReference");
+        }
+        count = checkedMultiply(count, dimSize, name);
+    }
+    return count;
+}
+
 FmuExecutionResult runFmi2(const Config& cfg, const std::string& unpackDir, fmi_import_context_t* ctx) {
     ScopedFmu2 fmu(fmi2_import_parse_xml(ctx, unpackDir.c_str(), nullptr));
     if (!fmu.fmu) {
@@ -488,27 +689,55 @@ OutputValue readOutputFmi3(fmi3_import_t* fmu, const std::string& name) {
     }
     fmi3_value_reference_t vr = fmi3_import_get_variable_vr(var);
     fmi3_base_type_enu_t baseType = fmi3_import_get_variable_base_type(var);
+    size_t valueCount = resolveFmi3ValueCount(fmu, var, name);
     OutputValue ov{};
     switch (baseType) {
         case fmi3_base_type_float64: {
-            fmi3_float64_t value{};
-            fmi3_import_get_float64(fmu, &vr, 1, &value, 1);
-            ov.type = OutputValue::Type::Real;
-            ov.realVal = value;
+            std::vector<fmi3_float64_t> values(valueCount);
+            if (fmi3_import_get_float64(fmu, &vr, 1, values.data(), valueCount) != fmi3_status_ok) {
+                fail("Failed reading float64 output " + name);
+            }
+            if (valueCount == 1) {
+                ov.type = OutputValue::Type::Real;
+                ov.realVal = values[0];
+            } else {
+                ov.type = OutputValue::Type::RealArray;
+                ov.realArray.assign(values.begin(), values.end());
+            }
             break;
         }
         case fmi3_base_type_int32: {
-            fmi3_int32_t iv{};
-            fmi3_import_get_int32(fmu, &vr, 1, &iv, 1);
-            ov.type = OutputValue::Type::Integer;
-            ov.intVal = iv;
+            std::vector<fmi3_int32_t> values(valueCount);
+            if (fmi3_import_get_int32(fmu, &vr, 1, values.data(), valueCount) != fmi3_status_ok) {
+                fail("Failed reading int32 output " + name);
+            }
+            if (valueCount == 1) {
+                ov.type = OutputValue::Type::Integer;
+                ov.intVal = values[0];
+            } else {
+                ov.type = OutputValue::Type::IntegerArray;
+                ov.intArray.reserve(values.size());
+                for (fmi3_int32_t value : values) {
+                    ov.intArray.push_back(value);
+                }
+            }
             break;
         }
         case fmi3_base_type_bool: {
-            fmi3_boolean_t bv{};
-            fmi3_import_get_boolean(fmu, &vr, 1, &bv, 1);
-            ov.type = OutputValue::Type::Boolean;
-            ov.boolVal = (bv != fmi3_false);
+            std::unique_ptr<fmi3_boolean_t[]> rawValues(new fmi3_boolean_t[valueCount]);
+            if (fmi3_import_get_boolean(fmu, &vr, 1, rawValues.get(), valueCount) != fmi3_status_ok) {
+                fail("Failed reading boolean output " + name);
+            }
+            if (valueCount == 1) {
+                ov.type = OutputValue::Type::Boolean;
+                ov.boolVal = (rawValues[0] != fmi3_false);
+            } else {
+                ov.type = OutputValue::Type::BooleanArray;
+                ov.boolArray.reserve(valueCount);
+                for (size_t i = 0; i < valueCount; ++i) {
+                    ov.boolArray.push_back(rawValues[i] != fmi3_false);
+                }
+            }
             break;
         }
         default:
