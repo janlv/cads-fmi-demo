@@ -2,11 +2,15 @@ const state = {
   config: null,
   workflows: [],
   runs: [],
+  simulinkResult: null,
   runtimeProblems: [],
   pendingWorkflows: new Set(),
   poller: null,
   loadingRuns: false,
 };
+
+const SIMULINK_WORKFLOW_PATH = "workflows/calculate_aecis.yaml";
+const CIVECTOR_LABELS = ["Mean", "RMS", "Peak-to-Peak", "Skewness", "Kurtosis"];
 
 document.addEventListener("DOMContentLoaded", () => {
   void initializeDashboard();
@@ -23,6 +27,7 @@ async function initializeDashboard() {
       await loadRuns();
       startPolling();
     } else {
+      renderSimulinkResults();
       renderRuns();
       renderChart();
     }
@@ -30,6 +35,7 @@ async function initializeDashboard() {
     state.runtimeProblems = [error.message];
     renderBanner();
     renderWorkflows();
+    renderSimulinkResults();
     renderRuns();
     renderChart();
   }
@@ -57,7 +63,9 @@ async function loadRuns() {
     state.runtimeProblems = [error.message];
   } finally {
     state.loadingRuns = false;
+    await loadSimulinkResults();
     renderBanner();
+    renderSimulinkResults();
     renderRuns();
     renderChart();
   }
@@ -200,6 +208,109 @@ function mergeRun(run) {
   state.runs = others.slice(0, 20);
 }
 
+async function loadSimulinkResults() {
+  const latest = latestSucceededSimulinkRun();
+  if (!latest) {
+    state.simulinkResult = {
+      state: "empty",
+      message: "No successful calculate_aecis run has been observed yet.",
+    };
+    return;
+  }
+
+  if (state.simulinkResult?.runName === latest.name && state.simulinkResult?.state === "ready") {
+    return;
+  }
+
+  state.simulinkResult = {
+    state: "loading",
+    runName: latest.name,
+  };
+
+  try {
+    const payload = await fetchJSON(`/api/runs/${encodeURIComponent(latest.name)}/results`);
+    state.simulinkResult = {
+      state: "ready",
+      runName: latest.name,
+      payload,
+    };
+  } catch (error) {
+    state.simulinkResult = {
+      state: "error",
+      runName: latest.name,
+      message: error.message,
+    };
+  }
+}
+
+function latestSucceededSimulinkRun() {
+  return state.runs.find(
+    (run) =>
+      run.workflowPath === SIMULINK_WORKFLOW_PATH &&
+      String(run.phase || "").toLowerCase() === "succeeded",
+  );
+}
+
+function renderSimulinkResults() {
+  const container = document.getElementById("simulinkResults");
+  const simulink = state.simulinkResult;
+
+  if (!simulink || simulink.state === "loading") {
+    container.innerHTML = '<div class="empty-state">Waiting for the latest successful Simulink workflow result…</div>';
+    return;
+  }
+
+  if (simulink.state === "empty") {
+    container.innerHTML = `<div class="empty-state">${escapeHTML(simulink.message)}</div>`;
+    return;
+  }
+
+  if (simulink.state === "error") {
+    container.innerHTML = `<div class="empty-state">Unable to load Simulink results for <code>${escapeHTML(simulink.runName)}</code>.<br>${escapeHTML(simulink.message)}</div>`;
+    return;
+  }
+
+  const stepEntries = Object.entries(simulink.payload?.stepResults || {});
+  if (stepEntries.length === 0) {
+    container.innerHTML = '<div class="empty-state">The workflow succeeded, but no structured result payload was found in its logs.</div>';
+    return;
+  }
+
+  const [stepName, stepResult] = preferredSimulinkStep(stepEntries);
+  const ciVector = Array.isArray(stepResult.CIvector) ? stepResult.CIvector : [];
+  const metricCards = ciVector
+    .slice(0, CIVECTOR_LABELS.length)
+    .map((value, index) => `
+      <div class="metric-chip">
+        <span class="metric-label">${escapeHTML(CIVECTOR_LABELS[index])}</span>
+        <span class="metric-value">${escapeHTML(formatMetric(value))}</span>
+      </div>
+    `)
+    .join("");
+
+  container.innerHTML = `
+    <article class="result-card">
+      <h3>${escapeHTML(simulink.payload.runName)}</h3>
+      <div class="result-meta">
+        <div>${escapeHTML(simulink.payload.workflowPath || SIMULINK_WORKFLOW_PATH)}</div>
+        <div>step ${escapeHTML(stepName)}</div>
+        ${stepResult.time !== undefined ? `<div>reported stop time ${escapeHTML(formatMetric(stepResult.time))}</div>` : ""}
+      </div>
+      ${metricCards ? `<div class="metric-grid">${metricCards}</div>` : ""}
+      <pre class="result-json">${escapeHTML(JSON.stringify(stepResult, null, 2))}</pre>
+    </article>
+  `;
+}
+
+function preferredSimulinkStep(stepEntries) {
+  for (const entry of stepEntries) {
+    if (Array.isArray(entry[1]?.CIvector)) {
+      return entry;
+    }
+  }
+  return stepEntries[0];
+}
+
 function renderRuns() {
   const list = document.getElementById("runsList");
   if (state.runs.length === 0) {
@@ -340,6 +451,17 @@ function formatDuration(value) {
     return `${minutes}m ${remainder}s`;
   }
   return `${seconds.toFixed(seconds >= 10 ? 0 : 1)}s`;
+}
+
+function formatMetric(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value);
+  }
+  if (Math.abs(numeric) >= 1000 || (Math.abs(numeric) > 0 && Math.abs(numeric) < 0.001)) {
+    return numeric.toExponential(3);
+  }
+  return numeric.toFixed(4).replace(/\.?0+$/, "");
 }
 
 function formatTimestamp(raw) {

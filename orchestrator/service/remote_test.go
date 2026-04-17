@@ -104,6 +104,58 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	}
 }
 
+func TestExtractRunResultsFromLogsParsesMixedRunnerOutput(t *testing.T) {
+	logs := []byte(`[workflow] Running workflows/calculate_aecis.yaml
+[workflow] Completed all steps.
+{
+  "calculate_aecis": {
+    "CIvector": [2.46, 2.47, 0.19, -0.1, 2.7],
+    "time": 10
+  }
+}
+`)
+
+	results, err := extractRunResultsFromLogs(logs)
+	if err != nil {
+		t.Fatalf("extractRunResultsFromLogs() error = %v", err)
+	}
+
+	step := results["calculate_aecis"]
+	if step == nil {
+		t.Fatalf("results = %+v, want calculate_aecis step", results)
+	}
+	vector, ok := step["CIvector"].([]any)
+	if !ok || len(vector) != 5 {
+		t.Fatalf("CIvector = %#v, want five values", step["CIvector"])
+	}
+	if got := step["time"]; got != float64(10) {
+		t.Fatalf("time = %#v, want 10", got)
+	}
+}
+
+func TestExtractRunResultsFromLogsParsesPrefixedArgoLogs(t *testing.T) {
+	logs := []byte(`cads-calculate-aecis-20260417105312: [INFO][FMILIB] XML specifies FMI standard version 3.0
+cads-calculate-aecis-20260417105312: {"calculate_aecis":{"CIvector":0,"time":10}}
+cads-calculate-aecis-20260417105312: time="2026-04-17T10:53:17.517Z" level=info msg="sub-process exited" argo=true error="<nil>"
+`)
+
+	results, err := extractRunResultsFromLogs(logs)
+	if err != nil {
+		t.Fatalf("extractRunResultsFromLogs() error = %v", err)
+	}
+
+	step := results["calculate_aecis"]
+	if step == nil {
+		t.Fatalf("results = %+v, want calculate_aecis step", results)
+	}
+	if got := step["CIvector"]; got != float64(0) {
+		t.Fatalf("CIvector = %#v, want 0", got)
+	}
+	if got := step["time"]; got != float64(10) {
+		t.Fatalf("time = %#v, want 10", got)
+	}
+}
+
 func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "workflows"), 0o755); err != nil {
@@ -154,7 +206,7 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 			t.Fatalf("manifest = %+v, want configured namespace and service account", manifest)
 		}
 		container := manifest.Spec.Templates[0].Container
-		if container.Image != "ghcr.io/example/cads:test" || len(container.Args) != 2 || container.Args[1] != "workflows/python_chain.yaml" {
+		if container.Image != "ghcr.io/example/cads:test" || len(container.Args) != 3 || container.Args[0] != "--json-output" || container.Args[2] != "workflows/python_chain.yaml" {
 			t.Fatalf("container = %+v, want configured image and workflow path", container)
 		}
 		if !strings.HasPrefix(manifest.Metadata.Name, "cads-python-chain-20260416170000") {

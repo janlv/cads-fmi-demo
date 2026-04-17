@@ -18,12 +18,15 @@ fi
 
 default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
 have_explicit_kubeconfig=0
+have_explicit_addr=0
 
 for arg in "$@"; do
     case "$arg" in
         --kubeconfig|--kubeconfig=*)
             have_explicit_kubeconfig=1
-            break
+            ;;
+        --addr|--addr=*)
+            have_explicit_addr=1
             ;;
     esac
 done
@@ -34,4 +37,8 @@ if [[ -z "${ARGO_TOKEN:-}" && -z "${KUBECONFIG:-}" && $have_explicit_kubeconfig 
     extra_args+=(--kubeconfig "$default_kubeconfig")
 fi
 
-exec "$ROOT_DIR/bin/cads-workflow-service" --serve --addr :8080 --workdir "$ROOT_DIR" "${extra_args[@]}" "$@"
+if [[ $have_explicit_addr -eq 0 ]]; then
+    extra_args=(--addr :8080 "${extra_args[@]}")
+fi
+
+exec "$ROOT_DIR/bin/cads-workflow-service" --serve --workdir "$ROOT_DIR" "${extra_args[@]}" "$@"

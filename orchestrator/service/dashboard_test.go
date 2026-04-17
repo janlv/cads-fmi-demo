@@ -16,6 +16,7 @@ type fakeRemoteClient struct {
 	config    DashboardConfig
 	runs      []RunSummary
 	byName    map[string]RunSummary
+	results   map[string]RunResults
 	submitted []string
 }
 
@@ -37,6 +38,15 @@ func (f *fakeRemoteClient) GetRun(_ context.Context, name string) (*RunSummary, 
 		return nil, ErrRemoteRunNotFound
 	}
 	copy := run
+	return &copy, nil
+}
+
+func (f *fakeRemoteClient) GetRunResults(_ context.Context, name string) (*RunResults, error) {
+	result, ok := f.results[name]
+	if !ok {
+		return nil, ErrRunResultsUnavailable
+	}
+	copy := result
 	return &copy, nil
 }
 
@@ -84,6 +94,16 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 	}
 	remote.byName = map[string]RunSummary{
 		remote.runs[0].Name: remote.runs[0],
+	}
+	remote.results = map[string]RunResults{
+		remote.runs[0].Name: {
+			RunName:      remote.runs[0].Name,
+			WorkflowPath: "workflows/python_chain.yaml",
+			StepResults: map[string]map[string]any{
+				"producer": {"mean": 1.25},
+			},
+			CollectedFrom: "argo logs",
+		},
 	}
 
 	server := &Server{
@@ -162,6 +182,23 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("get run results", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/runs/cads-python-chain-20260416164333/results", nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("ServeHTTP() status = %d, want %d", rec.Code, http.StatusOK)
+		}
+
+		var result RunResults
+		if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+			t.Fatalf("decode run results: %v", err)
+		}
+		if result.RunName != remote.runs[0].Name || result.StepResults["producer"]["mean"] != 1.25 {
+			t.Fatalf("result = %+v, want run results payload", result)
+		}
+	})
+
 	t.Run("submit run", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"workflow":"workflows/python_chain.yaml"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -183,7 +220,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			t.Fatalf("ServeHTTP() status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, "Kaizen Argo Playground") || !strings.Contains(body, "workflowGrid") || !strings.Contains(body, "timelineChart") {
+		if !strings.Contains(body, "Kaizen Argo Playground") || !strings.Contains(body, "workflowGrid") || !strings.Contains(body, "timelineChart") || !strings.Contains(body, "simulinkResults") {
 			t.Fatalf("dashboard body missing expected markers: %q", body)
 		}
 	})

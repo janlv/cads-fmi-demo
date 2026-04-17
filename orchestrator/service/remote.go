@@ -26,8 +26,9 @@ const (
 )
 
 var (
-	ErrRemoteUnavailable = errors.New("remote playground is not configured")
-	ErrRemoteRunNotFound = errors.New("remote workflow not found")
+	ErrRemoteUnavailable     = errors.New("remote playground is not configured")
+	ErrRemoteRunNotFound     = errors.New("remote workflow not found")
+	ErrRunResultsUnavailable = errors.New("workflow results are not available")
 )
 
 type EnvLookup func(string) string
@@ -73,10 +74,18 @@ type RunSummary struct {
 	ServiceAccount  string     `json:"serviceAccount,omitempty"`
 }
 
+type RunResults struct {
+	RunName       string                    `json:"runName"`
+	WorkflowPath  string                    `json:"workflowPath"`
+	StepResults   map[string]map[string]any `json:"stepResults"`
+	CollectedFrom string                    `json:"collectedFrom"`
+}
+
 type RemoteClient interface {
 	Config() DashboardConfig
 	ListRuns(ctx context.Context, limit int) ([]RunSummary, error)
 	GetRun(ctx context.Context, name string) (*RunSummary, error)
+	GetRunResults(ctx context.Context, name string) (*RunResults, error)
 	SubmitWorkflow(ctx context.Context, workflowPath string) (*RunSummary, error)
 }
 
@@ -264,6 +273,44 @@ func (c *ArgoRemoteClient) SubmitWorkflow(ctx context.Context, workflowPath stri
 		return nil, fmt.Errorf("submitted workflow was not recognized as a repo workflow")
 	}
 	return run, nil
+}
+
+func (c *ArgoRemoteClient) GetRunResults(ctx context.Context, name string) (*RunResults, error) {
+	if err := c.ensureReady(); err != nil {
+		return nil, err
+	}
+
+	run, err := c.GetRun(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(run.Phase, "Succeeded") {
+		return nil, fmt.Errorf("%w: workflow phase is %s", ErrRunResultsUnavailable, run.Phase)
+	}
+
+	output, err := c.runArgo(ctx,
+		"logs", name,
+		"-n", c.config.Namespace,
+		"-s", c.config.ArgoServer,
+		"--token", c.config.Token,
+		"--argo-http1",
+		"--tail", "2000",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	results, err := extractRunResultsFromLogs(output)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RunResults{
+		RunName:       run.Name,
+		WorkflowPath:  run.WorkflowPath,
+		StepResults:   results,
+		CollectedFrom: "argo logs",
+	}, nil
 }
 
 func (c *ArgoRemoteClient) ensureReady() error {
@@ -539,6 +586,122 @@ func parseArgoTime(raw string) (*time.Time, error) {
 	return &parsed, nil
 }
 
+func extractRunResultsFromLogs(payload []byte) (map[string]map[string]any, error) {
+	trimmed := bytes.TrimSpace(payload)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("%w: workflow logs are empty", ErrRunResultsUnavailable)
+	}
+
+	if results, err := unmarshalRunResults(trimmed); err == nil {
+		return results, nil
+	}
+
+	normalized := bytes.TrimSpace(stripLogLinePrefixes(trimmed))
+	if len(normalized) > 0 {
+		if results, err := unmarshalRunResults(normalized); err == nil {
+			return results, nil
+		}
+		if results, err := extractJSONObjectFromLines(normalized); err == nil {
+			return results, nil
+		}
+		if results, err := extractJSONTail(normalized); err == nil {
+			return results, nil
+		}
+	}
+
+	if results, err := extractJSONObjectFromLines(trimmed); err == nil {
+		return results, nil
+	}
+	if results, err := extractJSONTail(trimmed); err == nil {
+		return results, nil
+	}
+
+	return nil, fmt.Errorf("%w: no JSON result payload found in workflow logs", ErrRunResultsUnavailable)
+}
+
+func stripLogLinePrefixes(payload []byte) []byte {
+	lines := strings.Split(string(payload), "\n")
+	for idx, line := range lines {
+		lines[idx] = stripLogPrefix(line)
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
+func stripLogPrefix(line string) string {
+	prefixEnd := strings.Index(line, ": ")
+	if prefixEnd <= 0 {
+		return line
+	}
+
+	prefix := line[:prefixEnd]
+	if strings.Contains(prefix, " ") || strings.Contains(prefix, "\t") {
+		return line
+	}
+	return line[prefixEnd+2:]
+}
+
+func extractJSONObjectFromLines(payload []byte) (map[string]map[string]any, error) {
+	lines := strings.Split(string(payload), "\n")
+	var builder strings.Builder
+	balance := 0
+	collecting := false
+
+	for _, line := range lines {
+		current := line
+		if !collecting {
+			start := strings.IndexByte(current, '{')
+			if start < 0 {
+				continue
+			}
+			current = current[start:]
+			collecting = true
+			balance = 0
+			builder.Reset()
+		}
+
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(current)
+		balance += strings.Count(current, "{")
+		balance -= strings.Count(current, "}")
+		if balance > 0 {
+			continue
+		}
+
+		if results, err := unmarshalRunResults(bytes.TrimSpace([]byte(builder.String()))); err == nil {
+			return results, nil
+		}
+		collecting = false
+		builder.Reset()
+	}
+
+	return nil, fmt.Errorf("no JSON object found in log lines")
+}
+
+func extractJSONTail(payload []byte) (map[string]map[string]any, error) {
+	for idx := len(payload) - 1; idx >= 0; idx-- {
+		if payload[idx] != '{' {
+			continue
+		}
+		if results, err := unmarshalRunResults(bytes.TrimSpace(payload[idx:])); err == nil {
+			return results, nil
+		}
+	}
+	return nil, fmt.Errorf("no JSON tail found")
+}
+
+func unmarshalRunResults(payload []byte) (map[string]map[string]any, error) {
+	var results map[string]map[string]any
+	if err := json.Unmarshal(payload, &results); err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("result payload is empty")
+	}
+	return results, nil
+}
+
 func computeDurationSeconds(startedAt *time.Time, finishedAt *time.Time, now time.Time) float64 {
 	if startedAt == nil {
 		return 0
@@ -598,7 +761,7 @@ func generateRemoteWorkflowManifest(name string, namespace string, serviceAccoun
 	template.Container.Image = image
 	template.Container.ImagePullPolicy = "IfNotPresent"
 	template.Container.Command = []string{"/app/bin/cads-workflow-runner"}
-	template.Container.Args = []string{"--workflow", workflowPath}
+	template.Container.Args = []string{"--json-output", "--workflow", workflowPath}
 	manifest.Spec.Templates = append(manifest.Spec.Templates, template)
 
 	var buffer bytes.Buffer

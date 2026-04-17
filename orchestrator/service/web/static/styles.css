@@ -241,6 +241,71 @@ h2 {
   gap: 14px;
 }
 
+.simulink-results {
+  display: grid;
+  gap: 14px;
+}
+
+.result-card {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 124, 120, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(239, 247, 243, 0.86));
+}
+
+.result-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.08rem;
+}
+
+.result-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.metric-chip {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(23, 33, 38, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.metric-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.metric-value {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.result-json {
+  margin: 14px 0 0;
+  padding: 12px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 16px;
+  background: rgba(23, 33, 38, 0.04);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .run-header {
   display: flex;
   justify-content: space-between;

@@ -46,6 +46,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleWorkflows(w, r)
 	case r.URL.Path == "/api/runs":
 		s.handleRuns(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/runs/") && strings.HasSuffix(r.URL.Path, "/results") && r.Method == http.MethodGet:
+		s.handleRunResults(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/runs/") && r.Method == http.MethodGet:
 		s.handleRunByName(w, r)
 	case r.URL.Path == "/run" && r.Method == http.MethodPost:
@@ -150,6 +152,22 @@ func (s *Server) handleRunByName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+func (s *Server) handleRunResults(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/api/runs/")
+	name = strings.TrimSuffix(name, "/results")
+	if name == "" || strings.Contains(name, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	results, err := s.remoteClient().GetRunResults(r.Context(), name)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
+}
+
 func (s *Server) handleLocalRun(w http.ResponseWriter, r *http.Request) {
 	if s.Runner == nil {
 		writeJSONError(w, http.StatusInternalServerError, "runner is not configured")
@@ -212,6 +230,10 @@ func (c disabledRemoteClient) GetRun(context.Context, string) (*RunSummary, erro
 	return nil, ErrRemoteUnavailable
 }
 
+func (c disabledRemoteClient) GetRunResults(context.Context, string) (*RunResults, error) {
+	return nil, ErrRemoteUnavailable
+}
+
 func (c disabledRemoteClient) SubmitWorkflow(context.Context, string) (*RunSummary, error) {
 	return nil, ErrRemoteUnavailable
 }
@@ -235,6 +257,8 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		status = http.StatusServiceUnavailable
 	case errors.Is(err, ErrRemoteRunNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, ErrRunResultsUnavailable):
+		status = http.StatusConflict
 	case errors.Is(err, workflowpkg.ErrPathEscapesRoot):
 		status = http.StatusBadRequest
 	case errors.Is(err, ErrWorkflowOutsideDirectory):
