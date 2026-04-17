@@ -65,7 +65,26 @@ for literal inputs and `result` to persist outputs. The same YAML file is used
 everywhere (CLI, container, Kubernetes, Argo), so no extra metadata is required.
 Once the workflow matches your scenario, you are ready to run it in the container.
 
-### Step 2A – Local Minikube flow
+### Step 2 – Choose an execution path
+
+The repo supports three ways to run the same workflow definition:
+
+- **Local path (`run_local.sh`)** – runs the workflow in a local Minikube +
+  Argo setup on your machine. Use this when you want an isolated dev loop and
+  local artifact collection under `data/run-artifacts/`.
+- **Remote path (`run_remote.sh`)** – submits one workflow run directly to the
+  shared Kaizen Argo playground. Use this when you want to validate the same
+  image/workflow in the hosted environment without the browser dashboard.
+- **Dashboard path (`run_dashboard.sh`)** – starts a local browser UI that lists
+  repo workflows, launches them into the remote Kaizen playground, and shows
+  recent run status plus a live duration plot. Use this when you want an
+  operator-style view of the remote environment.
+
+The runtime itself stays the same across all three paths: the workflow YAML is
+still executed by the same Go/FMIL code. What changes is where Argo runs it and
+how you interact with it.
+
+### Step 2A – Local path (Minikube + local Argo)
 
 Prepare the local toolchain and Minikube cluster, build the image, and submit
 the workflow:
@@ -84,7 +103,13 @@ it verifies the Minikube context, syncs custom CAs into Minikube, ensures the
 local Argo controller exists, loads the image into Minikube, submits the
 workflow through Argo, and copies PVC-backed artifacts into `data/run-artifacts/`.
 
-### Step 2B – Remote playground flow
+Use the local path when:
+
+- you want to iterate without publishing an image to a remote registry
+- you want workflow outputs copied back into the repo automatically
+- you want a local demo cluster you control end to end
+
+### Step 2B – Remote path (hosted Kaizen playground)
 
 Build the image with a registry tag, validate/publish it, then submit the
 remote workflow:
@@ -100,6 +125,58 @@ kubeconfig, validates access against `https://argoworkflows.cads.kzslab.dev`,
 and publishes the selected image tag through the local container engine.
 `run_remote.sh` generates a PVC/configmap-free manifest and submits it directly
 to the hosted Argo server with a unique workflow name.
+
+Use the remote path when:
+
+- you want one direct CLI submission into the shared Kaizen playground
+- you already have a published image tag that the playground can pull
+- you do not need the browser dashboard for launch/monitoring
+
+### Step 2C – Dashboard path (local browser UI for the remote playground)
+
+Build the binaries, then start the local dashboard:
+
+```bash
+./build.sh
+./run_dashboard.sh
+```
+
+Then open `http://localhost:8080/`. The dashboard serves one button per
+workflow under `workflows/`, lists recent hosted runs that point at repo
+workflows, and polls the Kaizen playground every 5 seconds for live duration
+updates.
+
+The dashboard is a control surface for the **remote** path, not a separate
+runtime. It still launches the configured container image in the hosted
+playground, so if you changed workflow/runtime code that must exist in the
+image, rebuild and publish that image first.
+
+Authentication for the dashboard follows this order:
+
+- `ARGO_TOKEN` if it is already set in the shell
+- `KUBECONFIG` if it is already set in the shell
+- an explicit `--kubeconfig ...` passed to `run_dashboard.sh`
+- `~/Kaizen_CADS/kubeconfig` automatically, if it exists
+
+Example with an explicit token:
+
+```bash
+export ARGO_TOKEN=...
+./run_dashboard.sh
+```
+
+Example with an explicit kubeconfig:
+
+```bash
+./run_dashboard.sh --kubeconfig ~/Kaizen_CADS/kubeconfig
+```
+
+Use the dashboard path when:
+
+- you want to launch remote workflows from a browser instead of the CLI
+- you want a live view of recent playground runs tied to repo workflows
+- you want a simple operator UI, but still keep all secrets and Argo access on
+  the local machine rather than in frontend code
 
 For browser access to the KAIZEN Argo UI:
 

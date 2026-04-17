@@ -52,5 +52,29 @@ curl -X POST localhost:8080/run \
      -d '{"workflow":"workflows/python_chain.yaml"}'
 ```
 
+When serving, the same binary now also exposes a browser dashboard at `/` plus
+the JSON endpoints:
+
+- `GET /api/config`
+- `GET /api/workflows`
+- `GET /api/runs?limit=20`
+- `GET /api/runs/{name}`
+- `POST /api/runs`
+
+Remote Kaizen playground access is configured with flags or environment
+variables:
+
+```bash
+export ARGO_TOKEN=...
+./cads-workflow-service --serve --addr :8080
+./cads-workflow-service --serve --addr :8080 --kubeconfig ~/Kaizen_CADS/kubeconfig
+```
+
+From the repo root you can also use the convenience launcher after `./build.sh`:
+
+```bash
+./run_dashboard.sh
+```
+
 Both binaries auto-detect the repository root; override with `--workdir /path/to/repo`
 if you run them from a different directory.
