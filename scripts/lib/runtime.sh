@@ -159,5 +159,99 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$BASHPID" ]]; then
         cads_extract_argo_token "$kubeconfig"
     }
 
+    cads_is_ghcr_image() {
+        [[ "$1" == ghcr.io/* ]]
+    }
+
+    cads_guess_ghcr_owner_from_image() {
+        local image="$1"
+        local remainder="${image#ghcr.io/}"
+        if [[ "$remainder" == "$image" || "$remainder" != */* ]]; then
+            return 1
+        fi
+        printf '%s\n' "${remainder%%/*}"
+    }
+
+    cads_has_valid_gh_auth() {
+        if ! command -v gh >/dev/null 2>&1; then
+            return 1
+        fi
+        GH_PROMPT_DISABLED=1 gh auth status --hostname github.com >/dev/null 2>&1
+    }
+
+    cads_resolve_ghcr_token() {
+        if [[ -n "${GHCR_TOKEN:-}" ]]; then
+            printf '%s\n' "$GHCR_TOKEN"
+            return 0
+        fi
+        if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+            printf '%s\n' "$GITHUB_TOKEN"
+            return 0
+        fi
+        if cads_has_valid_gh_auth; then
+            local token=""
+            token="$(GH_PROMPT_DISABLED=1 gh auth token 2>/dev/null || true)"
+            if [[ -n "$token" ]]; then
+                printf '%s\n' "$token"
+                return 0
+            fi
+        fi
+        return 1
+    }
+
+    cads_resolve_ghcr_username() {
+        local image="${1:-}"
+        if [[ -n "${GHCR_USERNAME:-}" ]]; then
+            printf '%s\n' "$GHCR_USERNAME"
+            return 0
+        fi
+        if [[ -n "${GITHUB_ACTOR:-}" ]]; then
+            printf '%s\n' "$GITHUB_ACTOR"
+            return 0
+        fi
+        if cads_has_valid_gh_auth; then
+            local username=""
+            username="$(GH_PROMPT_DISABLED=1 gh api user -q .login 2>/dev/null || true)"
+            if [[ -n "$username" ]]; then
+                printf '%s\n' "$username"
+                return 0
+            fi
+        fi
+        cads_guess_ghcr_owner_from_image "$image"
+    }
+
+    cads_ensure_ghcr_login() {
+        local image="$1"
+        local container_tool="$2"
+        local token=""
+        local username=""
+
+        if ! cads_is_ghcr_image "$image"; then
+            return 0
+        fi
+
+        token="$(cads_resolve_ghcr_token || true)"
+        if [[ -z "$token" ]]; then
+            log_warn "No automatic GHCR credentials found. Reusing existing ${container_tool} login if present."
+            log_warn "To automate GHCR publishing, set GHCR_TOKEN or GITHUB_TOKEN, or run gh auth login -h github.com -s write:packages once."
+            return 0
+        fi
+
+        username="$(cads_resolve_ghcr_username "$image" || true)"
+        if [[ -z "$username" ]]; then
+            log_error "Resolved a GHCR token but not a username. Set GHCR_USERNAME or GITHUB_ACTOR."
+            return 1
+        fi
+
+        log_step "Authenticating ${container_tool} to ghcr.io as ${username}"
+        if printf '%s\n' "$token" | "$container_tool" login ghcr.io -u "$username" --password-stdin >/dev/null 2>&1; then
+            log_ok "Authenticated to ghcr.io"
+            return 0
+        fi
+
+        log_error "Automatic ghcr.io login failed. Refresh gh auth login -h github.com -s write:packages, or set GHCR_USERNAME plus GHCR_TOKEN."
+        return 1
+    }
+
     CADS_RUNTIME_SH_LOADED="$BASHPID"
 fi

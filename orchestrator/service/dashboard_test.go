@@ -100,7 +100,15 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			RunName:      remote.runs[0].Name,
 			WorkflowPath: "workflows/python_chain.yaml",
 			StepResults: map[string]map[string]any{
-				"producer": {"mean": 1.25},
+				"producer": {
+					"mean": 1.25,
+					"trace": map[string]any{
+						"time": []float64{0, 1, 2},
+						"signals": map[string]any{
+							"mean": []float64{0.8, 1.0, 1.25},
+						},
+					},
+				},
 			},
 			CollectedFrom: "argo logs",
 		},
@@ -194,7 +202,8 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
 			t.Fatalf("decode run results: %v", err)
 		}
-		if result.RunName != remote.runs[0].Name || result.StepResults["producer"]["mean"] != 1.25 {
+		trace, ok := result.StepResults["producer"]["trace"].(map[string]any)
+		if result.RunName != remote.runs[0].Name || result.StepResults["producer"]["mean"] != 1.25 || !ok || len(trace) == 0 {
 			t.Fatalf("result = %+v, want run results payload", result)
 		}
 	})

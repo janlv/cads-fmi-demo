@@ -272,6 +272,10 @@ h2 {
   margin-top: 14px;
 }
 
+.single-metric {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .metric-chip {
   padding: 12px;
   border-radius: 16px;
@@ -304,6 +308,79 @@ h2 {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.trace-stack {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.trace-card {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(23, 33, 38, 0.08);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.trace-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.trace-head h4 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.trace-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.trace-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.trace-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(23, 33, 38, 0.08);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-family: "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", monospace;
+}
+
+.trace-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.trace-chart-shell {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(23, 33, 38, 0.08);
+  overflow: hidden;
+}
+
+.trace-chart-shell svg {
+  display: block;
+  width: 100%;
+  height: 210px;
 }
 
 .run-header {
@@ -364,11 +441,16 @@ h2 {
   }
 
   .hero-row,
-  .panel-head {
+  .panel-head,
+  .trace-head {
     flex-direction: column;
   }
 
   .meta-row {
+    justify-content: flex-start;
+  }
+
+  .trace-legend {
     justify-content: flex-start;
   }
 }

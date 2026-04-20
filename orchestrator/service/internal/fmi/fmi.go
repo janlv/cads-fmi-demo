@@ -25,9 +25,22 @@ type Config struct {
 	StepSize    *float64
 	StartValues map[string]string
 	Outputs     []string
+	InputSeries *InputSeriesConfig
+	Trace       *TraceConfig
 }
 
-// Run executes the FMU using FMIL and returns the final snapshot of requested outputs.
+type InputSeriesConfig struct {
+	CSVPath string
+}
+
+type TraceConfig struct {
+	Outputs     []string
+	Inputs      []string
+	SampleEvery *float64
+}
+
+// Run executes the FMU using FMIL and returns the final snapshot of requested outputs plus
+// optional sampled trace data when configured.
 func Run(cfg Config) (map[string]any, error) {
 	if cfg.FMUPath == "" {
 		return nil, fmt.Errorf("fmi: FMU path is required")
@@ -75,6 +88,18 @@ func Run(cfg Config) (map[string]any, error) {
 		cCfg.start_value_count = C.size_t(len(keys))
 	}
 
+	if cfg.InputSeries != nil && cfg.InputSeries.CSVPath != "" {
+		cstr := C.CString(cfg.InputSeries.CSVPath)
+		assignmentBacking = append(assignmentBacking, cstr)
+		inputSeries := (*C.cads_input_series)(C.malloc(C.size_t(C.sizeof_cads_input_series)))
+		if inputSeries == nil {
+			return nil, fmt.Errorf("fmi: failed to allocate input series buffer")
+		}
+		defer C.free(unsafe.Pointer(inputSeries))
+		*inputSeries = C.cads_input_series{csv_path: cstr}
+		cCfg.input_series = inputSeries
+	}
+
 	if len(cfg.Outputs) > 0 {
 		ptrSize := unsafe.Sizeof((*C.char)(nil))
 		mem := C.malloc(C.size_t(len(cfg.Outputs)) * C.size_t(ptrSize))
@@ -90,6 +115,45 @@ func Run(cfg Config) (map[string]any, error) {
 		}
 		cCfg.outputs = (**C.char)(mem)
 		cCfg.output_count = C.size_t(len(outputPtrs))
+	}
+
+	if cfg.Trace != nil {
+		if cfg.Trace.SampleEvery != nil {
+			cCfg.has_trace_interval = true
+			cCfg.trace_interval = C.double(*cfg.Trace.SampleEvery)
+		}
+		if len(cfg.Trace.Outputs) > 0 {
+			ptrSize := unsafe.Sizeof((*C.char)(nil))
+			mem := C.malloc(C.size_t(len(cfg.Trace.Outputs)) * C.size_t(ptrSize))
+			if mem == nil {
+				return nil, fmt.Errorf("fmi: failed to allocate trace outputs buffer")
+			}
+			defer C.free(mem)
+			outputPtrs := unsafe.Slice((**C.char)(mem), len(cfg.Trace.Outputs))
+			for i, name := range cfg.Trace.Outputs {
+				cstr := C.CString(name)
+				assignmentBacking = append(assignmentBacking, cstr)
+				outputPtrs[i] = cstr
+			}
+			cCfg.trace_outputs = (**C.char)(mem)
+			cCfg.trace_output_count = C.size_t(len(outputPtrs))
+		}
+		if len(cfg.Trace.Inputs) > 0 {
+			ptrSize := unsafe.Sizeof((*C.char)(nil))
+			mem := C.malloc(C.size_t(len(cfg.Trace.Inputs)) * C.size_t(ptrSize))
+			if mem == nil {
+				return nil, fmt.Errorf("fmi: failed to allocate trace inputs buffer")
+			}
+			defer C.free(mem)
+			inputPtrs := unsafe.Slice((**C.char)(mem), len(cfg.Trace.Inputs))
+			for i, name := range cfg.Trace.Inputs {
+				cstr := C.CString(name)
+				assignmentBacking = append(assignmentBacking, cstr)
+				inputPtrs[i] = cstr
+			}
+			cCfg.trace_inputs = (**C.char)(mem)
+			cCfg.trace_input_count = C.size_t(len(inputPtrs))
+		}
 	}
 
 	defer func() {

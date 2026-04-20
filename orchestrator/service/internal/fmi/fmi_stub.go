@@ -12,6 +12,18 @@ type Config struct {
 	StepSize    *float64
 	StartValues map[string]string
 	Outputs     []string
+	InputSeries *InputSeriesConfig
+	Trace       *TraceConfig
+}
+
+type InputSeriesConfig struct {
+	CSVPath string
+}
+
+type TraceConfig struct {
+	Outputs     []string
+	Inputs      []string
+	SampleEvery *float64
 }
 
 // Run reports that the FMIL-backed runner is unavailable without CGO.

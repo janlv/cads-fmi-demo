@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -22,6 +23,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -40,6 +42,25 @@ struct Assignment {
     std::string value;
 };
 
+struct NumericAssignment {
+    std::string name;
+    double value{};
+};
+
+struct InputSeriesConfig {
+    std::string csvPath;
+};
+
+struct TraceConfig {
+    std::vector<std::string> outputs;
+    std::vector<std::string> inputs;
+    std::optional<double> sampleEvery;
+
+    bool enabled() const {
+        return !outputs.empty() || !inputs.empty();
+    }
+};
+
 struct Config {
     std::string fmuPath;
     std::optional<double> startTime;
@@ -47,6 +68,8 @@ struct Config {
     std::optional<double> stepSize;
     std::vector<Assignment> startValues;
     std::vector<std::string> outputs;
+    std::optional<InputSeriesConfig> inputSeries;
+    TraceConfig trace;
 };
 
 struct OutputValue {
@@ -61,6 +84,8 @@ struct OutputValue {
 
 struct FmuExecutionResult {
     std::map<std::string, OutputValue> values;
+    std::vector<double> traceTimes;
+    std::map<std::string, std::vector<OutputValue>> traceSignals;
 };
 
 void preloadLibPythonIfAvailable() {
@@ -130,6 +155,33 @@ double parseNumber(const std::string& input) {
     return val;
 }
 
+std::string trimCopy(const std::string& input) {
+    size_t start = 0;
+    while (start < input.size() && std::isspace(static_cast<unsigned char>(input[start]))) {
+        start += 1;
+    }
+    size_t stop = input.size();
+    while (stop > start && std::isspace(static_cast<unsigned char>(input[stop - 1]))) {
+        stop -= 1;
+    }
+    return input.substr(start, stop - start);
+}
+
+std::vector<std::string> splitCsvLine(const std::string& line) {
+    std::vector<std::string> fields;
+    std::string current;
+    for (char ch : line) {
+        if (ch == ',') {
+            fields.push_back(trimCopy(current));
+            current.clear();
+            continue;
+        }
+        current.push_back(ch);
+    }
+    fields.push_back(trimCopy(current));
+    return fields;
+}
+
 std::string makeTempDir() {
     fs::path base = fs::temp_directory_path();
     std::string templ = (base / "cads-fmi-XXXXXX").string();
@@ -191,6 +243,77 @@ void writeJsonFloat(std::ostringstream& oss, double value) {
     oss << "null";
 }
 
+std::string escapeJsonString(const std::string& value) {
+    std::ostringstream oss;
+    for (char ch : value) {
+        switch (ch) {
+            case '\\':
+                oss << "\\\\";
+                break;
+            case '"':
+                oss << "\\\"";
+                break;
+            case '\n':
+                oss << "\\n";
+                break;
+            case '\r':
+                oss << "\\r";
+                break;
+            case '\t':
+                oss << "\\t";
+                break;
+            default:
+                oss << ch;
+                break;
+        }
+    }
+    return oss.str();
+}
+
+void writeJsonValue(std::ostringstream& oss, const OutputValue& value) {
+    switch (value.type) {
+        case OutputValue::Type::Real:
+            writeJsonFloat(oss, value.realVal);
+            break;
+        case OutputValue::Type::Integer:
+            oss << value.intVal;
+            break;
+        case OutputValue::Type::Boolean:
+            oss << (value.boolVal ? "true" : "false");
+            break;
+        case OutputValue::Type::RealArray:
+            oss << "[";
+            for (size_t i = 0; i < value.realArray.size(); ++i) {
+                if (i > 0) {
+                    oss << ",";
+                }
+                writeJsonFloat(oss, value.realArray[i]);
+            }
+            oss << "]";
+            break;
+        case OutputValue::Type::IntegerArray:
+            oss << "[";
+            for (size_t i = 0; i < value.intArray.size(); ++i) {
+                if (i > 0) {
+                    oss << ",";
+                }
+                oss << value.intArray[i];
+            }
+            oss << "]";
+            break;
+        case OutputValue::Type::BooleanArray:
+            oss << "[";
+            for (size_t i = 0; i < value.boolArray.size(); ++i) {
+                if (i > 0) {
+                    oss << ",";
+                }
+                oss << (value.boolArray[i] ? "true" : "false");
+            }
+            oss << "]";
+            break;
+    }
+}
+
 std::string serializeJson(const FmuExecutionResult& result) {
     std::ostringstream oss;
     oss << "{";
@@ -200,58 +323,165 @@ std::string serializeJson(const FmuExecutionResult& result) {
             oss << ",";
         }
         first = false;
-        oss << "\"" << name << "\":";
-        switch (value.type) {
-            case OutputValue::Type::Real:
-                writeJsonFloat(oss, value.realVal);
-                break;
-            case OutputValue::Type::Integer:
-                oss << value.intVal;
-                break;
-            case OutputValue::Type::Boolean:
-                oss << (value.boolVal ? "true" : "false");
-                break;
-            case OutputValue::Type::RealArray:
-                oss << "[";
-                for (size_t i = 0; i < value.realArray.size(); ++i) {
-                    if (i > 0) {
-                        oss << ",";
-                    }
-                    writeJsonFloat(oss, value.realArray[i]);
-                }
-                oss << "]";
-                break;
-            case OutputValue::Type::IntegerArray:
-                oss << "[";
-                for (size_t i = 0; i < value.intArray.size(); ++i) {
-                    if (i > 0) {
-                        oss << ",";
-                    }
-                    oss << value.intArray[i];
-                }
-                oss << "]";
-                break;
-            case OutputValue::Type::BooleanArray:
-                oss << "[";
-                for (size_t i = 0; i < value.boolArray.size(); ++i) {
-                    if (i > 0) {
-                        oss << ",";
-                    }
-                    oss << (value.boolArray[i] ? "true" : "false");
-                }
-                oss << "]";
-                break;
+        oss << "\"" << escapeJsonString(name) << "\":";
+        writeJsonValue(oss, value);
+    }
+
+    if (!result.traceTimes.empty() && !result.traceSignals.empty()) {
+        if (!first) {
+            oss << ",";
         }
+        oss << "\"trace\":{";
+        oss << "\"time\":[";
+        for (size_t i = 0; i < result.traceTimes.size(); ++i) {
+            if (i > 0) {
+                oss << ",";
+            }
+            writeJsonFloat(oss, result.traceTimes[i]);
+        }
+        oss << "],\"signals\":{";
+        bool firstSignal = true;
+        for (const auto& [name, values] : result.traceSignals) {
+            if (!firstSignal) {
+                oss << ",";
+            }
+            firstSignal = false;
+            oss << "\"" << escapeJsonString(name) << "\":[";
+            for (size_t i = 0; i < values.size(); ++i) {
+                if (i > 0) {
+                    oss << ",";
+                }
+                writeJsonValue(oss, values[i]);
+            }
+            oss << "]";
+        }
+        oss << "}}";
     }
     oss << "}";
     return oss.str();
 }
+
+struct InputSeriesPoint {
+    double time{};
+    std::vector<NumericAssignment> values;
+};
+
+struct InputSeriesData {
+    std::vector<InputSeriesPoint> points;
+};
 
 struct StepTimings {
     double start;
     double stop;
     double step;
 };
+
+InputSeriesData loadInputSeries(const InputSeriesConfig& cfg) {
+    std::ifstream stream(cfg.csvPath);
+    if (!stream.is_open()) {
+        fail("Failed opening input CSV '" + cfg.csvPath + "'");
+    }
+
+    std::string headerLine;
+    if (!std::getline(stream, headerLine)) {
+        fail("Input CSV '" + cfg.csvPath + "' is empty");
+    }
+
+    std::vector<std::string> headers = splitCsvLine(headerLine);
+    if (headers.empty()) {
+        fail("Input CSV '" + cfg.csvPath + "' is missing headers");
+    }
+    for (const auto& header : headers) {
+        if (header.empty()) {
+            fail("Input CSV '" + cfg.csvPath + "' contains an empty header");
+        }
+    }
+
+    InputSeriesData series;
+    std::string line;
+    double lastTime = -std::numeric_limits<double>::infinity();
+    size_t lineNumber = 1;
+    while (std::getline(stream, line)) {
+        lineNumber += 1;
+        line = trimCopy(line);
+        if (line.empty()) {
+            continue;
+        }
+
+        std::vector<std::string> fields = splitCsvLine(line);
+        if (fields.size() != headers.size()) {
+            fail("Input CSV '" + cfg.csvPath + "' line " + std::to_string(lineNumber) + " has " +
+                 std::to_string(fields.size()) + " columns, expected " + std::to_string(headers.size()));
+        }
+
+        InputSeriesPoint point;
+        point.time = parseNumber(fields[0]);
+        if (point.time + 1e-12 < lastTime) {
+            fail("Input CSV '" + cfg.csvPath + "' is not sorted by time");
+        }
+        lastTime = point.time;
+        point.values.reserve(headers.size());
+        for (size_t i = 0; i < headers.size(); ++i) {
+            point.values.push_back({headers[i], parseNumber(fields[i])});
+        }
+        series.points.push_back(std::move(point));
+    }
+
+    if (series.points.empty()) {
+        fail("Input CSV '" + cfg.csvPath + "' does not contain any samples");
+    }
+    return series;
+}
+
+void alignTimingsWithSeries(StepTimings& timings, const Config& cfg, const std::optional<InputSeriesData>& series) {
+    if (!series || series->points.empty()) {
+        return;
+    }
+
+    if (!cfg.startTime) {
+        timings.start = series->points.front().time;
+    }
+    if (!cfg.stopTime) {
+        timings.stop = series->points.back().time;
+    }
+    if (!cfg.stepSize) {
+        if (series->points.size() > 1) {
+            double derived = series->points[1].time - series->points[0].time;
+            if (derived > 0.0) {
+                timings.step = derived;
+            }
+        } else {
+            timings.step = std::max(1e-3, timings.stop - timings.start);
+        }
+    }
+}
+
+std::vector<std::string> buildTraceNames(const TraceConfig& trace) {
+    std::vector<std::string> names;
+    auto appendUnique = [&names](const std::vector<std::string>& values) {
+        for (const auto& value : values) {
+            if (std::find(names.begin(), names.end(), value) == names.end()) {
+                names.push_back(value);
+            }
+        }
+    };
+    appendUnique(trace.outputs);
+    appendUnique(trace.inputs);
+    return names;
+}
+
+double resolveTraceInterval(const Config& cfg, const StepTimings& timings) {
+    if (cfg.trace.sampleEvery) {
+        if (*cfg.trace.sampleEvery <= 0.0) {
+            fail("trace sample interval must be positive");
+        }
+        return *cfg.trace.sampleEvery;
+    }
+    if (timings.step > 0.0) {
+        return timings.step;
+    }
+    return std::max(1e-3, timings.stop - timings.start);
+}
 
 StepTimings deriveTimingsFmi2(fmi2_import_t* fmu, const Config& cfg) {
     StepTimings t{};
@@ -345,45 +575,54 @@ std::vector<std::string> autoOutputsFmi3(fmi3_import_t* fmu) {
     return names;
 }
 
-void applyStartValueFmi2(fmi2_import_t* fmu, const Assignment& assign) {
-    fmi2_import_variable_t* var = fmi2_import_get_variable_by_name(fmu, assign.name.c_str());
+void applyNumericValueFmi2(fmi2_import_t* fmu, const std::string& name, double value) {
+    fmi2_import_variable_t* var = fmi2_import_get_variable_by_name(fmu, name.c_str());
     if (!var) {
-        fail("Unknown variable '" + assign.name + "'");
+        fail("Unknown variable '" + name + "'");
     }
     fmi2_value_reference_t vr = fmi2_import_get_variable_vr(var);
     fmi2_base_type_enu_t baseType = fmi2_import_get_variable_base_type(var);
-    double val = parseNumber(assign.value);
     switch (baseType) {
         case fmi2_base_type_real: {
-            fmi2_real_t v = static_cast<fmi2_real_t>(val);
+            fmi2_real_t v = static_cast<fmi2_real_t>(value);
             if (fmi2_import_set_real(fmu, &vr, 1, &v) != fmi2_status_ok) {
-                fail("Failed setting real " + assign.name);
+                fail("Failed setting real " + name);
             }
             break;
         }
         case fmi2_base_type_int: {
-            fmi2_integer_t intVal = static_cast<fmi2_integer_t>(std::llround(val));
+            fmi2_integer_t intVal = static_cast<fmi2_integer_t>(std::llround(value));
             if (fmi2_import_set_integer(fmu, &vr, 1, &intVal) != fmi2_status_ok) {
-                fail("Failed setting integer " + assign.name);
+                fail("Failed setting integer " + name);
             }
             break;
         }
         case fmi2_base_type_bool: {
-            fmi2_boolean_t boolVal = (val != 0.0) ? fmi2_true : fmi2_false;
+            fmi2_boolean_t boolVal = (value != 0.0) ? fmi2_true : fmi2_false;
             if (fmi2_import_set_boolean(fmu, &vr, 1, &boolVal) != fmi2_status_ok) {
-                fail("Failed setting boolean " + assign.name);
+                fail("Failed setting boolean " + name);
             }
             break;
         }
         default:
-            fail("Unsupported base type for " + assign.name);
+            fail("Unsupported base type for " + name);
     }
 }
 
-OutputValue readOutputFmi2(fmi2_import_t* fmu, const std::string& name) {
+void applyStartValueFmi2(fmi2_import_t* fmu, const Assignment& assign) {
+    applyNumericValueFmi2(fmu, assign.name, parseNumber(assign.value));
+}
+
+void applySeriesPointFmi2(fmi2_import_t* fmu, const InputSeriesPoint& point) {
+    for (const auto& entry : point.values) {
+        applyNumericValueFmi2(fmu, entry.name, entry.value);
+    }
+}
+
+OutputValue readVariableFmi2(fmi2_import_t* fmu, const std::string& name) {
     fmi2_import_variable_t* var = fmi2_import_get_variable_by_name(fmu, name.c_str());
     if (!var) {
-        fail("Output variable '" + name + "' not found");
+        fail("Variable '" + name + "' not found");
     }
     fmi2_value_reference_t vr = fmi2_import_get_variable_vr(var);
     fmi2_base_type_enu_t baseType = fmi2_import_get_variable_base_type(var);
@@ -411,7 +650,7 @@ OutputValue readOutputFmi2(fmi2_import_t* fmu, const std::string& name) {
             break;
         }
         default:
-            fail("Unsupported output type for " + name);
+            fail("Unsupported variable type for " + name);
     }
     return ov;
 }
@@ -597,7 +836,13 @@ FmuExecutionResult runFmi2(const Config& cfg, const std::string& unpackDir, fmi_
         fail("Failed to instantiate FMI2 FMU");
     }
 
+    std::optional<InputSeriesData> inputSeries;
+    if (cfg.inputSeries) {
+        inputSeries = loadInputSeries(*cfg.inputSeries);
+    }
+
     StepTimings timings = deriveTimingsFmi2(fmu.fmu, cfg);
+    alignTimingsWithSeries(timings, cfg, inputSeries);
     if (timings.step <= 0.0) {
         timings.step = (timings.stop - timings.start);
         if (timings.step <= 0.0) {
@@ -621,23 +866,74 @@ FmuExecutionResult runFmi2(const Config& cfg, const std::string& unpackDir, fmi_
         applyStartValueFmi2(fmu.fmu, entry);
     }
 
+    size_t nextInputIndex = 0;
+    auto applySeriesThrough = [&](double time) {
+        if (!inputSeries) {
+            return;
+        }
+        while (nextInputIndex < inputSeries->points.size() &&
+               inputSeries->points[nextInputIndex].time <= time + 1e-12) {
+            applySeriesPointFmi2(fmu.fmu, inputSeries->points[nextInputIndex]);
+            nextInputIndex += 1;
+        }
+    };
+    applySeriesThrough(timings.start);
+
     if (fmi2_import_exit_initialization_mode(fmu.fmu) != fmi2_status_ok) {
         fail("Failed exiting initialization mode");
     }
 
+    FmuExecutionResult result;
+    std::vector<std::string> traceNames = buildTraceNames(cfg.trace);
+    double traceInterval = traceNames.empty() ? 0.0 : resolveTraceInterval(cfg, timings);
+    auto captureTrace = [&](double time) {
+        if (traceNames.empty()) {
+            return;
+        }
+        result.traceTimes.push_back(time);
+        for (const auto& name : traceNames) {
+            result.traceSignals[name].push_back(readVariableFmi2(fmu.fmu, name));
+        }
+    };
+
     double current = timings.start;
+    if (!traceNames.empty()) {
+        captureTrace(current);
+    }
+    double nextTraceTime = current + traceInterval;
     while (current < timings.stop - 1e-12) {
-        double step = std::min(timings.step, timings.stop - current);
+        double next = std::min(current + timings.step, timings.stop);
+        if (!traceNames.empty() && nextTraceTime < next - 1e-12) {
+            next = nextTraceTime;
+        }
+        if (next <= current + 1e-12) {
+            applySeriesThrough(current);
+            if (!traceNames.empty() && nextTraceTime <= current + 1e-12) {
+                captureTrace(current);
+                nextTraceTime += traceInterval;
+                continue;
+            }
+            fail("fmi2 execution stalled due to zero-length step");
+        }
+        double step = next - current;
         if (fmi2_import_do_step(fmu.fmu, current, step, fmi2_true) != fmi2_status_ok) {
             fail("fmi2_do_step failed");
         }
-        current += step;
+        current = next;
+        applySeriesThrough(current);
+        if (!traceNames.empty() && nextTraceTime <= current + 1e-12) {
+            captureTrace(current);
+            nextTraceTime += traceInterval;
+        }
     }
 
-    FmuExecutionResult result;
+    if (!traceNames.empty() && (result.traceTimes.empty() || std::fabs(result.traceTimes.back() - timings.stop) > 1e-9)) {
+        captureTrace(timings.stop);
+    }
+
     std::vector<std::string> outputs = cfg.outputs.empty() ? autoOutputsFmi2(fmu.fmu) : cfg.outputs;
     for (const auto& name : outputs) {
-        result.values[name] = readOutputFmi2(fmu.fmu, name);
+        result.values[name] = readVariableFmi2(fmu.fmu, name);
     }
 
     fmi2_import_terminate(fmu.fmu);
@@ -646,46 +942,55 @@ FmuExecutionResult runFmi2(const Config& cfg, const std::string& unpackDir, fmi_
     return result;
 }
 
-void applyStartValueFmi3(fmi3_import_t* fmu, const Assignment& assign) {
-    fmi3_import_variable_t* var = fmi3_import_get_variable_by_name(fmu, assign.name.c_str());
+void applyNumericValueFmi3(fmi3_import_t* fmu, const std::string& name, double value) {
+    fmi3_import_variable_t* var = fmi3_import_get_variable_by_name(fmu, name.c_str());
     if (!var) {
-        fail("Unknown variable '" + assign.name + "'");
+        fail("Unknown variable '" + name + "'");
     }
     fmi3_value_reference_t vr = fmi3_import_get_variable_vr(var);
     fmi3_base_type_enu_t baseType = fmi3_import_get_variable_base_type(var);
-    double val = parseNumber(assign.value);
 
     switch (baseType) {
         case fmi3_base_type_float64: {
-            fmi3_float64_t v = static_cast<fmi3_float64_t>(val);
+            fmi3_float64_t v = static_cast<fmi3_float64_t>(value);
             if (fmi3_import_set_float64(fmu, &vr, 1, &v, 1) != fmi3_status_ok) {
-                fail("Failed setting real " + assign.name);
+                fail("Failed setting real " + name);
             }
             break;
         }
         case fmi3_base_type_int32: {
-            fmi3_int32_t iv = static_cast<fmi3_int32_t>(std::llround(val));
+            fmi3_int32_t iv = static_cast<fmi3_int32_t>(std::llround(value));
             if (fmi3_import_set_int32(fmu, &vr, 1, &iv, 1) != fmi3_status_ok) {
-                fail("Failed setting integer " + assign.name);
+                fail("Failed setting integer " + name);
             }
             break;
         }
         case fmi3_base_type_bool: {
-            fmi3_boolean_t bv = (val != 0.0) ? fmi3_true : fmi3_false;
+            fmi3_boolean_t bv = (value != 0.0) ? fmi3_true : fmi3_false;
             if (fmi3_import_set_boolean(fmu, &vr, 1, &bv, 1) != fmi3_status_ok) {
-                fail("Failed setting boolean " + assign.name);
+                fail("Failed setting boolean " + name);
             }
             break;
         }
         default:
-            fail("Unsupported FMI3 base type for " + assign.name);
+            fail("Unsupported FMI3 base type for " + name);
     }
 }
 
-OutputValue readOutputFmi3(fmi3_import_t* fmu, const std::string& name) {
+void applyStartValueFmi3(fmi3_import_t* fmu, const Assignment& assign) {
+    applyNumericValueFmi3(fmu, assign.name, parseNumber(assign.value));
+}
+
+void applySeriesPointFmi3(fmi3_import_t* fmu, const InputSeriesPoint& point) {
+    for (const auto& entry : point.values) {
+        applyNumericValueFmi3(fmu, entry.name, entry.value);
+    }
+}
+
+OutputValue readVariableFmi3(fmi3_import_t* fmu, const std::string& name) {
     fmi3_import_variable_t* var = fmi3_import_get_variable_by_name(fmu, name.c_str());
     if (!var) {
-        fail("Output variable '" + name + "' not found");
+        fail("Variable '" + name + "' not found");
     }
     fmi3_value_reference_t vr = fmi3_import_get_variable_vr(var);
     fmi3_base_type_enu_t baseType = fmi3_import_get_variable_base_type(var);
@@ -741,7 +1046,7 @@ OutputValue readOutputFmi3(fmi3_import_t* fmu, const std::string& name) {
             break;
         }
         default:
-            fail("Unsupported output type for " + name);
+            fail("Unsupported variable type for " + name);
     }
     return ov;
 }
@@ -765,7 +1070,13 @@ FmuExecutionResult runFmi3(const Config& cfg, const std::string& unpackDir, fmi_
         fail("Failed instantiating FMI3 FMU");
     }
 
+    std::optional<InputSeriesData> inputSeries;
+    if (cfg.inputSeries) {
+        inputSeries = loadInputSeries(*cfg.inputSeries);
+    }
+
     StepTimings timings = deriveTimingsFmi3(fmu.fmu, cfg);
+    alignTimingsWithSeries(timings, cfg, inputSeries);
     if (timings.step <= 0.0) {
         timings.step = (timings.stop - timings.start);
         if (timings.step <= 0.0) {
@@ -786,13 +1097,56 @@ FmuExecutionResult runFmi3(const Config& cfg, const std::string& unpackDir, fmi_
         applyStartValueFmi3(fmu.fmu, entry);
     }
 
+    size_t nextInputIndex = 0;
+    auto applySeriesThrough = [&](double time) {
+        if (!inputSeries) {
+            return;
+        }
+        while (nextInputIndex < inputSeries->points.size() &&
+               inputSeries->points[nextInputIndex].time <= time + 1e-12) {
+            applySeriesPointFmi3(fmu.fmu, inputSeries->points[nextInputIndex]);
+            nextInputIndex += 1;
+        }
+    };
+    applySeriesThrough(timings.start);
+
     if (fmi3_import_exit_initialization_mode(fmu.fmu) != fmi3_status_ok) {
         fail("Failed exiting FMI3 initialization");
     }
 
+    FmuExecutionResult result;
+    std::vector<std::string> traceNames = buildTraceNames(cfg.trace);
+    double traceInterval = traceNames.empty() ? 0.0 : resolveTraceInterval(cfg, timings);
+    auto captureTrace = [&](double time) {
+        if (traceNames.empty()) {
+            return;
+        }
+        result.traceTimes.push_back(time);
+        for (const auto& name : traceNames) {
+            result.traceSignals[name].push_back(readVariableFmi3(fmu.fmu, name));
+        }
+    };
+
     double current = timings.start;
+    if (!traceNames.empty()) {
+        captureTrace(current);
+    }
+    double nextTraceTime = current + traceInterval;
     while (current < timings.stop - 1e-12) {
-        double step = std::min(timings.step, timings.stop - current);
+        double next = std::min(current + timings.step, timings.stop);
+        if (!traceNames.empty() && nextTraceTime < next - 1e-12) {
+            next = nextTraceTime;
+        }
+        if (next <= current + 1e-12) {
+            applySeriesThrough(current);
+            if (!traceNames.empty() && nextTraceTime <= current + 1e-12) {
+                captureTrace(current);
+                nextTraceTime += traceInterval;
+                continue;
+            }
+            fail("fmi3 execution stalled due to zero-length step");
+        }
+        double step = next - current;
         fmi3_boolean_t eventNeeded = fmi3_false;
         fmi3_boolean_t terminate = fmi3_false;
         fmi3_boolean_t earlyReturn = fmi3_false;
@@ -805,13 +1159,21 @@ FmuExecutionResult runFmi3(const Config& cfg, const std::string& unpackDir, fmi_
         if (terminate == fmi3_true) {
             break;
         }
-        current += step;
+        current = next;
+        applySeriesThrough(current);
+        if (!traceNames.empty() && nextTraceTime <= current + 1e-12) {
+            captureTrace(current);
+            nextTraceTime += traceInterval;
+        }
     }
 
-    FmuExecutionResult result;
+    if (!traceNames.empty() && (result.traceTimes.empty() || std::fabs(result.traceTimes.back() - timings.stop) > 1e-9)) {
+        captureTrace(timings.stop);
+    }
+
     std::vector<std::string> outputs = cfg.outputs.empty() ? autoOutputsFmi3(fmu.fmu) : cfg.outputs;
     for (const auto& name : outputs) {
-        result.values[name] = readOutputFmi3(fmu.fmu, name);
+        result.values[name] = readVariableFmi3(fmu.fmu, name);
     }
 
     fmi3_import_terminate(fmu.fmu);
@@ -845,6 +1207,12 @@ Config fromCConfig(const cads_fmu_config& cfg) {
             result.startValues.push_back({entry.name, entry.value});
         }
     }
+    if (cfg.input_series) {
+        if (!cfg.input_series->csv_path || cfg.input_series->csv_path[0] == '\0') {
+            fail("Input series CSV path is required");
+        }
+        result.inputSeries = InputSeriesConfig{cfg.input_series->csv_path};
+    }
     if (cfg.outputs && cfg.output_count > 0) {
         result.outputs.reserve(cfg.output_count);
         for (size_t i = 0; i < cfg.output_count; ++i) {
@@ -854,6 +1222,29 @@ Config fromCConfig(const cads_fmu_config& cfg) {
             }
             result.outputs.emplace_back(name);
         }
+    }
+    if (cfg.trace_outputs && cfg.trace_output_count > 0) {
+        result.trace.outputs.reserve(cfg.trace_output_count);
+        for (size_t i = 0; i < cfg.trace_output_count; ++i) {
+            const char* name = cfg.trace_outputs[i];
+            if (!name) {
+                fail("Trace output name cannot be null");
+            }
+            result.trace.outputs.emplace_back(name);
+        }
+    }
+    if (cfg.trace_inputs && cfg.trace_input_count > 0) {
+        result.trace.inputs.reserve(cfg.trace_input_count);
+        for (size_t i = 0; i < cfg.trace_input_count; ++i) {
+            const char* name = cfg.trace_inputs[i];
+            if (!name) {
+                fail("Trace input name cannot be null");
+            }
+            result.trace.inputs.emplace_back(name);
+        }
+    }
+    if (cfg.has_trace_interval) {
+        result.trace.sampleEvery = cfg.trace_interval;
     }
     return result;
 }

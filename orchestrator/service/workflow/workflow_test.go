@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -78,5 +79,66 @@ func TestEncodeScalarRejectsStrings(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "string values are not supported") {
 		t.Fatalf("encodeScalar() error = %v, want unsupported string message", err)
+	}
+}
+
+func TestBuildInputSeriesResolvesCSVWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	exec, err := NewExecutor(root)
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "data"), 0o755); err != nil {
+		t.Fatalf("create data dir: %v", err)
+	}
+	csvPath := filepath.Join(root, "data", "samples.csv")
+	if err := os.WriteFile(csvPath, []byte("time_1,rawsig\n0,1\n"), 0o644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+
+	cfg, err := exec.buildInputSeries(workflowStep{
+		InputSeries: &inputSeriesSpec{CSV: filepath.Join("data", "samples.csv")},
+	})
+	if err != nil {
+		t.Fatalf("buildInputSeries() error = %v", err)
+	}
+	if cfg == nil || cfg.CSVPath != csvPath {
+		t.Fatalf("buildInputSeries() = %#v, want CSVPath %q", cfg, csvPath)
+	}
+}
+
+func TestBuildInputSeriesRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	exec, err := NewExecutor(root)
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+
+	_, err = exec.buildInputSeries(workflowStep{
+		InputSeries: &inputSeriesSpec{CSV: filepath.Join("..", "outside.csv")},
+	})
+	if !errors.Is(err, ErrPathEscapesRoot) {
+		t.Fatalf("buildInputSeries() error = %v, want ErrPathEscapesRoot", err)
+	}
+}
+
+func TestBuildTraceConfigRequiresSignalsAndPositiveInterval(t *testing.T) {
+	root := t.TempDir()
+	exec, err := NewExecutor(root)
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+
+	_, err = exec.buildTraceConfig(workflowStep{Trace: &traceSpec{}})
+	if err == nil || !strings.Contains(err.Error(), "at least one input or output") {
+		t.Fatalf("buildTraceConfig() error = %v, want signal requirement", err)
+	}
+
+	invalid := 0.0
+	_, err = exec.buildTraceConfig(workflowStep{
+		Trace: &traceSpec{Outputs: []string{"CIvector"}, SampleEvery: &invalid},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sample_every must be positive") {
+		t.Fatalf("buildTraceConfig() error = %v, want positive interval rejection", err)
 	}
 }

@@ -277,7 +277,8 @@ function renderSimulinkResults() {
   }
 
   const [stepName, stepResult] = preferredSimulinkStep(stepEntries);
-  const ciVector = Array.isArray(stepResult.CIvector) ? stepResult.CIvector : [];
+  const trace = extractSimulinkTrace(stepResult);
+  const ciVector = resolveCIVector(stepResult, trace);
   const metricCards = ciVector
     .slice(0, CIVECTOR_LABELS.length)
     .map((value, index) => `
@@ -287,6 +288,18 @@ function renderSimulinkResults() {
       </div>
     `)
     .join("");
+  const scalarMetric =
+    metricCards === "" && stepResult.CIvector !== undefined && !Array.isArray(stepResult.CIvector)
+      ? `
+        <div class="metric-grid single-metric">
+          <div class="metric-chip">
+            <span class="metric-label">CIvector</span>
+            <span class="metric-value">${escapeHTML(formatMetric(stepResult.CIvector))}</span>
+          </div>
+        </div>
+      `
+      : "";
+  const traceMarkup = renderSimulinkTraceCards(trace);
 
   container.innerHTML = `
     <article class="result-card">
@@ -297,6 +310,8 @@ function renderSimulinkResults() {
         ${stepResult.time !== undefined ? `<div>reported stop time ${escapeHTML(formatMetric(stepResult.time))}</div>` : ""}
       </div>
       ${metricCards ? `<div class="metric-grid">${metricCards}</div>` : ""}
+      ${scalarMetric}
+      ${traceMarkup}
       <pre class="result-json">${escapeHTML(JSON.stringify(stepResult, null, 2))}</pre>
     </article>
   `;
@@ -304,11 +319,229 @@ function renderSimulinkResults() {
 
 function preferredSimulinkStep(stepEntries) {
   for (const entry of stepEntries) {
+    if (extractSimulinkTrace(entry[1])) {
+      return entry;
+    }
+  }
+  for (const entry of stepEntries) {
     if (Array.isArray(entry[1]?.CIvector)) {
       return entry;
     }
   }
   return stepEntries[0];
+}
+
+function extractSimulinkTrace(stepResult) {
+  const trace = stepResult?.trace;
+  if (!Array.isArray(trace?.time) || !trace?.signals || typeof trace.signals !== "object") {
+    return null;
+  }
+  const times = trace.time.map((value) => Number(value));
+  if (times.length === 0 || times.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+  return {
+    times,
+    signals: trace.signals,
+  };
+}
+
+function resolveCIVector(stepResult, trace) {
+  if (Array.isArray(stepResult?.CIvector)) {
+    return stepResult.CIvector;
+  }
+  const ciSamples = trace?.signals?.CIvector;
+  if (!Array.isArray(ciSamples) || ciSamples.length === 0) {
+    return [];
+  }
+  const lastSample = ciSamples[ciSamples.length - 1];
+  return Array.isArray(lastSample) ? lastSample : [];
+}
+
+function renderSimulinkTraceCards(trace) {
+  if (!trace) {
+    return "";
+  }
+
+  const cards = [];
+  const inputSeries = buildScalarTraceSeries(trace, ["rawsig"]);
+  if (inputSeries.length > 0) {
+    cards.push(
+      renderTraceCard(
+        "Input Signal",
+        "Sampled rawsig values applied to the FMU from the CSV input series.",
+        trace.times,
+        inputSeries,
+      ),
+    );
+  }
+
+  const ciSeries = buildCIVectorTraceSeries(trace);
+  if (ciSeries.length > 0) {
+    cards.push(
+      renderTraceCard(
+        "CI Trace",
+        "Sampled CIvector values collected during the Simulink run.",
+        trace.times,
+        ciSeries,
+      ),
+    );
+  }
+
+  return cards.length > 0 ? `<div class="trace-stack">${cards.join("")}</div>` : "";
+}
+
+function buildScalarTraceSeries(trace, signalNames) {
+  return signalNames
+    .map((name, index) => {
+      const values = trace.signals?.[name];
+      if (!Array.isArray(values)) {
+        return null;
+      }
+      const samples = values
+        .slice(0, trace.times.length)
+        .map((value) => coerceTraceNumber(value));
+      if (samples.length === 0 || samples.every((value) => !Number.isFinite(value))) {
+        return null;
+      }
+      return {
+        name,
+        color: paletteColor(index),
+        values: samples,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildCIVectorTraceSeries(trace) {
+  const values = trace.signals?.CIvector;
+  if (!Array.isArray(values) || values.length === 0) {
+    return [];
+  }
+
+  if (Array.isArray(values[0])) {
+    const width = Math.min(
+      CIVECTOR_LABELS.length,
+      values.reduce((max, sample) => (Array.isArray(sample) ? Math.max(max, sample.length) : max), 0),
+    );
+    return Array.from({ length: width }, (_, index) => ({
+      name: CIVECTOR_LABELS[index] || `CI ${index + 1}`,
+      color: paletteColor(index),
+      values: values.slice(0, trace.times.length).map((sample) => coerceTraceNumber(Array.isArray(sample) ? sample[index] : NaN)),
+    })).filter((series) => series.values.some((value) => Number.isFinite(value)));
+  }
+
+  return [
+    {
+      name: "CIvector",
+      color: paletteColor(0),
+      values: values.slice(0, trace.times.length).map((sample) => coerceTraceNumber(sample)),
+    },
+  ];
+}
+
+function renderTraceCard(title, description, times, series) {
+  return `
+    <section class="trace-card">
+      <div class="trace-head">
+        <div>
+          <h4>${escapeHTML(title)}</h4>
+          <p>${escapeHTML(description)}</p>
+        </div>
+        <div class="trace-legend">
+          ${series
+            .map(
+              (item) => `
+                <span class="trace-legend-item">
+                  <span class="trace-swatch" style="background:${item.color}"></span>
+                  ${escapeHTML(item.name)}
+                </span>
+              `,
+            )
+            .join("")}
+        </div>
+      </div>
+      <div class="trace-chart-shell">
+        ${buildTraceChartSVG(times, series)}
+      </div>
+    </section>
+  `;
+}
+
+function buildTraceChartSVG(times, series) {
+  const width = 520;
+  const height = 210;
+  const margin = { top: 18, right: 18, bottom: 30, left: 44 };
+  const chartWidth = width - margin.left - margin.right;
+  const chartHeight = height - margin.top - margin.bottom;
+  const xValues = times.filter((value) => Number.isFinite(value));
+  const flatValues = series.flatMap((item) => item.values.filter((value) => Number.isFinite(value)));
+
+  if (xValues.length === 0 || flatValues.length === 0) {
+    return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><text x="${width / 2}" y="${height / 2}" text-anchor="middle" class="chart-label">Trace data is unavailable.</text></svg>`;
+  }
+
+  const minX = Math.min(...xValues);
+  const maxX = Math.max(...xValues);
+  const minY = Math.min(...flatValues);
+  const maxY = Math.max(...flatValues);
+  const xSpan = maxX === minX ? 1 : maxX - minX;
+  const ySpan = maxY === minY ? Math.max(1, Math.abs(maxY) || 1) : maxY - minY;
+  const parts = [
+    `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Simulink trace chart">`,
+    `<rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(255,255,255,0.36)"></rect>`,
+  ];
+
+  for (let index = 0; index <= 3; index += 1) {
+    const ratio = index / 3;
+    const x = margin.left + ratio * chartWidth;
+    parts.push(`<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${margin.top + chartHeight}" class="chart-grid"></line>`);
+    parts.push(`<text x="${x}" y="${height - 10}" text-anchor="middle" class="chart-label">${escapeHTML(formatMetric(minX + ratio * xSpan))}</text>`);
+  }
+
+  for (let index = 0; index <= 3; index += 1) {
+    const ratio = index / 3;
+    const y = margin.top + chartHeight - ratio * chartHeight;
+    parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" class="chart-grid"></line>`);
+    parts.push(`<text x="${margin.left - 8}" y="${y + 4}" text-anchor="end" class="chart-label">${escapeHTML(formatMetric(minY + ratio * ySpan))}</text>`);
+  }
+
+  parts.push(`<line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${width - margin.right}" y2="${margin.top + chartHeight}" class="chart-axis"></line>`);
+  parts.push(`<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" class="chart-axis"></line>`);
+
+  for (const item of series) {
+    const points = item.values
+      .map((value, index) => {
+        const time = times[index];
+        if (!Number.isFinite(time) || !Number.isFinite(value)) {
+          return null;
+        }
+        const x = margin.left + ((time - minX) / xSpan) * chartWidth;
+        const y = margin.top + chartHeight - ((value - minY) / ySpan) * chartHeight;
+        return `${x},${y}`;
+      })
+      .filter(Boolean);
+    if (points.length < 2) {
+      continue;
+    }
+    parts.push(`<polyline fill="none" stroke="${item.color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" points="${points.join(" ")}"></polyline>`);
+  }
+
+  parts.push("</svg>");
+  return parts.join("");
+}
+
+function paletteColor(index) {
+  const colors = ["#0f7c78", "#bf5f2f", "#2f7652", "#7a5af8", "#90522d", "#355c7d"];
+  return colors[index % colors.length];
+}
+
+function coerceTraceNumber(value) {
+  if (value === null || value === undefined) {
+    return NaN;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : NaN;
 }
 
 function renderRuns() {

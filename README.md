@@ -123,8 +123,46 @@ remote workflow:
 `prepare_remote.sh` resolves the Argo token from `ARGO_TOKEN` or the supplied
 kubeconfig, validates access against `https://argoworkflows.cads.kzslab.dev`,
 and publishes the selected image tag through the local container engine.
+For `ghcr.io/...` images it also tries to log the container engine into GHCR
+automatically before pushing, using this order:
+
+- `GHCR_TOKEN`
+- `GITHUB_TOKEN`
+- a valid `gh auth login -h github.com -s write:packages` session
+
+The GHCR username is resolved from `GHCR_USERNAME`, then `GITHUB_ACTOR`, then
+the authenticated `gh` user, with the image owner as a final fallback.
 `run_remote.sh` generates a PVC/configmap-free manifest and submits it directly
 to the hosted Argo server with a unique workflow name.
+
+This publish step is indirect deployment:
+
+1. `build.sh` creates a container image from the current repo contents.
+2. `prepare_remote.sh` pushes that image to `ghcr.io` or another registry tag.
+3. `run_remote.sh` submits an Argo workflow that references that image.
+4. The Kaizen playground pulls that image when it starts the workflow pod.
+
+That is why a new workflow file in this repo currently implies a new image tag
+if you want the playground to run it. The hosted workflow does not read your
+local filesystem directly; it runs the image that was published earlier.
+
+Remote auth is split across two separate systems:
+
+- Kaizen/Argo auth: `ARGO_TOKEN` or `--kubeconfig` is used to talk to the
+  workflow server and submit or inspect runs.
+- GitHub/GHCR auth: `GHCR_TOKEN`, `GITHUB_TOKEN`, or `gh auth login` is only
+  used to push a newly built image to the registry.
+
+Practical rule:
+
+- If the image already exists in the registry, Kaizen credentials are enough.
+- If you need the playground to run a newly built image, you also need GHCR
+  push credentials.
+
+GHCR usually uses the same GitHub account identity as the repo, but not always
+the same credential. For example, pushing commits over SSH does not authenticate
+`podman` or `docker` to `ghcr.io`. For the registry push, the GitHub credential
+must include package-write access such as `write:packages`.
 
 Use the remote path when:
 
@@ -134,11 +172,36 @@ Use the remote path when:
 
 ### Step 2C – Dashboard path (local browser UI for the remote playground)
 
-Build the binaries, then start the local dashboard:
+The simplest dashboard command is now:
 
 ```bash
-./build.sh
 ./run_dashboard.sh
+```
+
+By default, the launcher automatically prepares a remote image when needed and
+reuses the last prepared image when the git tree is clean and unchanged.
+If the repo has changed, it will generate a new remote tag, run the build and
+remote preparation flow, stop an older dashboard session already listening on
+the selected port, and then start the dashboard.
+
+If you want to force a fresh remote image anyway:
+
+```bash
+./run_dashboard.sh --prepare-remote
+```
+
+If you want to skip all automatic remote preparation and just start the local
+dashboard process immediately:
+
+```bash
+./run_dashboard.sh --no-prepare-remote
+```
+
+If you do want to pin an explicit remote tag, you still can:
+
+```bash
+IMAGE=ghcr.io/org/cads-demo:demo123
+./run_dashboard.sh --image "$IMAGE"
 ```
 
 Then open `http://localhost:8080/`. The dashboard serves one button per
@@ -148,8 +211,14 @@ updates.
 
 The dashboard is a control surface for the **remote** path, not a separate
 runtime. It still launches the configured container image in the hosted
-playground, so if you changed workflow/runtime code that must exist in the
-image, rebuild and publish that image first.
+playground. You can either prepare that image separately with
+`./build.sh` + `./prepare_remote.sh`, or let `./run_dashboard.sh` handle
+that automatically.
+
+Remote preparation needs two different kinds of credentials:
+
+- Argo credentials to talk to the Kaizen workflow server
+- GHCR credentials to push a newly built image tag
 
 Authentication for the dashboard follows this order:
 
@@ -157,6 +226,25 @@ Authentication for the dashboard follows this order:
 - `KUBECONFIG` if it is already set in the shell
 - an explicit `--kubeconfig ...` passed to `run_dashboard.sh`
 - `~/Kaizen_CADS/kubeconfig` automatically, if it exists
+
+If remote preparation needs to push to GHCR, it will also try to authenticate
+`podman` or `docker` automatically using `GHCR_TOKEN`, `GITHUB_TOKEN`, or a
+valid `gh auth login -h github.com -s write:packages` session. The simplest one-time setup is:
+
+```bash
+gh auth login -h github.com -s write:packages
+```
+
+After that, `./run_dashboard.sh` can usually build, publish, and launch
+without a separate manual `podman login ghcr.io` step.
+
+This is the same split as the CLI remote path:
+
+- dashboard launch and run monitoring use Kaizen credentials
+- automatic image preparation uses GHCR credentials if a new image must be pushed
+
+If `./run_dashboard.sh` is only launching workflows from an image that is
+already published, then the dashboard only needs the Kaizen side.
 
 Example with an explicit token:
 
@@ -169,6 +257,12 @@ Example with an explicit kubeconfig:
 
 ```bash
 ./run_dashboard.sh --kubeconfig ~/Kaizen_CADS/kubeconfig
+```
+
+Example that forces a new remote image build/publish before launch:
+
+```bash
+./run_dashboard.sh --prepare-remote --kubeconfig ~/Kaizen_CADS/kubeconfig
 ```
 
 Use the dashboard path when:

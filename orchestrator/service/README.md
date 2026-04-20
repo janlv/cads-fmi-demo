@@ -70,11 +70,46 @@ export ARGO_TOKEN=...
 ./cads-workflow-service --serve --addr :8080 --kubeconfig ~/Kaizen_CADS/kubeconfig
 ```
 
-From the repo root you can also use the convenience launcher after `./build.sh`:
+From the repo root you can also use the convenience launcher:
 
 ```bash
 ./run_dashboard.sh
 ```
+
+By default, `run_dashboard.sh` automatically prepares a remote image when
+needed and reuses the last prepared image when the git tree is clean and
+unchanged. Before starting the new service, it also stops an older dashboard
+session already listening on the selected port.
+
+When remote preparation needs to publish a new `ghcr.io/...` image, the
+launcher now tries to authenticate `podman` or `docker` to GHCR automatically
+using `GHCR_TOKEN`, `GITHUB_TOKEN`, or a valid `gh auth login -h github.com -s write:packages`
+session.
+
+The dashboard is still a frontend for the hosted Kaizen path, so the auth model
+has two parts:
+
+- Kaizen/Argo auth for listing runs and submitting workflows
+- GitHub/GHCR auth only when a new image has to be pushed before launch
+
+If the selected image is already published, the dashboard only needs the Kaizen
+side. If the launcher needs to build and publish a fresh image, it also needs
+GHCR push credentials.
+
+If you want to force a fresh remote image build/publish before launch:
+
+```bash
+./run_dashboard.sh --prepare-remote
+```
+
+If you want to skip automatic remote preparation entirely:
+
+```bash
+./run_dashboard.sh --no-prepare-remote
+```
+
+You can still pass `--image ghcr.io/org/cads-demo:demo123` if you want to pin
+an explicit tag.
 
 Both binaries auto-detect the repository root; override with `--workdir /path/to/repo`
 if you run them from a different directory.
