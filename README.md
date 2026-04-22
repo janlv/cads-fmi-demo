@@ -133,7 +133,17 @@ automatically before pushing, using this order:
 The GHCR username is resolved from `GHCR_USERNAME`, then `GITHUB_ACTOR`, then
 the authenticated `gh` user, with the image owner as a final fallback.
 `run_remote.sh` generates a PVC/configmap-free manifest and submits it directly
-to the hosted Argo server with a unique workflow name.
+to the hosted Argo server with a unique workflow name. Hosted manifests now
+also expose the playground S3 secret `storhy-argo-artifacts-s3-credentials`
+inside the workflow pod as standard environment variables so workflows can read
+bucket-backed inputs without per-run manifest edits:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION`
+- `AWS_DEFAULT_REGION`
+- `S3_BUCKET`
+- `S3_ENDPOINT`
 
 This publish step is indirect deployment:
 
@@ -405,10 +415,85 @@ All keys are optional except `name` and `fmu`:
 - `start_from` – copy start values from previous steps using `step.variable`
   references. The runner validates that the upstream step recorded the
   requested variable.
+- `input_series` – point a time-series FMU input at either a repo-local CSV or
+  an S3 object. Exactly one source must be provided.
 - `result` – optional JSON target path. The runner persists the final snapshot
   there (directories are created automatically).
 - `start_time`, `stop_time`, `step_size` – rarely needed overrides when an FMU
   lacks a `DefaultExperiment`. Otherwise the runner uses the FMU’s defaults.
+- `trace` – optional sampled inputs/outputs captured during the FMU run.
+
+Example local CSV input:
+
+```yaml
+steps:
+  - name: calculate_aecis
+    fmu: fmu/models/CalculateAECIs.fmu
+    input_series:
+      csv: data/calculate_aecis_synthetic.csv
+```
+
+Example S3-backed input for the hosted playground:
+
+```yaml
+steps:
+  - name: calculate_aecis
+    fmu: fmu/models/CalculateAECIs.fmu
+    input_series:
+      s3:
+        key: acoustic/demo/latest.csv
+```
+
+For S3-backed inputs, the workflow describes the data location while the
+credentials stay outside the YAML. Locally, the runner reads the usual AWS env
+vars. In the hosted Kaizen path, `run_remote.sh` and the dashboard-generated
+manifests automatically project the playground secret
+`storhy-argo-artifacts-s3-credentials` into those env vars.
+
+If you want to inspect what is available in the bucket before writing a
+workflow, use the helper script:
+
+```bash
+python3 scripts/list_s3_objects.py --long
+python3 scripts/list_s3_objects.py --prefix acoustic/
+```
+
+By default, `scripts/list_s3_objects.py` auto-loads missing bucket and
+credential values from the Kaizen playground secret
+`storhy-argo-artifacts-s3-credentials` in namespace `playground`, using
+`$KUBECONFIG` or `~/Kaizen_CADS/kubeconfig` when available.
+
+The script also supports:
+
+- `--flat`, `--delimiter ''`, and `--limit` for different listing modes
+- `--path-style` for S3-compatible object stores
+- `--secret-name`, `--secret-namespace`, and `--kubeconfig` to change the
+  Kubernetes secret lookup
+- `--no-k8s-secret` if you want to rely only on explicit CLI args or env vars
+
+If your laptop cannot read the playground secret directly via the Kubernetes
+API, use the in-cluster listing workflow instead:
+
+```bash
+./run_list_s3_objects.sh
+./run_list_s3_objects.sh --prefix acoustic/ --limit 500
+```
+
+This submits a small Argo workflow to the playground, injects the same S3
+secret that remote CADS workflows use, and prints the bucket prefixes/keys in
+the workflow logs. The checked-in reference manifest lives at
+`deploy/argo/list_s3_objects.yaml`.
+
+To inspect one concrete object and print its metadata plus a small content
+preview from inside the playground, use:
+
+```bash
+./run_inspect_s3_object.sh artifacts/my-file
+./run_inspect_s3_object.sh artifacts/my-file --bytes 8192
+```
+
+The inspector prints the bucket name, key, size, content type, timestamp, and
+either a UTF-8 text preview or a base64 preview for binary content.
 
 All relative paths are resolved from the repository root, so FMUs and artifacts
 can be checked in or mounted during container runs without tweaking the YAML.

@@ -229,7 +229,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			t.Fatalf("ServeHTTP() status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, "Kaizen Argo Playground") || !strings.Contains(body, "workflowGrid") || !strings.Contains(body, "timelineChart") || !strings.Contains(body, "simulinkResults") {
+		if !strings.Contains(body, "Kaizen Argo Playground") || !strings.Contains(body, "workflowGrid") || !strings.Contains(body, "aecisFocus") || !strings.Contains(body, "runsList") {
 			t.Fatalf("dashboard body missing expected markers: %q", body)
 		}
 	})

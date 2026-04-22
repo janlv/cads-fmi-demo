@@ -18,8 +18,9 @@ var ErrPathEscapesRoot = errors.New("path escapes repository root")
 
 // Executor runs workflow YAML definitions directly against FMUs via FMIL.
 type Executor struct {
-	root   string
-	logger func(string, ...any)
+	root         string
+	logger       func(string, ...any)
+	s3Downloader s3DownloadFunc
 }
 
 // Option configures the executor.
@@ -29,6 +30,13 @@ type Option func(*Executor)
 func WithLogger(logger func(string, ...any)) Option {
 	return func(e *Executor) {
 		e.logger = logger
+	}
+}
+
+// WithS3Downloader overrides the S3 object fetcher used for workflow input downloads.
+func WithS3Downloader(downloader s3DownloadFunc) Option {
+	return func(e *Executor) {
+		e.s3Downloader = downloader
 	}
 }
 
@@ -44,6 +52,9 @@ func NewExecutor(repoRoot string, opts ...Option) (*Executor, error) {
 	e := &Executor{root: absRoot}
 	for _, opt := range opts {
 		opt(e)
+	}
+	if e.s3Downloader == nil {
+		e.s3Downloader = defaultS3Downloader
 	}
 	return e, nil
 }
@@ -105,8 +116,10 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 			FMUPath:     fmuPath,
 			StartValues: startVals,
 			Outputs:     step.Outputs,
-			InputSeries: inputSeries,
 			Trace:       trace,
+		}
+		if inputSeries != nil {
+			cfg.InputSeries = inputSeries.Config
 		}
 		if step.StartTime != nil {
 			cfg.StartTime = step.StartTime
@@ -119,6 +132,9 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 		}
 
 		result, err := fmi.Run(cfg)
+		if inputSeries != nil && inputSeries.Cleanup != nil {
+			inputSeries.Cleanup()
+		}
 		if err != nil {
 			return nil, fmt.Errorf("step %s failed: %w", step.Name, err)
 		}
@@ -180,12 +196,21 @@ type workflowStep struct {
 	ResultPath  string            `yaml:"result"`
 	StartValues map[string]any    `yaml:"start_values"`
 	StartFrom   map[string]string `yaml:"start_from"`
-	InputSeries *inputSeriesSpec   `yaml:"input_series"`
-	Trace       *traceSpec         `yaml:"trace"`
+	InputSeries *inputSeriesSpec  `yaml:"input_series"`
+	Trace       *traceSpec        `yaml:"trace"`
 }
 
 type inputSeriesSpec struct {
-	CSV string `yaml:"csv"`
+	CSV string             `yaml:"csv"`
+	S3  *s3InputSeriesSpec `yaml:"s3"`
+}
+
+type s3InputSeriesSpec struct {
+	Bucket         string `yaml:"bucket"`
+	Key            string `yaml:"key"`
+	Region         string `yaml:"region"`
+	Endpoint       string `yaml:"endpoint"`
+	ForcePathStyle *bool  `yaml:"force_path_style"`
 }
 
 type traceSpec struct {
@@ -234,21 +259,36 @@ func (e *Executor) buildStartValues(step workflowStep, results map[string]map[st
 	return values, nil
 }
 
-func (e *Executor) buildInputSeries(step workflowStep) (*fmi.InputSeriesConfig, error) {
+type resolvedInputSeries struct {
+	Config  *fmi.InputSeriesConfig
+	Cleanup func()
+}
+
+func (e *Executor) buildInputSeries(step workflowStep) (*resolvedInputSeries, error) {
 	if step.InputSeries == nil {
 		return nil, nil
 	}
-	if strings.TrimSpace(step.InputSeries.CSV) == "" {
-		return nil, fmt.Errorf("input_series.csv is required")
+
+	hasCSV := strings.TrimSpace(step.InputSeries.CSV) != ""
+	hasS3 := step.InputSeries.S3 != nil
+
+	switch {
+	case hasCSV && hasS3:
+		return nil, fmt.Errorf("input_series must define exactly one source")
+	case hasCSV:
+		csvPath, err := e.resolveRepoPath(step.InputSeries.CSV, "input series")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(csvPath); err != nil {
+			return nil, fmt.Errorf("missing CSV %s: %w", csvPath, err)
+		}
+		return &resolvedInputSeries{Config: &fmi.InputSeriesConfig{CSVPath: csvPath}}, nil
+	case hasS3:
+		return e.buildS3InputSeries(*step.InputSeries.S3)
+	default:
+		return nil, fmt.Errorf("input_series.csv or input_series.s3 is required")
 	}
-	csvPath, err := e.resolveRepoPath(step.InputSeries.CSV, "input series")
-	if err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(csvPath); err != nil {
-		return nil, fmt.Errorf("missing CSV %s: %w", csvPath, err)
-	}
-	return &fmi.InputSeriesConfig{CSVPath: csvPath}, nil
 }
 
 func (e *Executor) buildTraceConfig(step workflowStep) (*fmi.TraceConfig, error) {

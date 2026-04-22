@@ -12,12 +12,14 @@ WORKFLOW=""
 SERVICE_ACCOUNT="playground-storhy-playground-pg-admin"
 NAMESPACE="playground"
 OUTPUT=""
+S3_CREDENTIALS_SECRET="storhy-argo-artifacts-s3-credentials"
 
 usage() {
     cat <<'USAGE'
 Usage: scripts/generate_remote_workflow.sh workflows/foo.yaml [--image ghcr.io/...]
                                                              [--service-account name]
                                                              [--namespace name]
+                                                             [--s3-credentials-secret name]
                                                              [--output deploy/argo/foo-remote-workflow.yaml]
 
 Generates a PVC/configmap-free Argo Workflow manifest for hosted Argo instances
@@ -59,6 +61,10 @@ while (($#)); do
         --namespace)
             shift
             NAMESPACE="${1:-}"
+            ;;
+        --s3-credentials-secret)
+            shift
+            S3_CREDENTIALS_SECRET="${1:-}"
             ;;
         --output)
             shift
@@ -103,7 +109,38 @@ spec:
         image: ${IMAGE}
         imagePullPolicy: IfNotPresent
         command: ["/app/bin/cads-workflow-runner"]
-        args: ["--workflow", "${WORKFLOW}"]
+        args: ["--json-output", "--workflow", "${WORKFLOW}"]
+        env:
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: ${S3_CREDENTIALS_SECRET}
+                key: access_key_id
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: ${S3_CREDENTIALS_SECRET}
+                key: secret_access_key
+          - name: AWS_REGION
+            valueFrom:
+              secretKeyRef:
+                name: ${S3_CREDENTIALS_SECRET}
+                key: region
+          - name: AWS_DEFAULT_REGION
+            valueFrom:
+              secretKeyRef:
+                name: ${S3_CREDENTIALS_SECRET}
+                key: region
+          - name: S3_BUCKET
+            valueFrom:
+              secretKeyRef:
+                name: ${S3_CREDENTIALS_SECRET}
+                key: bucket_name
+          - name: S3_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: ${S3_CREDENTIALS_SECRET}
+                key: endpoint
 YAML
 
 echo "[remote-workflow] Generated $OUTPUT"

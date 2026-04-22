@@ -3,6 +3,7 @@ const state = {
   workflows: [],
   runs: [],
   simulinkResult: null,
+  simulinkResultsCache: new Map(),
   runtimeProblems: [],
   pendingWorkflows: new Set(),
   poller: null,
@@ -11,6 +12,8 @@ const state = {
 
 const SIMULINK_WORKFLOW_PATH = "workflows/calculate_aecis.yaml";
 const CIVECTOR_LABELS = ["Mean", "RMS", "Peak-to-Peak", "Skewness", "Kurtosis"];
+const SIMULINK_RESULT_RETRY_MS = 15_000;
+const AECIS_TREND_WINDOW_SECONDS = 2.5;
 
 document.addEventListener("DOMContentLoaded", () => {
   void initializeDashboard();
@@ -29,7 +32,7 @@ async function initializeDashboard() {
     } else {
       renderSimulinkResults();
       renderRuns();
-      renderChart();
+      renderAecisFocus();
     }
   } catch (error) {
     state.runtimeProblems = [error.message];
@@ -37,7 +40,7 @@ async function initializeDashboard() {
     renderWorkflows();
     renderSimulinkResults();
     renderRuns();
-    renderChart();
+    renderAecisFocus();
   }
 }
 
@@ -67,7 +70,7 @@ async function loadRuns() {
     renderBanner();
     renderSimulinkResults();
     renderRuns();
-    renderChart();
+    renderAecisFocus();
   }
 }
 
@@ -174,7 +177,7 @@ async function launchWorkflow(workflowPath) {
 
     mergeRun(submitted);
     renderRuns();
-    renderChart();
+    renderAecisFocus();
     await refreshRun(submitted.name);
     await loadRuns();
   } catch (error) {
@@ -209,8 +212,8 @@ function mergeRun(run) {
 }
 
 async function loadSimulinkResults() {
-  const latest = latestSucceededSimulinkRun();
-  if (!latest) {
+  const candidates = successfulSimulinkRuns();
+  if (candidates.length === 0) {
     state.simulinkResult = {
       state: "empty",
       message: "No successful calculate_aecis run has been observed yet.",
@@ -218,42 +221,124 @@ async function loadSimulinkResults() {
     return;
   }
 
-  if (state.simulinkResult?.runName === latest.name && state.simulinkResult?.state === "ready") {
-    return;
+  const latestCandidate = candidates[0];
+  const previousReady = state.simulinkResult?.state === "ready" ? state.simulinkResult : null;
+  const skipped = [];
+
+  for (const run of candidates) {
+    const cached = state.simulinkResultsCache.get(run.name);
+    if (cached?.state === "ready") {
+      state.simulinkResult = buildSimulinkReadyState(run, cached.payload, latestCandidate.name, skipped);
+      return;
+    }
+    if (cached?.state === "error" && Date.now() - (cached.checkedAt || 0) < SIMULINK_RESULT_RETRY_MS) {
+      skipped.push({ runName: run.name, message: cached.message });
+      continue;
+    }
+
+    if (!previousReady) {
+      state.simulinkResult = {
+        state: "loading",
+        runName: run.name,
+      };
+    }
+
+    try {
+      const payload = await fetchJSON(`/api/runs/${encodeURIComponent(run.name)}/results`);
+      state.simulinkResultsCache.set(run.name, {
+        state: "ready",
+        payload,
+        checkedAt: Date.now(),
+      });
+      state.simulinkResult = buildSimulinkReadyState(run, payload, latestCandidate.name, skipped);
+      return;
+    } catch (error) {
+      const message = error.message;
+      state.simulinkResultsCache.set(run.name, {
+        state: "error",
+        message,
+        checkedAt: Date.now(),
+      });
+      skipped.push({ runName: run.name, message });
+    }
   }
 
+  if (previousReady) {
+    const payloadRunName = previousReady.payload?.runName || previousReady.runName;
+    const stillVisible = candidates.some((run) => run.name === payloadRunName);
+    if (stillVisible) {
+      const latestFailure = skipped[0] || null;
+      state.simulinkResult = {
+        ...previousReady,
+        skippedRuns: skipped,
+        fallbackFrom: latestFailure ? latestFailure.runName : previousReady.fallbackFrom,
+      };
+      return;
+    }
+  }
+
+  const latestFailure = skipped[0];
   state.simulinkResult = {
-    state: "loading",
-    runName: latest.name,
+    state: "error",
+    runName: latestFailure?.runName || latestCandidate.name,
+    message: latestFailure?.message || "No structured Simulink result payload could be loaded from recent workflow logs.",
+    skippedRuns: skipped,
   };
-
-  try {
-    const payload = await fetchJSON(`/api/runs/${encodeURIComponent(latest.name)}/results`);
-    state.simulinkResult = {
-      state: "ready",
-      runName: latest.name,
-      payload,
-    };
-  } catch (error) {
-    state.simulinkResult = {
-      state: "error",
-      runName: latest.name,
-      message: error.message,
-    };
-  }
 }
 
-function latestSucceededSimulinkRun() {
-  return state.runs.find(
+function successfulSimulinkRuns() {
+  return state.runs.filter(
     (run) =>
       run.workflowPath === SIMULINK_WORKFLOW_PATH &&
       String(run.phase || "").toLowerCase() === "succeeded",
   );
 }
 
+function buildSimulinkReadyState(run, payload, latestRunName, skippedRuns) {
+  return {
+    state: "ready",
+    runName: run.name,
+    payload,
+    fallbackFrom: latestRunName !== run.name ? latestRunName : "",
+    skippedRuns,
+  };
+}
+
+function resolveReadySimulinkView(simulink) {
+  const stepEntries = Object.entries(simulink?.payload?.stepResults || {});
+  if (stepEntries.length === 0) {
+    return null;
+  }
+
+  const [stepName, stepResult] = preferredSimulinkStep(stepEntries);
+  const trace = extractSimulinkTrace(stepResult);
+  return {
+    stepName,
+    stepResult,
+    trace,
+    resultType: classifySimulinkPayload(simulink.payload),
+  };
+}
+
+function buildSimulinkFallbackMarkup(simulink) {
+  if (!simulink?.fallbackFrom || simulink.fallbackFrom === simulink.runName) {
+    return "";
+  }
+  return `
+    <div class="result-note">
+      Latest successful run <code>${escapeHTML(simulink.fallbackFrom)}</code> had no structured result payload.
+      Showing the most recent parseable result from <code>${escapeHTML(simulink.payload.runName || simulink.runName)}</code>.
+    </div>
+  `;
+}
+
 function renderSimulinkResults() {
   const container = document.getElementById("simulinkResults");
   const simulink = state.simulinkResult;
+
+  if (!container) {
+    return;
+  }
 
   if (!simulink || simulink.state === "loading") {
     container.innerHTML = '<div class="empty-state">Waiting for the latest successful Simulink workflow result…</div>';
@@ -276,15 +361,19 @@ function renderSimulinkResults() {
     return;
   }
 
-  const [stepName, stepResult] = preferredSimulinkStep(stepEntries);
-  const trace = extractSimulinkTrace(stepResult);
-  const ciVector = resolveCIVector(stepResult, trace);
-  const metricCards = ciVector
-    .slice(0, CIVECTOR_LABELS.length)
-    .map((value, index) => `
+  const activeView = resolveReadySimulinkView(simulink);
+  if (!activeView) {
+    container.innerHTML = '<div class="empty-state">The workflow succeeded, but no structured result payload was found in its logs.</div>';
+    return;
+  }
+  const { stepName, stepResult, trace, resultType } = activeView;
+  const derivedTrend = buildDerivedAecisTrend(trace);
+  const summaryMetrics = resolveSummaryMetrics(stepResult, trace, derivedTrend);
+  const metricCards = summaryMetrics
+    .map((metric) => `
       <div class="metric-chip">
-        <span class="metric-label">${escapeHTML(CIVECTOR_LABELS[index])}</span>
-        <span class="metric-value">${escapeHTML(formatMetric(value))}</span>
+        <span class="metric-label">${escapeHTML(metric.label)}</span>
+        <span class="metric-value">${escapeHTML(formatMetric(metric.value))}</span>
       </div>
     `)
     .join("");
@@ -299,22 +388,175 @@ function renderSimulinkResults() {
         </div>
       `
       : "";
-  const traceMarkup = renderSimulinkTraceCards(trace);
+  const fallbackMarkup = buildSimulinkFallbackMarkup(simulink);
+  const traceSummary = trace
+    ? `<div class="result-note">Trend plots are derived from the traced <code>rawsig</code> signal in the AECIS Trend Plot panel above using a ${escapeHTML(formatMetric(AECIS_TREND_WINDOW_SECONDS))} s trailing window.</div>`
+    : "";
 
   container.innerHTML = `
     <article class="result-card">
-      <h3>${escapeHTML(simulink.payload.runName)}</h3>
+      <div class="result-head">
+        <h3>${escapeHTML(simulink.payload.runName)}</h3>
+        <span class="result-kind-pill result-kind-${escapeHTML(resultType.kind)}">${escapeHTML(resultType.label)}</span>
+      </div>
       <div class="result-meta">
         <div>${escapeHTML(simulink.payload.workflowPath || SIMULINK_WORKFLOW_PATH)}</div>
         <div>step ${escapeHTML(stepName)}</div>
         ${stepResult.time !== undefined ? `<div>reported stop time ${escapeHTML(formatMetric(stepResult.time))}</div>` : ""}
       </div>
+      ${fallbackMarkup}
       ${metricCards ? `<div class="metric-grid">${metricCards}</div>` : ""}
       ${scalarMetric}
-      ${traceMarkup}
+      ${traceSummary}
       <pre class="result-json">${escapeHTML(JSON.stringify(stepResult, null, 2))}</pre>
     </article>
   `;
+}
+
+function renderAecisFocus() {
+  const container = document.getElementById("aecisFocus");
+  const simulink = state.simulinkResult;
+
+  if (!container) {
+    return;
+  }
+
+  if (!simulink || simulink.state === "loading") {
+    container.innerHTML = '<div class="empty-state">Waiting for the latest successful AECIS trace…</div>';
+    return;
+  }
+
+  if (simulink.state === "empty") {
+    container.innerHTML = `<div class="empty-state">${escapeHTML(simulink.message)}</div>`;
+    return;
+  }
+
+  if (simulink.state === "error") {
+    container.innerHTML = `<div class="empty-state">Unable to load AECIS trace for <code>${escapeHTML(simulink.runName)}</code>.<br>${escapeHTML(simulink.message)}</div>`;
+    return;
+  }
+
+  const activeView = resolveReadySimulinkView(simulink);
+  if (!activeView) {
+    container.innerHTML = '<div class="empty-state">The latest AECIS result has no structured trace payload.</div>';
+    return;
+  }
+
+  const { stepName, stepResult, trace, resultType } = activeView;
+  if (!trace) {
+    container.innerHTML = `
+      <div class="aecis-focus-meta">
+        <h3 class="aecis-focus-title">${escapeHTML(simulink.payload.runName || simulink.runName)}</h3>
+        <span class="result-kind-pill result-kind-${escapeHTML(resultType.kind)}">${escapeHTML(resultType.label)}</span>
+        <span>step ${escapeHTML(stepName)}</span>
+      </div>
+      ${buildSimulinkFallbackMarkup(simulink)}
+      <div class="empty-state">This AECIS result does not include sampled trace data.</div>
+    `;
+    return;
+  }
+
+  const derivedTrend = buildDerivedAecisTrend(trace);
+  const rawSignalSeries = buildScalarTraceSeries(trace, ["rawsig"]);
+  const cards = [];
+  if (derivedTrend.series.length > 0) {
+    cards.push(
+      renderTraceCard(
+        "Mean / RMS Trend",
+        `Rolling mean and RMS derived from the traced raw signal using a ${formatMetric(AECIS_TREND_WINDOW_SECONDS)} s trailing window.`,
+        derivedTrend.times,
+        derivedTrend.series,
+      ),
+    );
+  }
+  if (rawSignalSeries.length > 0) {
+    cards.push(
+      renderTraceCard(
+        "Input Signal",
+        "Sampled rawsig values applied to the FMU from the CSV input series.",
+        trace.times,
+        rawSignalSeries,
+      ),
+    );
+  }
+
+  container.innerHTML = `
+    <div class="aecis-focus-meta">
+      <h3 class="aecis-focus-title">${escapeHTML(simulink.payload.runName || simulink.runName)}</h3>
+      <span class="result-kind-pill result-kind-${escapeHTML(resultType.kind)}">${escapeHTML(resultType.label)}</span>
+      <span>${escapeHTML(simulink.payload.workflowPath || SIMULINK_WORKFLOW_PATH)}</span>
+      <span>step ${escapeHTML(stepName)}</span>
+      ${stepResult.time !== undefined ? `<span>reported stop time ${escapeHTML(formatMetric(stepResult.time))}</span>` : ""}
+    </div>
+    ${buildSimulinkFallbackMarkup(simulink)}
+    ${cards.length > 0 ? `<div class="trace-stack">${cards.join("")}</div>` : '<div class="empty-state">No trace series were available in the latest AECIS result.</div>'}
+  `;
+}
+
+function resolveSummaryMetrics(stepResult, trace, derivedTrend) {
+  const metrics = [];
+  const latestTrend = latestDerivedTrend(derivedTrend);
+  if (latestTrend) {
+    metrics.push(
+      { label: "Mean", value: latestTrend.mean },
+      { label: "RMS", value: latestTrend.rms },
+    );
+    return metrics;
+  }
+
+  const ciVector = resolveCIVector(stepResult, trace);
+  if (ciVector.length >= 2) {
+    metrics.push(
+      { label: CIVECTOR_LABELS[0], value: ciVector[0] },
+      { label: CIVECTOR_LABELS[1], value: ciVector[1] },
+    );
+  }
+  return metrics;
+}
+
+function classifySimulinkPayload(payload) {
+  const stepEntries = Object.entries(payload?.stepResults || {});
+  for (const [, stepResult] of stepEntries) {
+    if (extractSimulinkTrace(stepResult)) {
+      return {
+        kind: "trace",
+        label: "Trace Result",
+      };
+    }
+  }
+  if (stepEntries.length > 0) {
+    return {
+      kind: "legacy",
+      label: "Legacy Result",
+    };
+  }
+  return {
+    kind: "unknown",
+    label: "Unknown Result",
+  };
+}
+
+function classifySimulinkRun(run) {
+  if (run?.workflowPath !== SIMULINK_WORKFLOW_PATH) {
+    return null;
+  }
+  if (String(run.phase || "").toLowerCase() !== "succeeded") {
+    return null;
+  }
+  const cached = state.simulinkResultsCache.get(run.name);
+  if (cached?.state === "ready") {
+    return classifySimulinkPayload(cached.payload);
+  }
+  if (cached?.state === "error") {
+    return {
+      kind: "missing",
+      label: "No Result Payload",
+    };
+  }
+  return {
+    kind: "pending",
+    label: "Unchecked Result",
+  };
 }
 
 function preferredSimulinkStep(stepEntries) {
@@ -358,37 +600,78 @@ function resolveCIVector(stepResult, trace) {
   return Array.isArray(lastSample) ? lastSample : [];
 }
 
-function renderSimulinkTraceCards(trace) {
-  if (!trace) {
-    return "";
+function buildDerivedAecisTrend(trace) {
+  const rawSignal = trace?.signals?.rawsig;
+  if (!Array.isArray(trace?.times) || !Array.isArray(rawSignal) || trace.times.length === 0) {
+    return {
+      times: [],
+      series: [],
+    };
   }
 
-  const cards = [];
-  const inputSeries = buildScalarTraceSeries(trace, ["rawsig"]);
-  if (inputSeries.length > 0) {
-    cards.push(
-      renderTraceCard(
-        "Input Signal",
-        "Sampled rawsig values applied to the FMU from the CSV input series.",
-        trace.times,
-        inputSeries,
-      ),
-    );
+  const samples = rawSignal
+    .slice(0, trace.times.length)
+    .map((value) => coerceTraceNumber(value));
+  const trendTimes = [];
+  const meanValues = [];
+  const rmsValues = [];
+  let startIndex = 0;
+
+  for (let index = 0; index < trace.times.length; index += 1) {
+    const currentTime = trace.times[index];
+    while (startIndex < index && trace.times[startIndex] < currentTime - AECIS_TREND_WINDOW_SECONDS) {
+      startIndex += 1;
+    }
+    const window = samples
+      .slice(startIndex, index + 1)
+      .filter((value) => Number.isFinite(value));
+    if (window.length < 2) {
+      continue;
+    }
+    const mean = window.reduce((sum, value) => sum + value, 0) / window.length;
+    const rms = Math.sqrt(window.reduce((sum, value) => sum + value * value, 0) / window.length);
+    trendTimes.push(currentTime);
+    meanValues.push(mean);
+    rmsValues.push(rms);
   }
 
-  const ciSeries = buildCIVectorTraceSeries(trace);
-  if (ciSeries.length > 0) {
-    cards.push(
-      renderTraceCard(
-        "CI Trace",
-        "Sampled CIvector values collected during the Simulink run.",
-        trace.times,
-        ciSeries,
-      ),
-    );
+  const series = [];
+  if (meanValues.some((value) => Number.isFinite(value))) {
+    series.push({
+      name: "Mean",
+      color: paletteColor(0),
+      values: meanValues,
+    });
+  }
+  if (rmsValues.some((value) => Number.isFinite(value))) {
+    series.push({
+      name: "RMS",
+      color: paletteColor(1),
+      values: rmsValues,
+    });
   }
 
-  return cards.length > 0 ? `<div class="trace-stack">${cards.join("")}</div>` : "";
+  return {
+    times: trendTimes,
+    series,
+  };
+}
+
+function latestDerivedTrend(derivedTrend) {
+  if (!derivedTrend?.series?.length || !derivedTrend.times?.length) {
+    return null;
+  }
+  const meanSeries = derivedTrend.series.find((series) => series.name === "Mean");
+  const rmsSeries = derivedTrend.series.find((series) => series.name === "RMS");
+  const mean = meanSeries?.values?.[meanSeries.values.length - 1];
+  const rms = rmsSeries?.values?.[rmsSeries.values.length - 1];
+  if (!Number.isFinite(mean) && !Number.isFinite(rms)) {
+    return null;
+  }
+  return {
+    mean,
+    rms,
+  };
 }
 
 function buildScalarTraceSeries(trace, signalNames) {
@@ -411,33 +694,6 @@ function buildScalarTraceSeries(trace, signalNames) {
       };
     })
     .filter(Boolean);
-}
-
-function buildCIVectorTraceSeries(trace) {
-  const values = trace.signals?.CIvector;
-  if (!Array.isArray(values) || values.length === 0) {
-    return [];
-  }
-
-  if (Array.isArray(values[0])) {
-    const width = Math.min(
-      CIVECTOR_LABELS.length,
-      values.reduce((max, sample) => (Array.isArray(sample) ? Math.max(max, sample.length) : max), 0),
-    );
-    return Array.from({ length: width }, (_, index) => ({
-      name: CIVECTOR_LABELS[index] || `CI ${index + 1}`,
-      color: paletteColor(index),
-      values: values.slice(0, trace.times.length).map((sample) => coerceTraceNumber(Array.isArray(sample) ? sample[index] : NaN)),
-    })).filter((series) => series.values.some((value) => Number.isFinite(value)));
-  }
-
-  return [
-    {
-      name: "CIvector",
-      color: paletteColor(0),
-      values: values.slice(0, trace.times.length).map((sample) => coerceTraceNumber(sample)),
-    },
-  ];
 }
 
 function renderTraceCard(title, description, times, series) {
@@ -487,6 +743,14 @@ function buildTraceChartSVG(times, series) {
   const maxY = Math.max(...flatValues);
   const xSpan = maxX === minX ? 1 : maxX - minX;
   const ySpan = maxY === minY ? Math.max(1, Math.abs(maxY) || 1) : maxY - minY;
+  const xPad = maxX === minX ? 0.5 : Math.max(xSpan * 0.03, 0.1);
+  const yPad = Math.max(ySpan * 0.08, Math.abs(maxY) * 0.02, 0.02);
+  const domainMinX = minX - xPad;
+  const domainMaxX = maxX + xPad;
+  const domainMinY = minY - yPad;
+  const domainMaxY = maxY + yPad;
+  const domainXSpan = domainMaxX - domainMinX || 1;
+  const domainYSpan = domainMaxY - domainMinY || 1;
   const parts = [
     `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Simulink trace chart">`,
     `<rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(255,255,255,0.36)"></rect>`,
@@ -501,9 +765,10 @@ function buildTraceChartSVG(times, series) {
 
   for (let index = 0; index <= 3; index += 1) {
     const ratio = index / 3;
-    const y = margin.top + chartHeight - ratio * chartHeight;
+    const value = minY + ratio * ySpan;
+    const y = margin.top + chartHeight - ((value - domainMinY) / domainYSpan) * chartHeight;
     parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" class="chart-grid"></line>`);
-    parts.push(`<text x="${margin.left - 8}" y="${y + 4}" text-anchor="end" class="chart-label">${escapeHTML(formatMetric(minY + ratio * ySpan))}</text>`);
+    parts.push(`<text x="${margin.left - 8}" y="${y + 4}" text-anchor="end" class="chart-label">${escapeHTML(formatMetric(value))}</text>`);
   }
 
   parts.push(`<line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${width - margin.right}" y2="${margin.top + chartHeight}" class="chart-axis"></line>`);
@@ -516,15 +781,38 @@ function buildTraceChartSVG(times, series) {
         if (!Number.isFinite(time) || !Number.isFinite(value)) {
           return null;
         }
-        const x = margin.left + ((time - minX) / xSpan) * chartWidth;
-        const y = margin.top + chartHeight - ((value - minY) / ySpan) * chartHeight;
-        return `${x},${y}`;
+        const x = margin.left + ((time - domainMinX) / domainXSpan) * chartWidth;
+        const y = margin.top + chartHeight - ((value - domainMinY) / domainYSpan) * chartHeight;
+        return {
+          x,
+          y,
+          value,
+        };
       })
       .filter(Boolean);
     if (points.length < 2) {
       continue;
     }
-    parts.push(`<polyline fill="none" stroke="${item.color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" points="${points.join(" ")}"></polyline>`);
+    parts.push(
+      `<polyline fill="none" stroke="${item.color}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" points="${points.map((point) => `${point.x},${point.y}`).join(" ")}"></polyline>`,
+    );
+    const markerIndexes = new Set([0, points.length - 1]);
+    let peakIndex = 0;
+    for (let index = 1; index < points.length; index += 1) {
+      if (points[index].value > points[peakIndex].value) {
+        peakIndex = index;
+      }
+    }
+    markerIndexes.add(peakIndex);
+    for (const index of markerIndexes) {
+      const point = points[index];
+      if (!point) {
+        continue;
+      }
+      parts.push(
+        `<circle cx="${point.x}" cy="${point.y}" r="3.2" fill="${item.color}" stroke="rgba(255,255,255,0.92)" stroke-width="1.1"></circle>`,
+      );
+    }
   }
 
   parts.push("</svg>");
@@ -554,10 +842,17 @@ function renderRuns() {
   list.innerHTML = state.runs
     .map((run) => {
       const phaseClass = classifyPhase(run.phase);
+      const resultType = classifySimulinkRun(run);
+      const resultPill = resultType
+        ? `<span class="result-kind-pill result-kind-${escapeHTML(resultType.kind)}">${escapeHTML(resultType.label)}</span>`
+        : "";
       return `
         <article class="run-card">
           <div class="run-header">
-            <h3>${escapeHTML(run.name)}</h3>
+            <div class="run-title-block">
+              <h3>${escapeHTML(run.name)}</h3>
+              ${resultPill}
+            </div>
             <span class="phase-pill ${phaseClass}">${escapeHTML(run.phase || "Unknown")}</span>
           </div>
           <div class="run-meta">
@@ -574,79 +869,6 @@ function renderRuns() {
     .join("");
 }
 
-function renderChart() {
-  const svg = document.getElementById("timelineChart");
-  const caption = document.getElementById("chartCaption");
-  const width = 760;
-  const height = 300;
-  const margin = { top: 18, right: 22, bottom: 44, left: 58 };
-  const chartWidth = width - margin.left - margin.right;
-  const chartHeight = height - margin.top - margin.bottom;
-  const runs = state.runs
-    .filter((run) => run.createdAt || run.startedAt)
-    .map((run) => ({
-      ...run,
-      timestamp: new Date(run.startedAt || run.createdAt).getTime(),
-      duration: Number(run.durationSeconds || 0),
-    }))
-    .filter((run) => Number.isFinite(run.timestamp));
-
-  if (runs.length === 0) {
-    svg.innerHTML = `
-      <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(255,255,255,0.32)"></rect>
-      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" class="chart-label">Waiting for recent workflow runs…</text>
-    `;
-    caption.textContent = "No remote run timestamps available yet.";
-    return;
-  }
-
-  const minX = Math.min(...runs.map((run) => run.timestamp));
-  const maxX = Math.max(...runs.map((run) => run.timestamp));
-  const maxY = Math.max(...runs.map((run) => run.duration), 1);
-  const domainX = minX === maxX ? maxX + 60_000 : maxX;
-
-  const yTicks = 4;
-  const xTicks = 3;
-  const parts = [
-    `<rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(255,255,255,0.32)"></rect>`,
-  ];
-
-  for (let index = 0; index <= yTicks; index += 1) {
-    const ratio = index / yTicks;
-    const y = margin.top + chartHeight - ratio * chartHeight;
-    const value = maxY * ratio;
-    parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" class="chart-grid"></line>`);
-    parts.push(`<text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" class="chart-label">${escapeHTML(formatDuration(value))}</text>`);
-  }
-
-  for (let index = 0; index <= xTicks; index += 1) {
-    const ratio = index / xTicks;
-    const x = margin.left + ratio * chartWidth;
-    const value = minX + ratio * (domainX - minX);
-    parts.push(`<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${margin.top + chartHeight}" class="chart-grid"></line>`);
-    parts.push(`<text x="${x}" y="${height - 14}" text-anchor="middle" class="chart-label">${escapeHTML(formatShortClock(value))}</text>`);
-  }
-
-  parts.push(`<line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${width - margin.right}" y2="${margin.top + chartHeight}" class="chart-axis"></line>`);
-  parts.push(`<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" class="chart-axis"></line>`);
-
-  for (const run of runs) {
-    const xRatio = domainX === minX ? 0.5 : (run.timestamp - minX) / (domainX - minX);
-    const yRatio = maxY === 0 ? 0 : run.duration / maxY;
-    const x = margin.left + xRatio * chartWidth;
-    const y = margin.top + chartHeight - yRatio * chartHeight;
-    const color = phaseColor(run.phase);
-    parts.push(`
-      <circle cx="${x}" cy="${y}" r="7" fill="${color}" class="chart-dot">
-        <title>${escapeHTML(`${run.name} • ${run.phase || "Unknown"} • ${formatDuration(run.duration)}`)}</title>
-      </circle>
-    `);
-  }
-
-  svg.innerHTML = parts.join("");
-  caption.textContent = `Showing ${runs.length} recent run${runs.length === 1 ? "" : "s"} from ${formatShortClock(minX)} to ${formatShortClock(domainX)}.`;
-}
-
 function classifyPhase(phase) {
   switch ((phase || "").toLowerCase()) {
     case "running":
@@ -659,20 +881,6 @@ function classifyPhase(phase) {
       return "phase-error";
     default:
       return "phase-other";
-  }
-}
-
-function phaseColor(phase) {
-  switch ((phase || "").toLowerCase()) {
-    case "running":
-      return "#bf5f2f";
-    case "succeeded":
-      return "#2f7652";
-    case "failed":
-    case "error":
-      return "#a53f2b";
-    default:
-      return "#6b6f77";
   }
 }
 
@@ -712,14 +920,6 @@ function formatTimestamp(raw) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  });
-}
-
-function formatShortClock(value) {
-  const date = new Date(value);
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 

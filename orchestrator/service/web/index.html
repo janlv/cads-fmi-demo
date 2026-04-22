@@ -13,7 +13,7 @@
       <div class="hero-row">
         <div>
           <h1>Workflow Dashboard</h1>
-          <p class="lede">Launch repo workflows, watch recent runs, and track live execution timing from one local browser session.</p>
+          <p class="lede">Launch repo workflows, watch recent runs, and inspect evolving AECIS trend data from one local browser session.</p>
         </div>
         <div id="configMeta" class="meta-row" aria-label="Remote configuration"></div>
       </div>
@@ -21,7 +21,7 @@
     </header>
 
     <main class="dashboard-grid">
-      <section class="panel">
+      <section class="panel panel-launch">
         <div class="panel-head">
           <div>
             <p class="panel-kicker">Launch</p>
@@ -32,32 +32,18 @@
         <div id="workflowGrid" class="workflow-grid" aria-live="polite"></div>
       </section>
 
-      <section class="panel panel-wide">
-        <div class="panel-head">
-          <div>
-            <p class="panel-kicker">Telemetry</p>
-            <h2>Live Duration Plot</h2>
-          </div>
-          <p class="panel-copy">The chart polls every few seconds and plots workflow duration against start time.</p>
-        </div>
-        <div class="chart-shell">
-          <svg id="timelineChart" viewBox="0 0 760 300" preserveAspectRatio="none" role="img" aria-label="Recent workflow durations"></svg>
-          <p id="chartCaption" class="chart-caption">Waiting for run data…</p>
-        </div>
-      </section>
-
-      <section class="panel">
+      <section class="panel panel-aecis-focus">
         <div class="panel-head">
           <div>
             <p class="panel-kicker">Simulink</p>
-            <h2>Latest AECIS Results</h2>
+            <h2>AECIS Trend Plot</h2>
           </div>
-          <p class="panel-copy">The newest successful <code>calculate_aecis</code> run is parsed from workflow logs.</p>
+          <p class="panel-copy">Rolling mean and RMS are derived from the latest parsed <code>calculate_aecis</code> signal trace.</p>
         </div>
-        <div id="simulinkResults" class="simulink-results" aria-live="polite"></div>
+        <div id="aecisFocus" class="aecis-focus" aria-live="polite"></div>
       </section>
 
-      <section class="panel panel-wide">
+      <section class="panel panel-history-column">
         <div class="panel-head">
           <div>
             <p class="panel-kicker">History</p>

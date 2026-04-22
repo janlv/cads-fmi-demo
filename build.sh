@@ -11,6 +11,8 @@ cads_setup_local_path "$ROOT_DIR"
 LOCAL_BASE_DIR="$ROOT_DIR/.local"
 LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
 LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
+STATE_DIR="$ROOT_DIR/.local/state"
+BUILD_STATE_FILE="$STATE_DIR/build-image.env"
 
 DEFAULT_FMIL_HOME="$ROOT_DIR/.local"
 FMIL_HOME_OVERRIDE=""
@@ -22,6 +24,13 @@ usage() {
 Usage: ./build.sh [--image image:tag] [--fmil-home path]
 
 Builds the CADS FMI demo container image and the Go workflow binaries.
+EOF
+}
+
+save_build_state() {
+    mkdir -p "$STATE_DIR"
+    cat >"$BUILD_STATE_FILE" <<EOF
+last_built_image="$IMAGE"
 EOF
 }
 
@@ -56,6 +65,8 @@ while (($#)); do
             ;;
     esac
 done
+
+log_info "Build target image: $IMAGE"
 
 if [[ -n "$FMIL_HOME_OVERRIDE" ]]; then
     FMIL_HOME="$FMIL_HOME_OVERRIDE"
@@ -126,4 +137,6 @@ stage_platform_resources
 build_go_binaries
 build_container_image
 
-log_ok "Build complete. Use ./run_local.sh or ./run_remote.sh to submit a workflow."
+save_build_state
+
+log_ok "Build complete for image $IMAGE. Use ./run_local.sh or ./run_remote.sh to submit a workflow."

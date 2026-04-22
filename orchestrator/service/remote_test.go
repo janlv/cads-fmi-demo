@@ -156,6 +156,35 @@ cads-calculate-aecis-20260417105312: time="2026-04-17T10:53:17.517Z" level=info 
 	}
 }
 
+func TestExtractRunResultsFromLogsParsesNestedTracePayload(t *testing.T) {
+	logs := []byte(`cads-calculate-aecis-20260421073538: [INFO][FMILIB] XML specifies FMI standard version 3.0
+cads-calculate-aecis-20260421073538: {"calculate_aecis":{"CIvector":[0,0,0,0,0],"time":30,"trace":{"signals":{"CIvector":[[2.48,2.48,0,null,null],[0,0,0,0,0]],"rawsig":[2.48,2.51],"time_1":[0,0.05]},"time":[0,0.05]}}}
+cads-calculate-aecis-20260421073538: time="2026-04-21T07:36:03.545Z" level=info msg="sub-process exited" argo=true error="<nil>"
+`)
+
+	results, err := extractRunResultsFromLogs(logs)
+	if err != nil {
+		t.Fatalf("extractRunResultsFromLogs() error = %v", err)
+	}
+
+	step := results["calculate_aecis"]
+	if step == nil {
+		t.Fatalf("results = %+v, want calculate_aecis step", results)
+	}
+	trace, ok := step["trace"].(map[string]any)
+	if !ok {
+		t.Fatalf("trace = %#v, want nested trace object", step["trace"])
+	}
+	signals, ok := trace["signals"].(map[string]any)
+	if !ok {
+		t.Fatalf("signals = %#v, want nested signals map", trace["signals"])
+	}
+	rawsig, ok := signals["rawsig"].([]any)
+	if !ok || len(rawsig) != 2 {
+		t.Fatalf("rawsig = %#v, want two traced raw samples", signals["rawsig"])
+	}
+}
+
 func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "workflows"), 0o755); err != nil {
@@ -208,6 +237,22 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 		container := manifest.Spec.Templates[0].Container
 		if container.Image != "ghcr.io/example/cads:test" || len(container.Args) != 3 || container.Args[0] != "--json-output" || container.Args[2] != "workflows/python_chain.yaml" {
 			t.Fatalf("container = %+v, want configured image and workflow path", container)
+		}
+		envByName := make(map[string]argoEnvVar, len(container.Env))
+		for _, env := range container.Env {
+			envByName[env.Name] = env
+		}
+		if envByName["AWS_ACCESS_KEY_ID"].ValueFrom == nil || envByName["AWS_ACCESS_KEY_ID"].ValueFrom.SecretKeyRef == nil {
+			t.Fatalf("container.Env = %+v, want AWS_ACCESS_KEY_ID secret ref", container.Env)
+		}
+		if envByName["AWS_ACCESS_KEY_ID"].ValueFrom.SecretKeyRef.Name != defaultS3CredentialsSecret || envByName["AWS_ACCESS_KEY_ID"].ValueFrom.SecretKeyRef.Key != "access_key_id" {
+			t.Fatalf("AWS_ACCESS_KEY_ID env = %+v, want default S3 secret mapping", envByName["AWS_ACCESS_KEY_ID"])
+		}
+		if envByName["S3_BUCKET"].ValueFrom == nil || envByName["S3_BUCKET"].ValueFrom.SecretKeyRef == nil || envByName["S3_BUCKET"].ValueFrom.SecretKeyRef.Key != "bucket_name" {
+			t.Fatalf("S3_BUCKET env = %+v, want bucket_name secret ref", envByName["S3_BUCKET"])
+		}
+		if envByName["S3_ENDPOINT"].ValueFrom == nil || envByName["S3_ENDPOINT"].ValueFrom.SecretKeyRef == nil || envByName["S3_ENDPOINT"].ValueFrom.SecretKeyRef.Key != "endpoint" {
+			t.Fatalf("S3_ENDPOINT env = %+v, want endpoint secret ref", envByName["S3_ENDPOINT"])
 		}
 		if !strings.HasPrefix(manifest.Metadata.Name, "cads-python-chain-20260416170000") {
 			t.Fatalf("manifest name = %q, want timestamped workflow name", manifest.Metadata.Name)

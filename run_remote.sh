@@ -6,12 +6,17 @@ source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 WORKFLOW=""
-IMAGE="ghcr.io/janlv/cads-fmi-demo:latest"
+default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
+default_remote_image="ghcr.io/janlv/cads-fmi-demo:latest"
+state_dir="$ROOT_DIR/.local/state"
+state_file="$state_dir/dashboard-remote-image.env"
+IMAGE="${CADS_WORKFLOW_IMAGE:-$default_remote_image}"
 KUBECONFIG_PATH=""
 ARGO_SERVER="${ARGO_SERVER:-argoworkflows.cads.kzslab.dev}"
 ARGO_NAMESPACE="${ARGO_NAMESPACE:-playground}"
 SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-playground-storhy-playground-pg-admin}"
 OUTPUT=""
+explicit_image=0
 
 cads_setup_local_path "$ROOT_DIR"
 
@@ -23,7 +28,18 @@ Usage: ./run_remote.sh <workflow.yaml> [--image ghcr.io/org/cads-demo:tag]
                       [--output path]
 
 Generates and submits a hosted-Argo workflow manifest to the remote playground.
+If --image is omitted, the script reuses CADS_WORKFLOW_IMAGE or the last image
+prepared by ./prepare_remote.sh when available.
 EOF
+}
+
+load_remote_state() {
+    cached_image=""
+    cached_signature=""
+    if [[ -f "$state_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$state_file"
+    fi
 }
 
 parse_args() {
@@ -46,6 +62,7 @@ parse_args() {
             --image)
                 shift
                 IMAGE="${1:-}"
+                explicit_image=1
                 ;;
             --kubeconfig)
                 shift
@@ -79,6 +96,14 @@ parse_args() {
 
 parse_args "$@"
 
+if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && $explicit_image -eq 0 ]]; then
+    load_remote_state
+    if [[ -n "${cached_image:-}" ]]; then
+        IMAGE="$cached_image"
+        log_info "Using previously prepared remote image $IMAGE"
+    fi
+fi
+
 if [[ ! -f "$ROOT_DIR/$WORKFLOW" ]]; then
     log_error "Workflow file not found: $WORKFLOW"
     exit 1
@@ -92,6 +117,11 @@ fi
 cads_require_cmd argo
 cads_require_cmd kubectl
 cads_source_host_ca "$ROOT_DIR"
+
+if [[ -z "${ARGO_TOKEN:-}" && -z "$KUBECONFIG_PATH" && -z "${KUBECONFIG:-}" && -f "$default_kubeconfig" ]]; then
+    log_info "Using default Kaizen kubeconfig at $default_kubeconfig"
+    KUBECONFIG_PATH="$default_kubeconfig"
+fi
 
 KUBECONFIG_PATH="$(cads_resolve_kubeconfig "$KUBECONFIG_PATH" || true)"
 TOKEN="$(cads_resolve_argo_token "$KUBECONFIG_PATH" || true)"

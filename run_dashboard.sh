@@ -339,9 +339,7 @@ if (( should_prepare_remote )); then
     if [[ -z "$current_signature" ]] && dashboard_source_is_clean; then
         current_signature="$(dashboard_source_signature || true)"
     fi
-    if [[ -n "$current_signature" ]]; then
-        save_dashboard_state "$remote_image" "$current_signature"
-    fi
+    save_dashboard_state "$remote_image" "$current_signature"
 fi
 
 if [[ ! -x "$ROOT_DIR/bin/cads-workflow-service" ]]; then

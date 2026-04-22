@@ -127,8 +127,15 @@ def generate_signal(
     signal += 0.016 * np.sin(2.0 * math.pi * 0.91 * times + 0.7)
     signal += 0.009 * np.sin(2.0 * math.pi * 2.4 * times + 1.9)
 
-    signal += white_noise(rng, sample_count, sigma=0.006)
-    signal += colored_noise(rng, sample_count, sample_rate_hz, sigma=0.012)
+    signal += white_noise(rng, sample_count, sigma=0.005)
+    signal += colored_noise(rng, sample_count, sample_rate_hz, sigma=0.010)
+
+    crack_start = duration_s * 0.34
+    crack_progress = np.clip((times - crack_start) / max(duration_s * 0.58, 1e-6), 0.0, 1.0)
+    signal += 0.018 * np.power(crack_progress, 1.15)
+    signal += 0.012 * np.power(crack_progress, 1.35) * np.sin(2.0 * math.pi * 0.42 * times + 1.1)
+    signal += white_noise(rng, sample_count, sigma=0.0035) * np.power(crack_progress, 1.2)
+    signal += colored_noise(rng, sample_count, sample_rate_hz, sigma=0.008) * np.power(crack_progress, 1.4)
 
     window_count = max(1, int(math.ceil(duration_s / window_s)))
     regimes = []
@@ -137,21 +144,22 @@ def generate_signal(
         stop = min(duration_s, (index + 1) * window_s)
         severity = index / max(1, window_count - 1)
         if severity < 0.34:
-            regime = "steady_baseline"
-            burst_count = 4
-            amplitude = (0.015, 0.045)
-            width = (0.010, 0.025)
+            regime = "background_noise"
+            burst_count = 5
+            amplitude = (0.010, 0.028)
+            width = (0.10, 0.24)
         elif severity < 0.67:
-            regime = "intermittent_impacts"
-            burst_count = 9
-            amplitude = (0.040, 0.090)
-            width = (0.008, 0.020)
+            regime = "crack_nucleation"
+            burst_count = 11
+            amplitude = (0.025, 0.055)
+            width = (0.12, 0.28)
+            signal += 0.008 * np.clip((times - start) / max(stop - start, 1e-6), 0.0, 1.0)
         else:
-            regime = "degrading_contact"
-            burst_count = 16
-            amplitude = (0.070, 0.160)
-            width = (0.006, 0.018)
-            signal += 0.018 * np.tanh((times - start) / max(0.2, 0.08 * window_s))
+            regime = "propagating_crack"
+            burst_count = 22
+            amplitude = (0.055, 0.120)
+            width = (0.16, 0.36)
+            signal += 0.022 * np.clip((times - start) / max(stop - start, 1e-6), 0.0, 1.0)
 
         add_bursts(
             signal=signal,
@@ -164,6 +172,14 @@ def generate_signal(
             amplitude_range=amplitude,
             width_range=width,
         )
+        if regime == "propagating_crack":
+            add_crack_clusters(
+                signal=signal,
+                times=times,
+                rng=rng,
+                start_s=start,
+                stop_s=stop,
+            )
         regimes.append(
             {
                 "start_s": round(start, 6),
@@ -231,6 +247,29 @@ def add_bursts(
             2.0 * math.pi * carrier_hz * (segment_times - center) + phase
         )
         signal[mask] += burst
+
+
+def add_crack_clusters(
+    signal: np.ndarray,
+    times: np.ndarray,
+    rng: np.random.Generator,
+    start_s: float,
+    stop_s: float,
+) -> None:
+    if stop_s <= start_s:
+        return
+    centers = np.linspace(start_s + 0.9, stop_s - 0.6, num=6)
+    for idx, center in enumerate(centers):
+        growth = idx / max(1, len(centers) - 1)
+        envelope = np.exp(-0.5 * ((times - center) / (0.32 - 0.08 * growth)) ** 2)
+        modulation = 0.08 + 0.09 * growth
+        comb = (
+            0.45 * np.sin(2.0 * math.pi * (1.4 + 0.25 * growth) * (times - center))
+            + 0.30 * np.sin(2.0 * math.pi * (3.2 + 0.5 * growth) * (times - center) + 0.7)
+            + 0.25 * np.sin(2.0 * math.pi * (6.4 + 0.8 * growth) * (times - center) + 1.4)
+        )
+        signal += modulation * envelope * comb
+        signal += rng.normal(0.0, 0.002 + 0.0025 * growth, len(times)) * envelope
 
 
 def summarize_windows(

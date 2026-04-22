@@ -15,5 +15,5 @@ steps:
       inputs:
         - rawsig
         - time_1
-      sample_every: 0.1
+      sample_every: 0.05
     result: data/calculate_aecis_result.json

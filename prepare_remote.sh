@@ -14,7 +14,13 @@ fi
 LOCAL_BASE_DIR="$ROOT_DIR/.local"
 LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
 LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
-IMAGE=""
+default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
+default_local_image="cads-fmi-demo:latest"
+default_remote_image="ghcr.io/janlv/cads-fmi-demo:latest"
+state_dir="$ROOT_DIR/.local/state"
+state_file="$state_dir/dashboard-remote-image.env"
+build_state_file="$state_dir/build-image.env"
+IMAGE="${CADS_WORKFLOW_IMAGE:-}"
 KUBECONFIG_PATH=""
 ARGO_SERVER="${ARGO_SERVER:-argoworkflows.cads.kzslab.dev}"
 ARGO_NAMESPACE="${ARGO_NAMESPACE:-playground}"
@@ -24,12 +30,75 @@ cads_setup_local_path "$ROOT_DIR"
 
 usage() {
     cat <<'EOF'
-Usage: ./prepare_remote.sh --image ghcr.io/org/cads-demo:tag [--kubeconfig path]
+Usage: ./prepare_remote.sh [--image ghcr.io/org/cads-demo:tag] [--kubeconfig path]
                            [--argo-server host] [--namespace name]
 
 Validates remote Argo access and publishes the selected image tag for hosted
 playground runs.
 EOF
+}
+
+load_remote_state() {
+    cached_image=""
+    cached_signature=""
+    if [[ -f "$state_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$state_file"
+    fi
+}
+
+load_build_state() {
+    last_built_image=""
+    if [[ -f "$build_state_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$build_state_file"
+    fi
+}
+
+save_remote_state() {
+    local image="$1"
+    mkdir -p "$state_dir"
+    cat >"$state_file" <<EOF
+cached_image="$image"
+cached_signature=""
+EOF
+}
+
+derive_remote_image() {
+    local source_image="${CADS_WORKFLOW_IMAGE:-$default_remote_image}"
+    local repo="${source_image%@*}"
+    if [[ "$repo" == *:* && "$repo" == */* ]]; then
+        repo="${repo%:*}"
+    fi
+    if [[ -z "$repo" ]]; then
+        repo="${default_remote_image%:*}"
+    fi
+
+    local git_sha="nogit"
+    if command -v git >/dev/null 2>&1; then
+        git_sha="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf 'nogit')"
+    fi
+
+    printf '%s:%s\n' "$repo" "remote-${git_sha}-$(date -u +%Y%m%d%H%M%S)"
+}
+
+local_image_exists() {
+    local image="$1"
+    local container_tool="$2"
+    if [[ -z "$image" ]]; then
+        return 1
+    fi
+    case "$container_tool" in
+        podman)
+            podman image exists "$image" >/dev/null 2>&1
+            ;;
+        docker)
+            docker image inspect "$image" >/dev/null 2>&1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 while (($#)); do
@@ -63,11 +132,15 @@ while (($#)); do
     shift || true
 done
 
+load_remote_state
+load_build_state
+
 if [[ -z "$IMAGE" ]]; then
-    log_error "--image is required"
-    usage
-    exit 1
+    IMAGE="$(derive_remote_image)"
+    log_info "No image tag provided; generated remote image tag for this remote preparation"
 fi
+
+log_info "Remote preparation target image: $IMAGE"
 
 if [[ -z "$ARGO_NAMESPACE" ]]; then
     log_error "--namespace requires a non-empty value"
@@ -77,6 +150,11 @@ fi
 cads_ensure_go "$LOCAL_BASE_DIR" "$LOCAL_GO_DIR"
 cads_ensure_argo_cli "$LOCAL_BIN_DIR"
 cads_ensure_kubectl_cli "$LOCAL_BIN_DIR"
+
+if [[ -z "${ARGO_TOKEN:-}" && -z "$KUBECONFIG_PATH" && -z "${KUBECONFIG:-}" && -f "$default_kubeconfig" ]]; then
+    log_info "Using default Kaizen kubeconfig at $default_kubeconfig"
+    KUBECONFIG_PATH="$default_kubeconfig"
+fi
 
 KUBECONFIG_PATH="$(cads_resolve_kubeconfig "$KUBECONFIG_PATH" || true)"
 TOKEN="$(cads_resolve_argo_token "$KUBECONFIG_PATH" || true)"
@@ -98,10 +176,50 @@ if ! run_with_logged_output argo list \
 fi
 log_ok "Remote Argo access verified"
 
+container_tool="$(cads_select_container_tool || true)"
+if [[ -z "$container_tool" ]]; then
+    log_error "Neither podman nor docker is available to prepare the remote image."
+    exit 1
+fi
+
+if ! local_image_exists "$IMAGE" "$container_tool"; then
+    source_image=""
+    for candidate in "${last_built_image:-}" "$default_local_image" "${CADS_WORKFLOW_IMAGE:-}" "${cached_image:-}"; do
+        if [[ -n "$candidate" && "$candidate" != "$IMAGE" ]] && local_image_exists "$candidate" "$container_tool"; then
+            source_image="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$source_image" ]]; then
+        log_error "Local image '$IMAGE' was not found, and no fallback source image is available to retag."
+        log_error "Run ./build.sh first, or pass --image with a tag that already exists locally."
+        exit 1
+    fi
+
+    log_info "Remote image '$IMAGE' will be created from local image '$source_image'"
+    log_step "Tagging local image $source_image as $IMAGE"
+    if ! run_with_logged_output "$container_tool" tag "$source_image" "$IMAGE"; then
+        log_error "Unable to retag local image '$source_image' as '$IMAGE'."
+        exit 1
+    fi
+    log_ok "Tagged local image as $IMAGE"
+else
+    log_info "Using existing local image tag $IMAGE for remote publish"
+fi
+
 bash "$ROOT_DIR/scripts/publish_image.sh" --image "$IMAGE"
+save_remote_state "$IMAGE"
 
 cat <<EOF
 
-Remote environment preparation complete. Continue with:
-  ./run_remote.sh workflows/python_chain.yaml --image $IMAGE
+Remote environment preparation complete. Published image:
+  $IMAGE
+
+Continue with:
+  ./run_remote.sh workflows/python_chain.yaml
+  ./run_inspect_s3_object.sh artifacts/my-file
+
+To override this prepared image explicitly:
+  CADS_WORKFLOW_IMAGE=$IMAGE ./run_remote.sh workflows/python_chain.yaml
 EOF

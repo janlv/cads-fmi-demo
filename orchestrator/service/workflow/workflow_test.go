@@ -102,8 +102,53 @@ func TestBuildInputSeriesResolvesCSVWithinRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildInputSeries() error = %v", err)
 	}
-	if cfg == nil || cfg.CSVPath != csvPath {
+	if cfg == nil || cfg.Config == nil || cfg.Config.CSVPath != csvPath {
 		t.Fatalf("buildInputSeries() = %#v, want CSVPath %q", cfg, csvPath)
+	}
+}
+
+func TestBuildInputSeriesDownloadsS3Object(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("S3_BUCKET", "sensor-data")
+	t.Setenv("S3_ENDPOINT", "https://s3.kaizen.internal")
+	t.Setenv("AWS_REGION", "eu-west-1")
+
+	var requested s3DownloadRequest
+	exec, err := NewExecutor(root, WithS3Downloader(func(request s3DownloadRequest, destination string) error {
+		requested = request
+		return os.WriteFile(destination, []byte("time_1,rawsig\n0,1\n"), 0o644)
+	}))
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+
+	cfg, err := exec.buildInputSeries(workflowStep{
+		InputSeries: &inputSeriesSpec{
+			S3: &s3InputSeriesSpec{Key: "acoustic/latest.csv"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildInputSeries() error = %v", err)
+	}
+	if cfg == nil || cfg.Config == nil {
+		t.Fatalf("buildInputSeries() = %#v, want resolved config", cfg)
+	}
+	if requested.Bucket != "sensor-data" || requested.Key != "acoustic/latest.csv" {
+		t.Fatalf("requested = %#v, want bucket/key from workflow+env", requested)
+	}
+	if requested.Endpoint != "https://s3.kaizen.internal" || requested.Region != "eu-west-1" || !requested.ForcePathStyle {
+		t.Fatalf("requested = %#v, want endpoint/region/path-style defaults", requested)
+	}
+	data, err := os.ReadFile(cfg.Config.CSVPath)
+	if err != nil {
+		t.Fatalf("read downloaded CSV: %v", err)
+	}
+	if !strings.Contains(string(data), "rawsig") {
+		t.Fatalf("downloaded CSV = %q, want content written by downloader", string(data))
+	}
+	cfg.Cleanup()
+	if _, err := os.Stat(cfg.Config.CSVPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cleanup should remove %s, stat error = %v", cfg.Config.CSVPath, err)
 	}
 }
 
@@ -119,6 +164,43 @@ func TestBuildInputSeriesRejectsTraversal(t *testing.T) {
 	})
 	if !errors.Is(err, ErrPathEscapesRoot) {
 		t.Fatalf("buildInputSeries() error = %v, want ErrPathEscapesRoot", err)
+	}
+}
+
+func TestBuildInputSeriesRejectsConflictingSources(t *testing.T) {
+	root := t.TempDir()
+	exec, err := NewExecutor(root)
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+
+	_, err = exec.buildInputSeries(workflowStep{
+		InputSeries: &inputSeriesSpec{
+			CSV: "data/samples.csv",
+			S3:  &s3InputSeriesSpec{Bucket: "demo", Key: "samples.csv"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "exactly one source") {
+		t.Fatalf("buildInputSeries() error = %v, want conflicting source rejection", err)
+	}
+}
+
+func TestBuildInputSeriesRequiresS3BucketOrEnv(t *testing.T) {
+	root := t.TempDir()
+	exec, err := NewExecutor(root, WithS3Downloader(func(request s3DownloadRequest, destination string) error {
+		return os.WriteFile(destination, nil, 0o644)
+	}))
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+
+	_, err = exec.buildInputSeries(workflowStep{
+		InputSeries: &inputSeriesSpec{
+			S3: &s3InputSeriesSpec{Key: "samples.csv"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "S3_BUCKET") {
+		t.Fatalf("buildInputSeries() error = %v, want missing bucket rejection", err)
 	}
 }
 

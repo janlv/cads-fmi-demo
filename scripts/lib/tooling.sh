@@ -7,6 +7,17 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
     CADS_KUBECTL_VERSION="${CADS_KUBECTL_VERSION:-v1.30.0}"
     CADS_MINIKUBE_VERSION="${CADS_MINIKUBE_VERSION:-v1.33.1}"
 
+    cads_extract_version_token() {
+        local raw="$1"
+        local token=""
+        token="$(printf '%s\n' "$raw" | grep -Eo 'v[0-9]+(\.[0-9]+)+' | head -n1 || true)"
+        if [[ -n "$token" ]]; then
+            printf '%s\n' "$token"
+            return 0
+        fi
+        printf '%s\n' "$raw"
+    }
+
     cads_detect_arch() {
         case "$(uname -m)" in
             x86_64|amd64) printf 'amd64\n' ;;
@@ -62,25 +73,28 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
         arch="$(cads_detect_arch)"
         tarball="go${CADS_GO_VERSION}.linux-${arch}.tar.gz"
         tmp="$(mktemp -d)"
-        log_step "Installing Go ${CADS_GO_VERSION}"
+        log_substep "Installing Go ${CADS_GO_VERSION}"
         curl -fsSL "https://go.dev/dl/${tarball}" -o "$tmp/go.tgz"
         rm -rf "$local_go_dir"
         tar -C "$local_base_dir" -xzf "$tmp/go.tgz"
         rm -rf "$tmp"
-        log_ok "Go ${CADS_GO_VERSION} installed under $local_go_dir"
+        log_subok "Go ${CADS_GO_VERSION} installed under $local_go_dir"
     }
 
     cads_ensure_go() {
         local local_base_dir="$1"
         local local_go_dir="$2"
+        log_step "Ensuring Go ${CADS_GO_VERSION}"
         if command -v go >/dev/null 2>&1; then
             local current
             current="$(go version | awk '{print $3}' | sed 's/^go//')"
             if [[ "$current" == "$CADS_GO_VERSION" ]]; then
-                log_step "Go ${current} already installed"
+                log_subok "Go ${current} already installed"
                 return
             fi
-            log_warn "Go version ${current} found but ${CADS_GO_VERSION} required; reinstalling locally."
+            log_subwarn "Go version ${current} found but ${CADS_GO_VERSION} required; reinstalling locally."
+        else
+            log_subinfo "Go not found; installing locally."
         fi
         cads_install_go "$local_base_dir" "$local_go_dir"
     }
@@ -92,23 +106,28 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
         asset="argo-linux-${arch}.gz"
         url="https://github.com/argoproj/argo-workflows/releases/download/${CADS_ARGO_VERSION}/${asset}"
         tmp="$(mktemp -d)"
-        log_step "Installing Argo CLI ${CADS_ARGO_VERSION}"
+        log_substep "Installing Argo CLI ${CADS_ARGO_VERSION}"
         curl -fsSL "$url" -o "$tmp/argo.gz"
         gunzip "$tmp/argo.gz"
         install -m 0755 "$tmp/argo" "$local_bin_dir/argo"
         rm -rf "$tmp"
+        log_subok "Argo CLI ${CADS_ARGO_VERSION} installed"
     }
 
     cads_ensure_argo_cli() {
         local local_bin_dir="$1"
+        log_step "Ensuring Argo CLI ${CADS_ARGO_VERSION}"
         if command -v argo >/dev/null 2>&1; then
-            local current
-            current="$(argo version --short 2>/dev/null | tr -d '\r' || true)"
+            local current raw_current
+            raw_current="$(argo version --short 2>/dev/null | tr -d '\r' || true)"
+            current="$(cads_extract_version_token "$raw_current")"
             if [[ "$current" == "$CADS_ARGO_VERSION" ]]; then
-                log_step "Argo CLI ${current} already installed"
+                log_subok "Argo CLI ${current} already installed"
                 return
             fi
-            log_warn "Argo CLI ${current} found but ${CADS_ARGO_VERSION} required; reinstalling."
+            log_subwarn "Argo CLI ${raw_current} found but ${CADS_ARGO_VERSION} required; reinstalling."
+        else
+            log_subinfo "Argo CLI not found; installing."
         fi
         cads_install_argo_cli "$local_bin_dir"
     }
@@ -118,20 +137,25 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
         local arch url
         arch="$(cads_detect_arch)"
         url="https://dl.k8s.io/release/${CADS_KUBECTL_VERSION}/bin/linux/${arch}/kubectl"
-        log_step "Installing kubectl ${CADS_KUBECTL_VERSION}"
+        log_substep "Installing kubectl ${CADS_KUBECTL_VERSION}"
         cads_install_binary "$url" "$local_bin_dir/kubectl"
+        log_subok "kubectl ${CADS_KUBECTL_VERSION} installed"
     }
 
     cads_ensure_kubectl_cli() {
         local local_bin_dir="$1"
+        log_step "Ensuring kubectl ${CADS_KUBECTL_VERSION}"
         if command -v kubectl >/dev/null 2>&1; then
-            local current
-            current="$(kubectl version --client=true --short 2>/dev/null || true)"
-            if [[ "$current" == *"${CADS_KUBECTL_VERSION}"* ]]; then
-                log_step "kubectl ${CADS_KUBECTL_VERSION} already installed"
+            local current raw_current
+            raw_current="$(kubectl version --client=true --short 2>/dev/null || kubectl version --client=true 2>/dev/null || true)"
+            current="$(cads_extract_version_token "$raw_current")"
+            if [[ "$current" == "$CADS_KUBECTL_VERSION" ]]; then
+                log_subok "kubectl ${CADS_KUBECTL_VERSION} already installed"
                 return
             fi
-            log_warn "kubectl version mismatch; reinstalling ${CADS_KUBECTL_VERSION}."
+            log_subwarn "kubectl ${raw_current} found but ${CADS_KUBECTL_VERSION} required; reinstalling."
+        else
+            log_subinfo "kubectl not found; installing."
         fi
         cads_install_kubectl_cli "$local_bin_dir"
     }
@@ -141,20 +165,24 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
         local arch url
         arch="$(cads_detect_arch)"
         url="https://storage.googleapis.com/minikube/releases/${CADS_MINIKUBE_VERSION}/minikube-linux-${arch}"
-        log_step "Installing Minikube ${CADS_MINIKUBE_VERSION}"
+        log_substep "Installing Minikube ${CADS_MINIKUBE_VERSION}"
         cads_install_binary "$url" "$local_bin_dir/minikube"
+        log_subok "Minikube ${CADS_MINIKUBE_VERSION} installed"
     }
 
     cads_ensure_minikube_cli() {
         local local_bin_dir="$1"
+        log_step "Ensuring Minikube ${CADS_MINIKUBE_VERSION}"
         if command -v minikube >/dev/null 2>&1; then
             local current
             current="$(minikube version --short 2>/dev/null || true)"
             if [[ "$current" == "$CADS_MINIKUBE_VERSION" ]]; then
-                log_step "Minikube ${current} already installed"
+                log_subok "Minikube ${current} already installed"
                 return
             fi
-            log_warn "Minikube version mismatch; reinstalling ${CADS_MINIKUBE_VERSION}."
+            log_subwarn "Minikube version mismatch; reinstalling ${CADS_MINIKUBE_VERSION}."
+        else
+            log_subinfo "Minikube not found; installing."
         fi
         cads_install_minikube_cli "$local_bin_dir"
     }

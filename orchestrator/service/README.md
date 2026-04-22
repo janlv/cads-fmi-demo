@@ -96,6 +96,12 @@ If the selected image is already published, the dashboard only needs the Kaizen
 side. If the launcher needs to build and publish a fresh image, it also needs
 GHCR push credentials.
 
+Hosted workflow submissions also project the Kaizen S3 secret
+`storhy-argo-artifacts-s3-credentials` into the runner pod as standard env vars
+(`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
+`AWS_DEFAULT_REGION`, `S3_BUCKET`, `S3_ENDPOINT`). That lets workflow YAML use
+`input_series.s3` without per-run manifest edits.
+
 If you want to force a fresh remote image build/publish before launch:
 
 ```bash

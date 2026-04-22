@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	defaultArgoServer         = "argoworkflows.cads.kzslab.dev"
-	defaultArgoNamespace      = "playground"
-	defaultArgoServiceAccount = "playground-storhy-playground-pg-admin"
-	defaultRemoteImage        = "ghcr.io/janlv/cads-fmi-demo:latest"
-	defaultPollInterval       = 5 * time.Second
+	defaultArgoServer          = "argoworkflows.cads.kzslab.dev"
+	defaultArgoNamespace       = "playground"
+	defaultArgoServiceAccount  = "playground-storhy-playground-pg-admin"
+	defaultRemoteImage         = "ghcr.io/janlv/cads-fmi-demo:latest"
+	defaultS3CredentialsSecret = "storhy-argo-artifacts-s3-credentials"
+	defaultPollInterval        = 5 * time.Second
 )
 
 var (
@@ -452,9 +453,25 @@ type argoTemplate struct {
 }
 
 type argoContainer struct {
-	Image   string   `json:"image"`
-	Command []string `json:"command"`
-	Args    []string `json:"args"`
+	Image   string       `json:"image"`
+	Command []string     `json:"command"`
+	Args    []string     `json:"args"`
+	Env     []argoEnvVar `json:"env,omitempty"`
+}
+
+type argoEnvVar struct {
+	Name      string            `json:"name" yaml:"name"`
+	Value     string            `json:"value,omitempty" yaml:"value,omitempty"`
+	ValueFrom *argoValueFromRef `json:"valueFrom,omitempty" yaml:"valueFrom,omitempty"`
+}
+
+type argoValueFromRef struct {
+	SecretKeyRef *argoSecretKeyRef `json:"secretKeyRef,omitempty" yaml:"secretKeyRef,omitempty"`
+}
+
+type argoSecretKeyRef struct {
+	Name string `json:"name" yaml:"name"`
+	Key  string `json:"key" yaml:"key"`
 }
 
 type argoStatus struct {
@@ -601,7 +618,7 @@ func extractRunResultsFromLogs(payload []byte) (map[string]map[string]any, error
 		if results, err := unmarshalRunResults(normalized); err == nil {
 			return results, nil
 		}
-		if results, err := extractJSONObjectFromLines(normalized); err == nil {
+		if results, err := extractBalancedJSONObject(normalized); err == nil {
 			return results, nil
 		}
 		if results, err := extractJSONTail(normalized); err == nil {
@@ -609,7 +626,7 @@ func extractRunResultsFromLogs(payload []byte) (map[string]map[string]any, error
 		}
 	}
 
-	if results, err := extractJSONObjectFromLines(trimmed); err == nil {
+	if results, err := extractBalancedJSONObject(trimmed); err == nil {
 		return results, nil
 	}
 	if results, err := extractJSONTail(trimmed); err == nil {
@@ -640,43 +657,55 @@ func stripLogPrefix(line string) string {
 	return line[prefixEnd+2:]
 }
 
-func extractJSONObjectFromLines(payload []byte) (map[string]map[string]any, error) {
-	lines := strings.Split(string(payload), "\n")
-	var builder strings.Builder
-	balance := 0
-	collecting := false
+func extractBalancedJSONObject(payload []byte) (map[string]map[string]any, error) {
+	start := -1
+	depth := 0
+	inString := false
+	escaped := false
 
-	for _, line := range lines {
-		current := line
-		if !collecting {
-			start := strings.IndexByte(current, '{')
-			if start < 0 {
-				continue
+	for idx, b := range payload {
+		if start < 0 {
+			if b == '{' {
+				start = idx
+				depth = 1
+				inString = false
+				escaped = false
 			}
-			current = current[start:]
-			collecting = true
-			balance = 0
-			builder.Reset()
-		}
-
-		if builder.Len() > 0 {
-			builder.WriteByte('\n')
-		}
-		builder.WriteString(current)
-		balance += strings.Count(current, "{")
-		balance -= strings.Count(current, "}")
-		if balance > 0 {
 			continue
 		}
 
-		if results, err := unmarshalRunResults(bytes.TrimSpace([]byte(builder.String()))); err == nil {
-			return results, nil
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch b {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
 		}
-		collecting = false
-		builder.Reset()
+
+		switch b {
+		case '"':
+			inString = true
+		case '{':
+			depth += 1
+		case '}':
+			depth -= 1
+			if depth == 0 {
+				candidate := bytes.TrimSpace(payload[start : idx+1])
+				if results, err := unmarshalRunResults(candidate); err == nil {
+					return results, nil
+				}
+				start = -1
+			}
+		}
 	}
 
-	return nil, fmt.Errorf("no JSON object found in log lines")
+	return nil, fmt.Errorf("no balanced JSON object found")
 }
 
 func extractJSONTail(payload []byte) (map[string]map[string]any, error) {
@@ -729,10 +758,11 @@ type hostedWorkflowManifest struct {
 		Templates          []struct {
 			Name      string `yaml:"name"`
 			Container struct {
-				Image           string   `yaml:"image"`
-				ImagePullPolicy string   `yaml:"imagePullPolicy"`
-				Command         []string `yaml:"command"`
-				Args            []string `yaml:"args"`
+				Image           string       `yaml:"image"`
+				ImagePullPolicy string       `yaml:"imagePullPolicy"`
+				Command         []string     `yaml:"command"`
+				Args            []string     `yaml:"args"`
+				Env             []argoEnvVar `yaml:"env,omitempty"`
 			} `yaml:"container"`
 		} `yaml:"templates"`
 	} `yaml:"spec"`
@@ -751,10 +781,11 @@ func generateRemoteWorkflowManifest(name string, namespace string, serviceAccoun
 	var template struct {
 		Name      string `yaml:"name"`
 		Container struct {
-			Image           string   `yaml:"image"`
-			ImagePullPolicy string   `yaml:"imagePullPolicy"`
-			Command         []string `yaml:"command"`
-			Args            []string `yaml:"args"`
+			Image           string       `yaml:"image"`
+			ImagePullPolicy string       `yaml:"imagePullPolicy"`
+			Command         []string     `yaml:"command"`
+			Args            []string     `yaml:"args"`
+			Env             []argoEnvVar `yaml:"env,omitempty"`
 		} `yaml:"container"`
 	}
 	template.Name = "run-workflow"
@@ -762,6 +793,7 @@ func generateRemoteWorkflowManifest(name string, namespace string, serviceAccoun
 	template.Container.ImagePullPolicy = "IfNotPresent"
 	template.Container.Command = []string{"/app/bin/cads-workflow-runner"}
 	template.Container.Args = []string{"--json-output", "--workflow", workflowPath}
+	template.Container.Env = buildRemoteWorkflowEnvVars(defaultS3CredentialsSecret)
 	manifest.Spec.Templates = append(manifest.Spec.Templates, template)
 
 	var buffer bytes.Buffer
@@ -774,6 +806,29 @@ func generateRemoteWorkflowManifest(name string, namespace string, serviceAccoun
 		return nil, fmt.Errorf("finalize remote workflow manifest: %w", err)
 	}
 	return buffer.Bytes(), nil
+}
+
+func buildRemoteWorkflowEnvVars(secretName string) []argoEnvVar {
+	secretRef := func(name string, key string) argoEnvVar {
+		return argoEnvVar{
+			Name: name,
+			ValueFrom: &argoValueFromRef{
+				SecretKeyRef: &argoSecretKeyRef{
+					Name: secretName,
+					Key:  key,
+				},
+			},
+		}
+	}
+
+	return []argoEnvVar{
+		secretRef("AWS_ACCESS_KEY_ID", "access_key_id"),
+		secretRef("AWS_SECRET_ACCESS_KEY", "secret_access_key"),
+		secretRef("AWS_REGION", "region"),
+		secretRef("AWS_DEFAULT_REGION", "region"),
+		secretRef("S3_BUCKET", "bucket_name"),
+		secretRef("S3_ENDPOINT", "endpoint"),
+	}
 }
 
 func generateRemoteWorkflowName(workflowPath string, now time.Time) string {
