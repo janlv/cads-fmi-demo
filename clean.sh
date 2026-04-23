@@ -12,8 +12,8 @@ usage() {
 Usage: ./clean.sh
 
 Removes generated artifacts (.local toolchain, bin/, caches, images) and
-deletes the local Minikube profile so subsequent ./prepare.sh and ./build.sh
-runs start from a blank slate.
+deletes the local Minikube profile so subsequent ./prepare_local.sh and
+./build.sh runs start from a blank slate.
 EOF
 }
 
@@ -41,19 +41,6 @@ cleanup_path() {
 ensure_dir() {
     local path="$1"
     mkdir -p "$path"
-}
-
-stop_compose() {
-    local bin="$1"
-    if ! command -v "$bin" >/dev/null 2>&1; then
-        return
-    fi
-    log_step "Stopping containers via $bin compose (if running)"
-    if "$bin" compose down --remove-orphans >/dev/null 2>&1; then
-        log_info "$bin compose stack stopped"
-    else
-        log_warn "$bin compose down reported no active stack or is unavailable."
-    fi
 }
 
 remove_image() {
@@ -90,10 +77,8 @@ done
 DOCKER_BIN=""
 if command -v docker >/dev/null 2>&1; then
     DOCKER_BIN="docker"
-    stop_compose "docker"
 elif command -v podman >/dev/null 2>&1; then
     DOCKER_BIN="podman"
-    stop_compose "podman"
 fi
 
 if [[ -n "$DOCKER_BIN" ]]; then
@@ -124,4 +109,4 @@ if [[ -d "$ROOT_DIR/.local" ]]; then
     cleanup_path ".local"
 fi
 
-log_ok "Clean up complete. Re-run ./prepare.sh and ./build.sh as needed."
+log_ok "Clean up complete. Re-run ./prepare_local.sh and ./build.sh as needed."

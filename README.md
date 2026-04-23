@@ -23,8 +23,7 @@ The key directories are:
   are supported because that mirrors the target CADS architecture; Python now
   lives solely on the FMU-generation edge.
 
-The remaining Docker/compose helpers are kept for parity with previous demos,
-but the focus is now on workflow-driven execution using FMUs you supply and YAML
+The focus is on workflow-driven execution using FMUs you supply and YAML
 workflows you define.
 
 ---
@@ -313,15 +312,7 @@ Inside the container:
   them before applying.
 - `./scripts/generate_remote_workflow.sh` emits a PVC/configmap-free workflow
   manifest (defaulting to `deploy/argo/<workflow>-remote-workflow.yaml`) for
-  hosted Argo environments which only expose the demo image. The legacy
-  `./scripts/prepare_ui_workflow.sh` name is still available as a compatibility
-  wrapper and preserves the old `-ui-workflow.yaml` default output name.
-
-Compatibility wrappers remain in place during the transition:
-
-- `./prepare.sh` forwards to `./prepare_local.sh`
-- `./run.sh` forwards to `./run_local.sh`
-- `./scripts/prepare_ui_workflow.sh` forwards to `./scripts/generate_remote_workflow.sh`
+  hosted Argo environments which only expose the demo image.
 
 ### Using the playground TimescaleDB feed
 
@@ -505,6 +496,8 @@ can be checked in or mounted during container runs without tweaking the YAML.
 ```
 .
 ├── create_fmu/             # pythonfmu build helpers, cached exporters
+├── archive/
+│   └── FMI_surya/          # historical Simulink-side reference assets
 ├── fmu/
 │   └── models/             # Python FMU sources + ready-to-run .fmu files
 ├── workflows/              # YAML workflows consumed by the runner/service
@@ -521,9 +514,9 @@ charts, etc.) now that the workflow runtime is fully native Go + FMIL.***
 
 ## Documentation map
 
-- [`PREPARE.md`](PREPARE.md) – manual breakdown of what `prepare.sh` does so you can adapt it
-  to bespoke hosts or reuse portions (certificate handling, Minikube bootstrap,
-  CLI installs).
+- [`PREPARE.md`](PREPARE.md) – manual breakdown of the supported preparation
+  paths so you can adapt them to bespoke hosts or reuse portions (certificate
+  handling, Minikube bootstrap, CLI installs).
 - [`BUILD.md`](BUILD.md) – detailed description of the container build, where FMUs and
   workflows land inside the image, and the optional flags exposed by `build.sh`.
 - [`RUN.md`](RUN.md) – how to submit workflows once an image exists, covering Argo,

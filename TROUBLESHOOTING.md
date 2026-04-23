@@ -18,7 +18,7 @@ probable cause, and recommended fix.
 
 ### `Unsupported architecture: ...`
 - Only `amd64` and `arm64` are supported today. Add the required checks/tarballs
-  in `prepare.sh` if you need another architecture.
+  in `prepare_local.sh` if you need another architecture.
 
 ### Minikube refuses to start
 - Typical causes: no container runtime, stale profiles, or rootless Podman not
@@ -43,7 +43,7 @@ probable cause, and recommended fix.
   to reuse a known-good install.
 
 ### `docker` / `podman` not found
-- Install one container runtime (Podman preferred). `prepare.sh` installs
+- Install one container runtime (Podman preferred). `prepare_local.sh` installs
   Podman automatically via apt; confirm it’s on PATH before rerunning `build.sh`.
 
 ---
@@ -93,7 +93,7 @@ probable cause, and recommended fix.
 
 - The script removes `.local`, cached artifacts, container images, and deletes
   the Minikube profile. Run it when you need to test the full flow from scratch.
-- If it logs `minikube command not found`, rerun `./prepare.sh` to reinstall the
+- If it logs `minikube command not found`, rerun `./prepare_local.sh` to reinstall the
   CLI before running `clean.sh` again (or ignore if Minikube is already absent).
 
 ---

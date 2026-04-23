@@ -1,95 +1,130 @@
 # Run Pipelines
 
-The repository now exposes separate execution paths for the local Minikube demo
-and the hosted KAIZEN playground.
+This repository supports three active execution paths:
 
-```bash
-./run_local.sh workflows/python_chain.yaml
-./run_remote.sh workflows/python_chain.yaml --image ghcr.io/org/cads-demo:dev --kubeconfig ~/Kaizen_CADS/kubeconfig
-```
+- `run_local.sh` for the local Minikube + Argo demo cluster
+- `run_remote.sh` for direct submissions to the hosted Kaizen playground
+- `run_dashboard.sh` for the browser UI that launches the same hosted runs
 
-`run.sh` remains as a compatibility wrapper for `run_local.sh`.
+All three paths execute the same workflow YAML files through the same Go/FMIL
+runtime. The difference is where Argo runs the workflow and how you interact
+with it.
 
 ## Local flow
 
-`run_local.sh` submits a workflow YAML to the Argo controller inside the local
-Minikube cluster. Run it after `./build.sh` so the image exists locally.
+Use the local path when you want a self-contained Minikube loop and automatic
+artifact copy-back into the repo.
 
-1. **Argument parsing** – Ensures the first positional argument is a workflow
-   file relative to the repo root. Optional `--image` switches to a different
-   container tag.
-2. **Environment wiring** – Adds `./.local/go/bin` and `./.local/bin` to `PATH`
-   so the locally installed `kubectl` and `argo` CLIs (from `prepare_local.sh`)
-   can be used even without shell profile edits.
-3. **Local cluster setup** – Ensures the Minikube profile is running, verifies
-   the active kube context is `minikube`, syncs custom CAs into Minikube,
-   ensures the local Argo controller exists, and preloads the selected image.
-4. **Manifest generation** – Calls `scripts/generate_manifests.sh --workflow …`
-   to render the Argo Workflow manifest (`deploy/argo/<name>-workflow.yaml`) and
-   the PVC manifest (`deploy/storage/data-pvc.yaml`). The generator also plugs
-   the selected image into the template.
-5. **PVC apply** – `scripts/run_argo_workflow.sh` (invoked by `run.sh`) applies
-   the PVC manifest so the workflow always mounts the `cads-data-pvc` claim in
-   the `argo` namespace before submission.
-6. **Workflow submission** – The wrapper submits the workflow via
-   `argo submit`, names it after the workflow file (sanitized + `cads-` prefix),
-   and tails progress with `argo watch`.
-7. **Artifact collection** – Copies `/app/data` out of the shared PVC into
-   `data/run-artifacts/<workflow>-<timestamp>`.
+```bash
+./prepare_local.sh
+./build.sh
+./run_local.sh workflows/python_chain.yaml
+```
 
-## Remote flow
+`run_local.sh` is the supported local Minikube manifest path. It:
 
-`run_remote.sh` submits a hosted-Argo manifest directly to the KAIZEN Argo
-server. Run it after `./build.sh --image ...` and
-`./prepare_remote.sh --image ...`.
+1. Verifies the requested workflow file exists.
+2. Ensures the local Minikube cluster and in-cluster Argo controller are ready.
+3. Loads the selected image into Minikube.
+4. Delegates manifest rendering and submission to:
+   - `scripts/run_argo_workflow.sh`
+   - `scripts/generate_manifests.sh`
+5. Copies `/app/data` from the shared PVC into `data/run-artifacts/`.
 
-1. Resolves the Argo token from `ARGO_TOKEN` or `--kubeconfig`.
-2. Sources the host CA helper so outbound TLS works behind corporate proxies.
-3. Generates a remote workflow manifest through
-   `scripts/generate_remote_workflow.sh`.
-4. Submits it with `argo submit --argo-http1` against
-   `argoworkflows.cads.kzslab.dev`.
-5. Overrides the manifest name with `cads-<workflow>-<timestamp>` to avoid name
-   collisions in the shared `playground` namespace.
-6. Watches by default and fetches workflow status/logs automatically if the
-   submission fails.
-
-## Arguments
-
-| Flag | Description |
-|------|-------------|
-| `<workflow.yaml>` | **Required.** Path to the workflow file under the repo root. |
-| `--image <name:tag>` | Override the image tag used in the generated manifest. |
-| `--kubeconfig <path>` | Remote only. Extract the Argo token from the supplied kubeconfig. |
-| `-h`, `--help` | Show usage information. |
-
-## Prerequisites
-
-- Local flow: `./prepare_local.sh` and `./build.sh` completed successfully.
-- Remote flow: `./build.sh --image ...` and `./prepare_remote.sh --image ...`
-  completed successfully.
-
-## Artifacts
-
-Running the local script updates the manifests in:
+The local path still relies on generated manifests under `deploy/`:
 
 - `deploy/argo/<workflow>-workflow.yaml`
 - `deploy/storage/data-pvc.yaml`
 
-Running the remote script updates the manifest in:
+## Remote flow
 
-- `deploy/argo/<workflow>-remote-workflow.yaml`
+Use the remote path when you want one CLI submission into the hosted Kaizen
+playground.
 
-Argo workflow pods in the local flow mount `/app/data` to the shared PVC, so
-outputs persist between runs. Hosted remote runs do not use the local PVC path.
+```bash
+./build.sh
+./prepare_remote.sh
+./run_remote.sh workflows/python_chain.yaml
+```
 
-## Troubleshooting
+`prepare_remote.sh` publishes a hosted image tag and caches it for later reuse.
+If you omit `--image`, it generates a fresh remote tag automatically and reuses
+the most recent local build as the source image.
 
-- **“Current kubectl context is ...”** – `run_local.sh` only targets the local
-  Minikube cluster. Switch to `minikube` before rerunning.
-- **Remote Argo authentication fails** – Re-run `./prepare_remote.sh` and verify
-  that `ARGO_TOKEN` or the supplied kubeconfig contains the playground bearer
-  token.
-- **PVC errors** – Delete the claim (`kubectl delete pvc cads-data-pvc -n argo`)
-  and rerun `./run_local.sh …` to recreate it. Adjust storage class/size in
-  `scripts/generate_manifests.sh` if your cluster requires custom settings.
+`run_remote.sh` then:
+
+1. Resolves Argo auth from `ARGO_TOKEN`, `KUBECONFIG`, `--kubeconfig`, or the
+   default `~/Kaizen_CADS/kubeconfig`.
+2. Reuses the last image prepared by `prepare_remote.sh` when no explicit image
+   is given.
+3. Calls `scripts/generate_remote_workflow.sh` to emit the hosted manifest.
+4. Submits the workflow to `argoworkflows.cads.kzslab.dev` with a unique run
+   name in the `playground` namespace.
+
+Hosted manifests automatically inject the playground S3 secret into standard AWS
+environment variables so workflows can read S3-backed inputs without per-run
+manifest edits.
+
+## Dashboard flow
+
+Use the dashboard when you want a browser UI for the same hosted playground.
+
+```bash
+./run_dashboard.sh
+```
+
+The dashboard serves a local web UI and launches the same hosted workflow image
+that `run_remote.sh` uses. It supports:
+
+- automatic remote image preparation when needed
+- recent-run status and results
+- AECIS trace visualization
+- workflow launch buttons for files under `workflows/`
+
+Useful variants:
+
+```bash
+./run_dashboard.sh --prepare-remote
+./run_dashboard.sh --no-prepare-remote
+./run_dashboard.sh --kubeconfig ~/Kaizen_CADS/kubeconfig
+```
+
+## S3 helpers
+
+The repo also includes helper entrypoints for inspecting S3-backed inputs from
+the playground:
+
+```bash
+./run_list_s3_objects.sh --prefix artifacts/
+./run_inspect_s3_object.sh artifacts/my-file
+./run_argo.sh logs <workflow-name>
+```
+
+These helpers are remote-only and reuse the same prepared hosted image and
+Kaizen auth defaults as the main remote flow.
+
+## Arguments
+
+Common patterns:
+
+- `<workflow.yaml>` is always a repo-relative workflow path such as
+  `workflows/python_chain.yaml`
+- `--image` overrides the image tag for build or submission
+- `--kubeconfig` overrides the default Kaizen kubeconfig
+
+Run `--help` on any surviving entrypoint for the current interface:
+
+- `./prepare_local.sh --help`
+- `./run_local.sh --help`
+- `./build.sh --help`
+- `./prepare_remote.sh --help`
+- `./run_remote.sh --help`
+- `./run_dashboard.sh --help`
+
+## Troubleshooting shortcuts
+
+- Local Minikube issues: rerun `./prepare_local.sh`
+- Remote Argo auth issues: rerun `./prepare_remote.sh` or pass `--kubeconfig`
+- Hosted image mismatch: rerun `./build.sh` followed by `./prepare_remote.sh`
+- S3 inspection/listing issues: verify the remote helper is using the latest
+  prepared image and inspect the logs with `./run_argo.sh logs <workflow-name>`

@@ -4,7 +4,8 @@ Generate deterministic synthetic AE-style input data for CalculateAECIs testing.
 
 Outputs:
 - CSV with columns `time_1,rawsig`
-- MAT file with variable `U = [time_1, rawsig]` to mirror FMI_surya/inputfile.mat
+- MAT file with variable `U = [time_1, rawsig]` to mirror the archived
+  `archive/FMI_surya/inputfile.mat` reference data
 - JSON with expected CI values for each 10-second window
 """
 

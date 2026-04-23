@@ -7,9 +7,6 @@ The repository now exposes separate local and remote preparation paths:
 ./prepare_remote.sh --image ghcr.io/org/cads-demo:demo123 --kubeconfig ~/Kaizen_CADS/kubeconfig
 ```
 
-`prepare.sh` still exists as a compatibility wrapper and forwards to
-`prepare_local.sh`.
-
 ## Local preparation
 
 `prepare_local.sh` keeps the local Minikube demo self-contained on Debian/Ubuntu
@@ -30,16 +27,18 @@ rootless Minikube profile named `minikube`.
 
 ## Remote preparation
 
-`prepare_remote.sh` is the minimal hosted-playground preflight. It assumes the
-image was already built with `build.sh --image ...`.
+`prepare_remote.sh` is the minimal hosted-playground preflight. It prepares a
+hosted image tag for the Kaizen playground and can auto-generate the remote tag
+when `--image` is omitted.
 
 1. Ensures Go, Argo CLI, and kubectl are available under `./.local/`.
 2. Resolves the Argo bearer token from `ARGO_TOKEN` or the supplied kubeconfig.
 3. Sources the corporate CA helper (`scripts/host_ca_env.sh`) before networked
    Argo calls so TLS-inspecting proxies do not break authentication.
 4. Validates access through the Argo server with `argo list ... --argo-http1`.
-5. Publishes the requested image tag through the locally available container
-   engine via `scripts/publish_image.sh`.
+5. Resolves the source image from the latest local build when needed, retags it
+   to the hosted image name, and publishes it through the locally available
+   container engine via `scripts/publish_image.sh`.
 
 Corporate TLS inspection can break image pulls. Drop any required certificate
 bundles under `scripts/certs/` (`.crt`/`.pem` files) and `build.sh` will sync

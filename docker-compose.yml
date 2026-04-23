@@ -1,8 +1,0 @@
-services:
-  orchestrator:
-    build: .
-    image: cads-fmi-demo:latest
-    container_name: cads-fmi-orchestrator
-    volumes:
-      - ./data:/app/data
-    command: ["/app/bin/cads-workflow-runner", "--workflow", "workflows/python_chain.yaml"]

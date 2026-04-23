@@ -38,6 +38,7 @@ deploy/
 
 # Ignore FMU binaries
 *.fmu
+!archive/FMI_surya/*.fmu
 
 # Ignore Go build cache
 orchestrator/service/.gocache/

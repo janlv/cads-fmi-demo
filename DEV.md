@@ -1,7 +1,7 @@
 # Developer Notes
 
 This document captures optional manual steps and environment details that most
-users do not need when following `prepare.sh` + `build.sh`. Use it when you want
+users do not need when following `prepare_local.sh` + `build.sh`. Use it when you want
 to tinker with the tooling directly.
 
 ---
