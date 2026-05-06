@@ -484,7 +484,8 @@ preview from inside the playground, use:
 ```
 
 The inspector prints the bucket name, key, size, content type, timestamp, and
-either a UTF-8 text preview or a base64 preview for binary content.
+either a UTF-8 text preview, an archive member listing for `gzip`/`tar`
+payloads, or a base64 preview for other binary content.
 
 All relative paths are resolved from the repository root, so FMUs and artifacts
 can be checked in or mounted during container runs without tweaking the YAML.

@@ -1,0 +1,72 @@
+steps:
+  - name: ae_ch2
+    fmu: fmu/models/AEEventStats.fmu
+    start_time: 0.0
+    stop_time: 40020.0
+    step_size: 60.0
+    start_values:
+      dataset_id: 2
+      window_seconds: 300.0
+    outputs:
+      - event_count
+      - invalid_rows
+      - duration_seconds
+      - event_rate_hz
+      - amplitude_p50
+      - amplitude_p95
+      - amplitude_max
+      - rms_p50
+      - rms_p95
+      - rms_max
+      - asl_p50
+      - asl_p95
+      - asl_max
+      - energy_sum
+      - frequency_centroid_p50
+      - peak_frequency_p50
+      - average_frequency_p50
+    trace:
+      outputs:
+        - rolling_event_rate_hz
+        - rolling_amplitude_p95
+        - rolling_rms_p95
+        - rolling_asl_p95
+        - cumulative_energy
+      sample_every: 60.0
+    result: data/ae_event_statistics/ae_ch2_result.json
+
+  - name: ae_ch6
+    fmu: fmu/models/AEEventStats.fmu
+    start_time: 0.0
+    stop_time: 6600.0
+    step_size: 60.0
+    start_values:
+      dataset_id: 6
+      window_seconds: 300.0
+    outputs:
+      - event_count
+      - invalid_rows
+      - duration_seconds
+      - event_rate_hz
+      - amplitude_p50
+      - amplitude_p95
+      - amplitude_max
+      - rms_p50
+      - rms_p95
+      - rms_max
+      - asl_p50
+      - asl_p95
+      - asl_max
+      - energy_sum
+      - frequency_centroid_p50
+      - peak_frequency_p50
+      - average_frequency_p50
+    trace:
+      outputs:
+        - rolling_event_rate_hz
+        - rolling_amplitude_p95
+        - rolling_rms_p95
+        - rolling_asl_p95
+        - cumulative_energy
+      sample_every: 60.0
+    result: data/ae_event_statistics/ae_ch6_result.json

@@ -15,6 +15,7 @@ KUBECONFIG_PATH=""
 ARGO_SERVER="${ARGO_SERVER:-argoworkflows.cads.kzslab.dev}"
 ARGO_NAMESPACE="${ARGO_NAMESPACE:-playground}"
 SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-playground-storhy-playground-pg-admin}"
+S3_CREDENTIALS_SECRET="${S3_CREDENTIALS_SECRET:-storhy-argo-artifacts-s3-credentials}"
 OUTPUT=""
 explicit_image=0
 
@@ -25,6 +26,7 @@ usage() {
 Usage: ./run_remote.sh <workflow.yaml> [--image ghcr.io/org/cads-demo:tag]
                       [--kubeconfig path] [--argo-server host]
                       [--namespace name] [--service-account name]
+                      [--s3-credentials-secret name]
                       [--output path]
 
 Generates and submits a hosted-Argo workflow manifest to the remote playground.
@@ -80,6 +82,10 @@ parse_args() {
                 shift
                 SERVICE_ACCOUNT="${1:-}"
                 ;;
+            --s3-credentials-secret)
+                shift
+                S3_CREDENTIALS_SECRET="${1:-}"
+                ;;
             --output)
                 shift
                 OUTPUT="${1:-}"
@@ -109,8 +115,8 @@ if [[ ! -f "$ROOT_DIR/$WORKFLOW" ]]; then
     exit 1
 fi
 
-if [[ -z "$ARGO_NAMESPACE" || -z "$SERVICE_ACCOUNT" || -z "$ARGO_SERVER" ]]; then
-    log_error "Argo server, namespace, and service account must be non-empty."
+if [[ -z "$ARGO_NAMESPACE" || -z "$SERVICE_ACCOUNT" || -z "$ARGO_SERVER" || -z "$S3_CREDENTIALS_SECRET" ]]; then
+    log_error "Argo server, namespace, service account, and S3 credentials secret must be non-empty."
     exit 1
 fi
 
@@ -139,6 +145,7 @@ remote_generator_args=(
     --image "$IMAGE"
     --service-account "$SERVICE_ACCOUNT"
     --namespace "$ARGO_NAMESPACE"
+    --s3-credentials-secret "$S3_CREDENTIALS_SECRET"
 )
 if [[ -n "$OUTPUT" ]]; then
     remote_generator_args+=(--output "$OUTPUT")

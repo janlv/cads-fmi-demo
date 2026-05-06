@@ -13,7 +13,7 @@
       <div class="hero-row">
         <div>
           <h1>Workflow Dashboard</h1>
-          <p class="lede">Launch repo workflows, watch recent runs, and inspect evolving AECIS trend data from one local browser session.</p>
+          <p class="lede">Choose a repo workflow, launch it in Kaizen, then inspect only that workflow's run history and latest output.</p>
         </div>
         <div id="configMeta" class="meta-row" aria-label="Remote configuration"></div>
       </div>
@@ -21,41 +21,51 @@
     </header>
 
     <main class="dashboard-grid">
-      <section class="panel panel-launch">
-        <div class="panel-head">
+      <section class="panel panel-workflow" aria-label="Workflow selector">
+        <div class="panel-head workflow-toolbar">
           <div>
-            <p class="panel-kicker">Launch</p>
-            <h2>Repo Workflows</h2>
+            <p class="panel-kicker">Workflow</p>
+            <h2>Choose Workflow</h2>
           </div>
-          <p class="panel-copy">Every button maps to a workflow file under <code>workflows/</code>.</p>
+          <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch selected workflow</button>
         </div>
-        <div id="workflowGrid" class="workflow-grid" aria-live="polite"></div>
+        <div id="workflowGrid" class="workflow-grid workflow-tabs" role="tablist" aria-live="polite"></div>
       </section>
 
-      <section class="panel panel-aecis-focus">
-        <div class="panel-head">
-          <div>
-            <p class="panel-kicker">Simulink</p>
-            <h2>AECIS Trend Plot</h2>
+      <div id="dashboardWorkspace" class="dashboard-workspace">
+        <aside id="runsRail" class="panel panel-history-column">
+          <div class="runs-rail-open">
+            <div class="panel-head runs-rail-head">
+              <div>
+                <p class="panel-kicker">History</p>
+                <h2>Recent Runs</h2>
+              </div>
+              <button id="runsRailToggle" class="rail-toggle-button" type="button" aria-controls="runsList" aria-expanded="true">Collapse</button>
+            </div>
+            <div id="runsList" class="runs-list" aria-live="polite"></div>
           </div>
-          <p class="panel-copy">Rolling mean and RMS are derived from the latest parsed <code>calculate_aecis</code> signal trace.</p>
-        </div>
-        <div id="aecisFocus" class="aecis-focus" aria-live="polite"></div>
-      </section>
 
-      <section class="panel panel-history-column">
-        <div class="panel-head">
-          <div>
-            <p class="panel-kicker">History</p>
-            <h2>Recent Runs</h2>
+          <div id="runsRailCollapsed" class="runs-rail-collapsed" aria-hidden="true">
+            <button id="runsRailRestore" class="rail-restore-button" type="button" aria-label="Show recent runs">Runs</button>
+            <div id="runsRailCounts" class="runs-rail-counts" aria-label="Run status counts"></div>
           </div>
-          <p class="panel-copy">Only hosted Argo runs that point at repo workflows are shown here.</p>
-        </div>
-        <div id="runsList" class="runs-list" aria-live="polite"></div>
-      </section>
+        </aside>
+
+        <section class="panel panel-output">
+          <div class="panel-head">
+            <div>
+              <p id="outputKicker" class="panel-kicker">Output</p>
+              <h2 id="outputTitle">Latest Result</h2>
+            </div>
+            <p id="outputCopy" class="panel-copy">The output window follows the selected workflow.</p>
+          </div>
+          <div id="workflowOutput" class="workflow-output" aria-live="polite"></div>
+        </section>
+      </div>
     </main>
   </div>
 
+  <script defer src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js" charset="utf-8"></script>
   <script defer src="/static/app.js"></script>
 </body>
 </html>

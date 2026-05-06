@@ -73,8 +73,9 @@ pip install -r "$REQ_FILE"
 log_step "Patching pythonfmu exporter (ensures libpython linkage)"
 python "$SCRIPT_DIR/patch_pythonfmu_export.py"
 
-log_step "Building Producer/Consumer FMUs via pythonfmu"
+log_step "Building Producer/Consumer/AEEventStats FMUs via pythonfmu"
 python -m pythonfmu build -f "$SCRIPT_DIR/producer_fmu.py" -d "$FMU_DIR"
 python -m pythonfmu build -f "$SCRIPT_DIR/consumer_fmu.py" -d "$FMU_DIR"
+python -m pythonfmu build -f "$SCRIPT_DIR/ae_event_stats_fmu.py" -d "$FMU_DIR"
 
 log_ok "FMUs built under $FMU_DIR"

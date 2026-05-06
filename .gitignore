@@ -8,7 +8,13 @@ __pycache__/
 create_fmu/artifacts/
 
 # Runtime outputs
-data/
+data/*
+!data/ae_event_statistics/
+data/ae_event_statistics/*
+!data/ae_event_statistics/raw/
+data/ae_event_statistics/raw/*
+!data/ae_event_statistics/raw/Test-18000s-ch1-ch2-5s_260204221347248_CH2.csv
+!data/ae_event_statistics/raw/Trial-interval-Every3600s-For30s-CH3-Ch6_260123103224255_CH6.csv
 
 # Local tooling
 .DS_Store

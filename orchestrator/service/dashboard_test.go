@@ -148,10 +148,10 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&workflows); err != nil {
 			t.Fatalf("decode workflows: %v", err)
 		}
-		if len(workflows) != 2 {
-			t.Fatalf("len(workflows) = %d, want 2", len(workflows))
+		if len(workflows) != 3 {
+			t.Fatalf("len(workflows) = %d, want 3", len(workflows))
 		}
-		if workflows[0].Path != "workflows/calculate_aecis.yaml" || workflows[1].StepCount != 2 {
+		if workflows[0].Path != "workflows/ae_event_statistics.yaml" || workflows[2].StepCount != 2 {
 			t.Fatalf("workflows = %+v, unexpected catalog", workflows)
 		}
 	})
@@ -229,7 +229,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			t.Fatalf("ServeHTTP() status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, "Kaizen Argo Playground") || !strings.Contains(body, "workflowGrid") || !strings.Contains(body, "aecisFocus") || !strings.Contains(body, "runsList") {
+		if !strings.Contains(body, "Kaizen Argo Playground") || !strings.Contains(body, "workflowGrid") || !strings.Contains(body, "workflowOutput") || !strings.Contains(body, "runsList") {
 			t.Fatalf("dashboard body missing expected markers: %q", body)
 		}
 	})
@@ -242,10 +242,10 @@ func TestListWorkflowsAndResolveLaunchWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListWorkflows() error = %v", err)
 	}
-	if len(workflows) != 2 {
-		t.Fatalf("ListWorkflows() len = %d, want 2", len(workflows))
+	if len(workflows) != 3 {
+		t.Fatalf("ListWorkflows() len = %d, want 3", len(workflows))
 	}
-	if workflows[1].Name != "python_chain" || workflows[1].StepCount != 2 {
+	if workflows[2].Name != "python_chain" || workflows[2].StepCount != 2 {
 		t.Fatalf("ListWorkflows() workflows = %+v, want python_chain with 2 steps", workflows)
 	}
 
@@ -276,6 +276,13 @@ steps:
   - name: calculate_aecis
 `), 0o644); err != nil {
 		t.Fatalf("write calculate_aecis workflow: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "workflows", "ae_event_statistics.yaml"), []byte(`
+steps:
+  - name: ae_ch2
+  - name: ae_ch6
+`), 0o644); err != nil {
+		t.Fatalf("write ae_event_statistics workflow: %v", err)
 	}
 	return root
 }
