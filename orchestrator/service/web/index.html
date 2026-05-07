@@ -9,18 +9,42 @@
 <body>
   <div class="page-shell">
     <header class="hero">
-      <p class="eyebrow">Kaizen Argo Playground</p>
       <div class="hero-row">
-        <div>
-          <h1>Workflow Dashboard</h1>
-          <p class="lede">Choose a repo workflow, launch it in Kaizen, then inspect only that workflow's run history and latest output.</p>
+        <div class="hero-branding">
+          <div class="storhy-logo" aria-label="STOR-HY">
+            <img src="/static/storhy-logo.png" alt="STOR-HY">
+          </div>
+          <div>
+            <p class="eyebrow">STOR-HY CADS Playground</p>
+            <h1>Workflow Dashboard</h1>
+            <p class="lede">Choose a STOR-HY demonstrator, launch the relevant CADS workflow in Kaizen, then inspect that site's run history and latest output.</p>
+          </div>
         </div>
-        <div id="configMeta" class="meta-row" aria-label="Remote configuration"></div>
+      </div>
+      <div class="hero-project">
+        <div class="hero-project-copy">
+          <p class="panel-kicker">STOR-HY Project</p>
+          <h2>Innovative Storage Technology And Operations In Hydropower</h2>
+          <p class="project-copy">STOR-HY develops monitoring, control, and decision-support tools for pumped-storage hydropower sites operating under higher cycling, harsh fluids, and unconventional storage schemes.</p>
+        </div>
+        <div class="project-facts hero-facts" aria-label="Project facts">
+          <span><strong>48</strong> months</span>
+          <span><strong>18</strong> partners</span>
+          <span><strong>8</strong> countries</span>
+          <span><strong>6</strong> demonstrators</span>
+        </div>
       </div>
       <div id="statusBanner" class="status-banner status-loading">Loading dashboard configuration…</div>
     </header>
 
     <main class="dashboard-grid">
+      <section class="panel panel-project" aria-label="STOR-HY project and demonstrators">
+        <div class="project-overview">
+          <div id="demonstratorMap" class="demonstrator-map" aria-live="polite"></div>
+          <div id="demonstratorDetails" class="demonstrator-details" aria-live="polite"></div>
+        </div>
+      </section>
+
       <section class="panel panel-workflow" aria-label="Workflow selector">
         <div class="panel-head workflow-toolbar">
           <div>
@@ -29,6 +53,7 @@
           </div>
           <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch selected workflow</button>
         </div>
+        <div id="workflowContext" class="workflow-context" aria-live="polite"></div>
         <div id="workflowGrid" class="workflow-grid workflow-tabs" role="tablist" aria-live="polite"></div>
       </section>
 

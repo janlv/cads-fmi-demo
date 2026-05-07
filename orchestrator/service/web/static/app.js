@@ -4,6 +4,7 @@ const state = {
   runs: [],
   selectedWorkflowPath: "",
   selectedRunName: "",
+  selectedDemonstratorId: "portfolio",
   runsRailCollapsed: false,
   simulinkResult: null,
   simulinkResultsCache: new Map(),
@@ -21,11 +22,139 @@ const state = {
 
 const SIMULINK_WORKFLOW_PATH = "workflows/calculate_aecis.yaml";
 const AE_STATS_WORKFLOW_PATH = "workflows/ae_event_statistics.yaml";
+const PYTHON_CHAIN_WORKFLOW_PATH = "workflows/python_chain.yaml";
 const CIVECTOR_LABELS = ["Mean", "RMS", "Peak-to-Peak", "Skewness", "Kurtosis"];
 const SIMULINK_RESULT_RETRY_MS = 15_000;
 const AECIS_TREND_WINDOW_SECONDS = 2.5;
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
+const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
+const DEMONSTRATORS = [
+  {
+    id: "portfolio",
+    label: "All demonstrators",
+    shortLabel: "All sites",
+    location: "France, Portugal, and Spain",
+    operator: "STOR-HY consortium",
+    country: "Europe",
+    focus: "Portfolio view for CADS workflow templates across the STOR-HY demonstrator set.",
+    capacity: "Six pilot sites",
+    workflowPaths: [AE_STATS_WORKFLOW_PATH, SIMULINK_WORKFLOW_PATH, PYTHON_CHAIN_WORKFLOW_PATH],
+    facts: [
+      "Pumped-storage hydropower and tidal-storage use cases",
+      "Condition monitoring, co-simulation, and decision support",
+      "Clickable map filters the workflow tabs by demonstrator context",
+    ],
+  },
+  {
+    id: "vsmc",
+    label: "VSMC dams",
+    shortLabel: "VSMC",
+    location: "Ain River, Bourgogne-Franche-Comte, France",
+    operator: "EDF",
+    country: "France",
+    mapX: 59.75,
+    mapY: 48.02,
+    focus: "Cascade optimisation and variable-speed tandem pumping.",
+    capacity: "362 MW generation + 72 MW storage",
+    workflowPaths: [SIMULINK_WORKFLOW_PATH, PYTHON_CHAIN_WORKFLOW_PATH],
+    facts: [
+      "Three reservoirs in cascade",
+      "Three Francis turbines and one pump turbine",
+      "Unconventional low-head tandem pumping scheme",
+    ],
+  },
+  {
+    id: "le-cheylas",
+    label: "Le Cheylas power station",
+    shortLabel: "Le Cheylas",
+    location: "Isere Valley, Auvergne-Rhone-Alpes, France",
+    operator: "EDF",
+    country: "France",
+    mapX: 60.25,
+    mapY: 53.65,
+    focus: "Wear assessment and sensor-driven monitoring under high pump-turbine cycling.",
+    capacity: "500 MW generation and storage",
+    workflowPaths: [AE_STATS_WORKFLOW_PATH, SIMULINK_WORKFLOW_PATH],
+    facts: [
+      "Two reservoirs and two pump turbines",
+      "Sediment-laden fluid and frequent cycling",
+      "Mapped to AE event statistics and AECIS trend workflows",
+    ],
+  },
+  {
+    id: "la-rance",
+    label: "La Rance tidal power station",
+    shortLabel: "La Rance",
+    location: "La Rance river estuary, Brittany, France",
+    operator: "EDF",
+    country: "France",
+    mapX: 48.16,
+    mapY: 32.95,
+    focus: "Saltwater operation, corrosion, anti-fouling, and low tidal-head cycling.",
+    capacity: "240 MW generation",
+    workflowPaths: [AE_STATS_WORKFLOW_PATH],
+    facts: [
+      "Large-scale tidal power station",
+      "24 bulb turbines",
+      "Harsh saltwater environment with 4-6 starts/stops per day",
+    ],
+  },
+  {
+    id: "alqueva",
+    label: "Alqueva hydroelectric power station",
+    shortLabel: "Alqueva",
+    location: "Alqueva and Moura, Alentejo, Portugal",
+    operator: "EDP",
+    country: "Portugal",
+    mapX: 32.95,
+    mapY: 69.83,
+    focus: "Operational management for a hybrid pumped-storage, battery, and floating PV plant.",
+    capacity: "520 MW generation and storage",
+    workflowPaths: [PYTHON_CHAIN_WORKFLOW_PATH],
+    facts: [
+      "Largest dam and artificial lake in Western Europe",
+      "Four pump turbines",
+      "Triple hybrid PSP with battery storage and floating photovoltaic generation",
+    ],
+  },
+  {
+    id: "vilarinho",
+    label: "Vilarinho das Furnas dam",
+    shortLabel: "Vilarinho",
+    location: "Homem River, North Region, Portugal",
+    operator: "EDP",
+    country: "Portugal",
+    mapX: 34.2,
+    mapY: 58.38,
+    focus: "Main inlet valve control, hydraulic short-circuit operation, and multistage pumping.",
+    capacity: "146 MW generation + 70 MW storage",
+    workflowPaths: [SIMULINK_WORKFLOW_PATH],
+    facts: [
+      "Two reservoirs",
+      "One multistage pump and one Francis turbine",
+      "Main inlet valve and hydraulic short-circuit operation",
+    ],
+  },
+  {
+    id: "pozu-figaredo",
+    label: "Pozu Figaredo",
+    shortLabel: "Pozu Figaredo",
+    location: "Mieres, Asturias, Spain",
+    operator: "HUNOSA",
+    country: "Spain",
+    mapX: 39.28,
+    mapY: 53.33,
+    focus: "Hybrid PSP validation in a former coal mine using dense-fluid pumping.",
+    capacity: "100 kW generation and storage",
+    workflowPaths: [PYTHON_CHAIN_WORKFLOW_PATH],
+    facts: [
+      "Three mine pit reservoirs",
+      "One pump and one turbine",
+      "EU's first hybrid PSP system in a coal mine",
+    ],
+  },
+];
 
 document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", resizeECharts);
@@ -35,10 +164,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function initializeDashboard() {
   try {
+    state.selectedDemonstratorId = readPersistedDemonstratorId();
     state.runsRailCollapsed = readPersistedRunsRailCollapsed();
     state.config = await fetchJSON("/api/config");
     renderConfigMeta();
     renderBanner();
+    renderDemonstrators();
 
     await loadWorkflows();
     if (state.config.remoteEnabled) {
@@ -51,6 +182,7 @@ async function initializeDashboard() {
   } catch (error) {
     state.runtimeProblems = [error.message];
     renderBanner();
+    renderDemonstrators();
     renderWorkflows();
     renderRuns();
     renderWorkflowOutput();
@@ -63,8 +195,10 @@ async function loadWorkflows() {
   } catch (error) {
     state.runtimeProblems = [error.message];
   }
+  ensureSelectedDemonstrator();
   ensureSelectedWorkflow();
   renderBanner();
+  renderDemonstrators();
   renderWorkflows();
   renderWorkflowOutput();
 }
@@ -105,65 +239,74 @@ function renderBanner() {
 
   if (!state.config) {
     banner.className = "status-banner status-loading";
-    banner.innerHTML = "<strong>Loading dashboard configuration…</strong>";
+    banner.innerHTML = "<strong>Loading dashboard…</strong>";
     return;
   }
 
   if (problems.length === 0) {
     banner.className = "status-banner status-ready";
-    banner.innerHTML = `<strong>Remote playground ready.</strong>${escapeHTML(state.config.argoServer)} / ${escapeHTML(state.config.namespace)} is available for dashboard launches.`;
+    banner.innerHTML = "<strong>Ready.</strong>Select a demonstrator below to inspect its workflows and recent outputs.";
     return;
   }
 
   banner.className = "status-banner status-degraded";
-  banner.innerHTML = `<strong>Dashboard is running in degraded mode.</strong>${problems.map((problem) => escapeHTML(problem)).join("<br>")}`;
+  banner.innerHTML = `<strong>Dashboard needs attention.</strong>${problems.map((problem) => escapeHTML(problem)).join("<br>")}`;
 }
 
 function renderConfigMeta() {
   const container = document.getElementById("configMeta");
-  if (!state.config) {
-    container.innerHTML = "";
+  if (!container) {
     return;
   }
+  container.innerHTML = "";
+}
 
-  const pills = [
-    `server ${state.config.argoServer || "n/a"}`,
-    `namespace ${state.config.namespace || "n/a"}`,
-    `service account ${state.config.serviceAccount || "n/a"}`,
-    `image ${state.config.image || "n/a"}`,
-  ];
-
-  container.innerHTML = pills
-    .map((text) => `<span class="meta-pill">${escapeHTML(text)}</span>`)
-    .join("");
+function ensureSelectedDemonstrator() {
+  if (!DEMONSTRATORS.some((demo) => demo.id === state.selectedDemonstratorId)) {
+    state.selectedDemonstratorId = "portfolio";
+  }
 }
 
 function ensureSelectedWorkflow() {
-  if (state.workflows.length === 0) {
+  const candidates = visibleWorkflows();
+  if (candidates.length === 0) {
     state.selectedWorkflowPath = "";
     return;
   }
 
-  if (state.workflows.some((workflow) => workflow.path === state.selectedWorkflowPath)) {
+  if (candidates.some((workflow) => workflow.path === state.selectedWorkflowPath)) {
     return;
   }
 
   const savedPath = readPersistedWorkflowPath();
-  if (savedPath && state.workflows.some((workflow) => workflow.path === savedPath)) {
+  if (savedPath && candidates.some((workflow) => workflow.path === savedPath)) {
     state.selectedWorkflowPath = savedPath;
     return;
   }
 
   const preferredPath =
-    state.workflows.find((workflow) => workflow.path === AE_STATS_WORKFLOW_PATH)?.path ||
-    state.workflows.find((workflow) => workflow.path === SIMULINK_WORKFLOW_PATH)?.path ||
-    state.workflows[0]?.path ||
+    candidates.find((workflow) => workflow.path === AE_STATS_WORKFLOW_PATH)?.path ||
+    candidates.find((workflow) => workflow.path === SIMULINK_WORKFLOW_PATH)?.path ||
+    candidates[0]?.path ||
     "";
   state.selectedWorkflowPath = preferredPath;
 }
 
 function selectedWorkflow() {
   return state.workflows.find((workflow) => workflow.path === state.selectedWorkflowPath) || null;
+}
+
+function selectedDemonstrator() {
+  return DEMONSTRATORS.find((demo) => demo.id === state.selectedDemonstratorId) || DEMONSTRATORS[0];
+}
+
+function visibleWorkflows() {
+  const demo = selectedDemonstrator();
+  if (!demo || demo.id === "portfolio") {
+    return state.workflows;
+  }
+  const allowed = new Set(demo.workflowPaths || []);
+  return state.workflows.filter((workflow) => allowed.has(workflow.path));
 }
 
 function workflowLabel(workflow) {
@@ -181,6 +324,23 @@ function readPersistedWorkflowPath() {
 function persistSelectedWorkflowPath(workflowPath) {
   try {
     window.localStorage?.setItem(SELECTED_WORKFLOW_STORAGE_KEY, workflowPath);
+  } catch (_error) {
+    // Local storage can be unavailable in private or embedded browser contexts.
+  }
+}
+
+function readPersistedDemonstratorId() {
+  try {
+    const saved = window.localStorage?.getItem(SELECTED_DEMONSTRATOR_STORAGE_KEY) || "portfolio";
+    return DEMONSTRATORS.some((demo) => demo.id === saved) ? saved : "portfolio";
+  } catch (_error) {
+    return "portfolio";
+  }
+}
+
+function persistSelectedDemonstratorId(demonstratorId) {
+  try {
+    window.localStorage?.setItem(SELECTED_DEMONSTRATOR_STORAGE_KEY, demonstratorId);
   } catch (_error) {
     // Local storage can be unavailable in private or embedded browser contexts.
   }
@@ -208,8 +368,29 @@ function setRunsRailCollapsed(collapsed) {
   renderRuns();
 }
 
+function selectDemonstrator(demonstratorId, options = {}) {
+  if (!DEMONSTRATORS.some((demo) => demo.id === demonstratorId)) {
+    return;
+  }
+
+  state.selectedDemonstratorId = demonstratorId;
+  persistSelectedDemonstratorId(demonstratorId);
+  ensureSelectedWorkflow();
+  renderDemonstrators();
+  renderWorkflows();
+  renderRuns();
+  renderWorkflowOutput();
+
+  if (options.loadResult !== false && state.config?.remoteEnabled && state.selectedWorkflowPath) {
+    void loadSelectedWorkflowResult().then(() => {
+      renderRuns();
+      renderWorkflowOutput();
+    });
+  }
+}
+
 function selectWorkflow(workflowPath, options = {}) {
-  if (!workflowPath || !state.workflows.some((workflow) => workflow.path === workflowPath)) {
+  if (!workflowPath || !visibleWorkflows().some((workflow) => workflow.path === workflowPath)) {
     return;
   }
 
@@ -219,6 +400,7 @@ function selectWorkflow(workflowPath, options = {}) {
     state.selectedRunName = "";
   }
   persistSelectedWorkflowPath(workflowPath);
+  renderDemonstrators();
   renderWorkflows();
   renderRuns();
   renderWorkflowOutput();
@@ -242,10 +424,120 @@ function successfulSelectedWorkflowRuns() {
   return selectedWorkflowRuns().filter((run) => String(run.phase || "").toLowerCase() === "succeeded");
 }
 
+function renderDemonstrators() {
+  const map = document.getElementById("demonstratorMap");
+  const details = document.getElementById("demonstratorDetails");
+  if (!map || !details) {
+    return;
+  }
+
+  const selected = selectedDemonstrator();
+  const demonstratorsWithLocations = DEMONSTRATORS.filter((demo) => Number.isFinite(demo.mapX) && Number.isFinite(demo.mapY));
+  map.innerHTML = `
+    <div class="demo-map-head">
+      <div>
+        <p class="panel-kicker">Demonstrators</p>
+        <h3>European Pilot Sites</h3>
+      </div>
+      <button class="demo-all-button${selected.id === "portfolio" ? " selected" : ""}" type="button" data-demo-id="portfolio">Show all</button>
+    </div>
+    <div class="demo-map-canvas" role="img" aria-label="Clickable map of STOR-HY demonstrator locations">
+      <div class="demo-map-layer">
+        <img class="demo-map-image" src="/static/storhy-demonstrators-map.png" alt="">
+        ${demonstratorsWithLocations.map((demo) => renderDemoMarker(demo, selected.id === demo.id)).join("")}
+      </div>
+    </div>
+  `;
+
+  details.innerHTML = renderDemonstratorDetails(selected);
+
+  for (const button of map.querySelectorAll("[data-demo-id]")) {
+    button.addEventListener("click", () => {
+      selectDemonstrator(button.dataset.demoId || "portfolio");
+    });
+  }
+  for (const button of details.querySelectorAll("[data-demo-workflow]")) {
+    button.addEventListener("click", () => {
+      selectWorkflow(button.dataset.demoWorkflow);
+    });
+  }
+}
+
+function renderDemoMarker(demo, isSelected) {
+  const position = demonstratorMapPosition(demo);
+  return `
+    <button
+      class="demo-marker${isSelected ? " selected" : ""}"
+      type="button"
+      style="--x:${position.x}%; --y:${position.y}%"
+      data-demo-id="${escapeHTML(demo.id)}"
+      title="${escapeHTML(`${demo.label} - ${demo.location}`)}"
+      aria-label="Show ${escapeHTML(demo.label)} workflows"
+    ></button>
+  `;
+}
+
+function demonstratorMapPosition(demo) {
+  return {
+    x: clampNumber(demo.mapX, 0, 100),
+    y: clampNumber(demo.mapY, 0, 100),
+  };
+}
+
+function renderDemonstratorDetails(demo) {
+  const availableWorkflowPaths = new Set(state.workflows.map((workflow) => workflow.path));
+  const workflows = (demo.workflowPaths || [])
+    .map((workflowPath) => state.workflows.find((workflow) => workflow.path === workflowPath) || { path: workflowPath, name: workflowPath.split("/").pop()?.replace(".yaml", "") || workflowPath, stepCount: 0 })
+    .filter((workflow) => demo.id === "portfolio" || availableWorkflowPaths.has(workflow.path));
+
+  return `
+    <div class="demo-detail-card">
+      <div class="demo-detail-topline">
+        <span>${escapeHTML(demo.country)}</span>
+        <span>${escapeHTML(demo.operator)}</span>
+      </div>
+      <h3>${escapeHTML(demo.label)}</h3>
+      <p class="demo-location">${escapeHTML(demo.location)}</p>
+      <p>${escapeHTML(demo.focus)}</p>
+      <dl class="demo-stat-list">
+        <div>
+          <dt>Capacity</dt>
+          <dd>${escapeHTML(demo.capacity)}</dd>
+        </div>
+        <div>
+          <dt>Mapped workflows</dt>
+          <dd>${workflows.length || "None available"}</dd>
+        </div>
+      </dl>
+      <ul class="demo-facts">
+        ${(demo.facts || []).map((fact) => `<li>${escapeHTML(fact)}</li>`).join("")}
+      </ul>
+      <div class="demo-workflow-links">
+        ${workflows.map((workflow) => renderDemoWorkflowButton(workflow, workflow.path === state.selectedWorkflowPath)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderDemoWorkflowButton(workflow, isSelected) {
+  return `
+    <button
+      class="demo-workflow-pill${isSelected ? " selected" : ""}"
+      type="button"
+      data-demo-workflow="${escapeHTML(workflow.path)}"
+    >
+      ${escapeHTML(workflowLabel(workflow))}
+    </button>
+  `;
+}
+
 function renderWorkflows() {
   const grid = document.getElementById("workflowGrid");
+  const context = document.getElementById("workflowContext");
   const launchButton = document.getElementById("launchSelectedWorkflow");
   const selected = selectedWorkflow();
+  const workflows = visibleWorkflows();
+  const demo = selectedDemonstrator();
   const remoteEnabled = Boolean(state.config?.remoteEnabled);
   const selectedPending = Boolean(selected && state.pendingWorkflows.has(selected.path));
 
@@ -261,10 +553,32 @@ function renderWorkflows() {
 
   if (state.workflows.length === 0) {
     grid.innerHTML = '<div class="empty-state">No launchable repo workflows were found under <code>workflows/</code>.</div>';
+    if (context) {
+      context.innerHTML = "";
+    }
     return;
   }
 
-  grid.innerHTML = state.workflows
+  if (context) {
+    context.innerHTML = `
+      <span class="workflow-context-site">${escapeHTML(demo.shortLabel || demo.label)}</span>
+      <span>${escapeHTML(demo.id === "portfolio" ? "Showing every repo workflow." : `Showing workflows mapped to ${demo.label}.`)}</span>
+    `;
+  }
+
+  if (workflows.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        No repo workflow is mapped to <strong>${escapeHTML(demo.label)}</strong> yet.
+        <button type="button" class="inline-action" data-select-demo-all>Show all workflows</button>
+      </div>
+    `;
+    const allButton = grid.querySelector("[data-select-demo-all]");
+    allButton?.addEventListener("click", () => selectDemonstrator("portfolio"));
+    return;
+  }
+
+  grid.innerHTML = workflows
     .map((workflow) => {
       const pending = state.pendingWorkflows.has(workflow.path);
       const isSelected = workflow.path === state.selectedWorkflowPath;
@@ -2072,6 +2386,10 @@ function formatChartValueTick(value) {
 function trimFixed(value, digits) {
   const fixed = Number(value).toFixed(digits);
   return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value) || 0));
 }
 
 function paletteColor(index) {
