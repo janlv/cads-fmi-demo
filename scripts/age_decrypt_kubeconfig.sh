@@ -2,11 +2,12 @@
 set -euo pipefail
 
 identity="${AGE_KEY_FILE:-$HOME/.config/age/key.txt}"
+recipient_file="${AGE_RECIPIENT_FILE:-$HOME/.config/cads/age-recipient.txt}"
 output="$HOME/Kaizen_CADS/kubeconfig"
 input=""
 force=0
 remote_source=""
-remote_path="~/Kaizen_CADS/kubeconfig.age"
+remote_path="~/Kaizen_CADS/kubeconfig"
 downloaded_input=""
 
 usage() {
@@ -18,13 +19,16 @@ Decrypts an age-encrypted Kaizen kubeconfig into the dashboard default path.
 Options:
   -i, --identity PATH  age private key file.
                        Default: $AGE_KEY_FILE or ~/.config/age/key.txt
+  --recipient-file PATH
+                       Public age recipient file used by --get-from.
+                       Default: $AGE_RECIPIENT_FILE or ~/.config/cads/age-recipient.txt
   -o, --out PATH       Decrypted kubeconfig path.
                        Default: ~/Kaizen_CADS/kubeconfig
-  --get-from USER@HOST Fetch the encrypted kubeconfig from a remote SSH account
-                       before decrypting. The remote SSH password is requested
-                       by scp when needed.
-  --remote-path PATH   Remote encrypted kubeconfig path for --get-from.
-                       Default: ~/Kaizen_CADS/kubeconfig.age
+  --get-from USER@HOST Encrypt the remote kubeconfig with the stored public
+                       recipient key, fetch it, and decrypt it locally. The
+                       remote SSH password is requested by ssh when needed.
+  --remote-path PATH   Remote plaintext kubeconfig path for --get-from.
+                       Default: ~/Kaizen_CADS/kubeconfig
   --force              Overwrite an existing output file.
 
 After decrypting, run:
@@ -41,9 +45,10 @@ cleanup() {
 fetch_remote_input() {
     local source="$1"
     local path="$2"
+    local recipient=""
 
-    if ! command -v scp >/dev/null 2>&1; then
-        echo "error: scp is not installed or not on PATH" >&2
+    if ! command -v ssh >/dev/null 2>&1; then
+        echo "error: ssh is not installed or not on PATH" >&2
         return 1
     fi
 
@@ -57,12 +62,45 @@ fetch_remote_input() {
         return 1
     fi
 
+    if [[ ! -f "$recipient_file" ]]; then
+        echo "error: public age recipient file not found: $recipient_file" >&2
+        echo "hint: run scripts/age_create_identity.sh first" >&2
+        return 1
+    fi
+
+    recipient="$(<"$recipient_file")"
+    if [[ -z "$recipient" || "$recipient" != age1* || "$recipient" == *[[:space:]]* ]]; then
+        echo "error: invalid public age recipient in $recipient_file" >&2
+        return 1
+    fi
+
     downloaded_input="$(mktemp "${TMPDIR:-/tmp}/cads-kubeconfig.XXXXXX.age")"
-    scp -o BatchMode=no "${source}:${path}" "$downloaded_input"
+    ssh -o BatchMode=no "$source" sh -s -- "$path" "$recipient" > "$downloaded_input" <<'REMOTE_SCRIPT'
+set -eu
+
+input="$1"
+recipient="$2"
+
+case "$input" in
+    "~/"*) input="$HOME/${input#~/}" ;;
+esac
+
+if ! command -v age >/dev/null 2>&1; then
+    echo "error: age is not installed on the remote host" >&2
+    exit 1
+fi
+
+if [ ! -f "$input" ]; then
+    echo "error: remote kubeconfig not found: $input" >&2
+    exit 1
+fi
+
+age --armor -r "$recipient" "$input"
+REMOTE_SCRIPT
     chmod 600 "$downloaded_input"
     input="$downloaded_input"
 
-    echo "Fetched encrypted kubeconfig from ${source}:${path}"
+    echo "Encrypted and fetched remote kubeconfig from ${source}:${path}"
 }
 
 trap cleanup EXIT
@@ -79,6 +117,21 @@ while (($#)); do
             ;;
         --identity=*)
             identity="${1#*=}"
+            ;;
+        --recipient-file)
+            shift
+            recipient_file="${1:-}"
+            if [[ -z "$recipient_file" ]]; then
+                echo "error: --recipient-file expects a path" >&2
+                exit 1
+            fi
+            ;;
+        --recipient-file=*)
+            recipient_file="${1#*=}"
+            if [[ -z "$recipient_file" ]]; then
+                echo "error: --recipient-file expects a path" >&2
+                exit 1
+            fi
             ;;
         -o|--out)
             shift

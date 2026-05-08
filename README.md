@@ -57,7 +57,9 @@ prompt when needed and saves the key on the remote host as
 `age_encrypt_kubeconfig.sh --recipient-file`.
 
 The public key starts with `age1...` and is safe to share. The private key stays
-in `~/.config/age/key.txt` by default and must not be shared.
+in `~/.config/age/key.txt` by default and must not be shared. The script also
+stores the public key at `~/.config/cads/age-recipient.txt`; the decrypt helper
+uses that file when fetching credentials from a remote host.
 
 When you receive the encrypted kubeconfig file, decrypt it:
 
@@ -65,16 +67,17 @@ When you receive the encrypted kubeconfig file, decrypt it:
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
 ```
 
-If the sender leaves the encrypted file on their machine and you have SSH
-access, fetch and decrypt it directly:
+If the sender has the plaintext kubeconfig on their machine and you have SSH
+access, encrypt it remotely and decrypt it locally:
 
 ```bash
 ./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
 ```
 
-This fetches `~/Kaizen_CADS/kubeconfig.age` from the sender host by default.
-Use `--remote-path /path/to/kubeconfig.age` if the sender wrote it somewhere
-else.
+This uses the stored public key, asks `ssh` for the remote password if needed,
+and runs `age` on the sender host. The remote kubeconfig path defaults to
+`~/Kaizen_CADS/kubeconfig`. Use `--remote-path /path/to/kubeconfig` if the
+sender stores it somewhere else.
 
 This writes the dashboard kubeconfig to `~/Kaizen_CADS/kubeconfig`.
 
@@ -145,7 +148,7 @@ manager.
 # Receiver: decrypt the encrypted kubeconfig into ~/Kaizen_CADS/kubeconfig.
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
 
-# Receiver: fetch the encrypted kubeconfig from a remote SSH account and decrypt it.
+# Receiver: encrypt the remote kubeconfig over SSH and decrypt it locally.
 ./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
 ```
 

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 key_file="${AGE_KEY_FILE:-$HOME/.config/age/key.txt}"
+public_key_file="${AGE_RECIPIENT_FILE:-$HOME/.config/cads/age-recipient.txt}"
 copy_to_clipboard=0
 mailto=""
 ssh_target=""
 
 usage() {
     cat <<'EOF'
-Usage: scripts/age_create_identity.sh [--key-file path] [--copy] [--mailto address] [--send-to user@host]
+Usage: scripts/age_create_identity.sh [--key-file path] [--public-key-file path] [--copy] [--mailto address] [--send-to user@host]
 
 Creates an age identity for receiving encrypted credentials and prints the
 public recipient key to share with the sender.
@@ -16,6 +17,9 @@ public recipient key to share with the sender.
 Options:
   --key-file PATH    age private key file.
                      Default: $AGE_KEY_FILE or ~/.config/age/key.txt
+  --public-key-file PATH
+                     File where the public recipient key is stored.
+                     Default: $AGE_RECIPIENT_FILE or ~/.config/cads/age-recipient.txt
   --copy             Copy the public recipient key to the clipboard when a
                      supported clipboard helper is available.
   --mailto ADDRESS   Open a prefilled email draft containing the public
@@ -26,6 +30,8 @@ Options:
 
 Default key file:
   ~/.config/age/key.txt
+Default public key file:
+  ~/.config/cads/age-recipient.txt
 
 The private key file must not be shared.
 EOF
@@ -164,6 +170,21 @@ while (($#)); do
                 exit 1
             fi
             ;;
+        --public-key-file)
+            shift
+            public_key_file="${1:-}"
+            if [[ -z "$public_key_file" ]]; then
+                echo "error: --public-key-file expects a path" >&2
+                exit 1
+            fi
+            ;;
+        --public-key-file=*)
+            public_key_file="${1#*=}"
+            if [[ -z "$public_key_file" ]]; then
+                echo "error: --public-key-file expects a path" >&2
+                exit 1
+            fi
+            ;;
         --copy)
             copy_to_clipboard=1
             ;;
@@ -228,9 +249,13 @@ else
 fi
 
 public_key="$(age-keygen -y "$key_file")"
+mkdir -p "$(dirname "$public_key_file")"
+printf '%s\n' "$public_key" > "$public_key_file"
+chmod 600 "$public_key_file"
 
 echo
 echo "Private key file: $key_file"
+echo "Public recipient key file: $public_key_file"
 echo "Share this public recipient key with the person encrypting the credentials:"
 echo "$public_key"
 

@@ -96,11 +96,14 @@ prompt when needed and saves the key on the remote host as
 
 The output includes a public key beginning with `age1...`. That public key is
 safe to send back to the person who has the kubeconfig. The private key stays in
-`~/.config/age/key.txt`.
+`~/.config/age/key.txt`. The public key is also stored at
+`~/.config/cads/age-recipient.txt` so the decrypt helper can use it later.
 
 The person who has the kubeconfig should follow
-[`AGE_SENDER.md`](AGE_SENDER.md). They will send back an encrypted `.age` file.
-Do not commit that file to git.
+[`AGE_SENDER.md`](AGE_SENDER.md). They will either send back an encrypted
+`.age` file or keep their plaintext kubeconfig available for the receiver's
+`--get-from` SSH flow. Do not commit kubeconfigs or encrypted handoff files to
+git.
 
 The receiving colleague decrypts it into the dashboard default location:
 
@@ -108,16 +111,17 @@ The receiving colleague decrypts it into the dashboard default location:
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
 ```
 
-If the encrypted file stays on the sender's machine and the receiver has SSH
-access, they can fetch and decrypt it directly:
+If the plaintext kubeconfig stays on the sender's machine and the receiver has
+SSH access, they can encrypt it remotely and decrypt it locally:
 
 ```bash
 ./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
 ```
 
-This fetches `~/Kaizen_CADS/kubeconfig.age` from the sender host by default.
-Use `--remote-path /path/to/kubeconfig.age` if the sender wrote it somewhere
-else.
+This uses the stored public key, asks `ssh` for the remote password if needed,
+and runs `age` on the sender host. The remote kubeconfig path defaults to
+`~/Kaizen_CADS/kubeconfig`. Use `--remote-path /path/to/kubeconfig` if the
+sender stores it somewhere else.
 
 They can then run:
 
