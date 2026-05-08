@@ -1,0 +1,43 @@
+metadata:
+  display_name: CADS Condition Monitoring
+  site_id: portfolio
+  category: monitoring
+  result_family: storhy_mock
+  description: Shared edge-sensor fusion and predictive-maintenance mock workflow.
+  tags: [cads, monitoring, predictive-maintenance]
+synthetic_case: data/storhy/synthetic/portfolio_common_case.yaml
+steps:
+  - name: condition_monitoring
+    fmu: fmu/models/ConditionMonitoringReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_values:
+      site_id: 0
+      scenario_id: 2
+      profile_id: 1
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, damage_index, sediment_exposure, corrosion_index, biofouling_index, rul_days, availability_delta_percent]
+    trace:
+      outputs: [risk_index, damage_index, rul_days, sediment_exposure]
+      sample_every: 1.0
+  - name: predictive_maintenance
+    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_values:
+      site_id: 0
+      scenario_id: 2
+      profile_id: 1
+    start_from:
+      input_score: condition_monitoring.score
+      input_confidence: condition_monitoring.confidence
+      input_risk_index: condition_monitoring.risk_index
+      input_damage_index: condition_monitoring.damage_index
+      input_rul_days: condition_monitoring.rul_days
+      input_availability_delta_percent: condition_monitoring.availability_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+    trace:
+      outputs: [risk_index, damage_index, rul_days]
+      sample_every: 1.0
+    result: data/storhy/common/condition_monitoring/result.json

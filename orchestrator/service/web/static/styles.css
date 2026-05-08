@@ -359,8 +359,6 @@ h2 {
 .demo-map-layer {
   position: absolute;
   inset: 0;
-  transform: scale(1.16);
-  transform-origin: 50% 50%;
 }
 
 .demo-map-image {
@@ -372,43 +370,93 @@ h2 {
   object-fit: contain;
 }
 
+.demo-map-label {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  max-width: 180px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  text-align: left;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.96),
+    1px 0 0 rgba(255, 255, 255, 0.96),
+    -1px 0 0 rgba(255, 255, 255, 0.96),
+    0 -1px 0 rgba(255, 255, 255, 0.96);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.demo-map-label.align-right {
+  transform: translateX(-100%);
+  text-align: right;
+}
+
+.demo-map-label-name,
+.demo-map-label-subtitle {
+  display: block;
+}
+
+.demo-map-label-name {
+  font-size: 1.04rem;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.demo-map-label-subtitle {
+  margin-top: 2px;
+  color: #004ea2;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.08;
+  text-transform: uppercase;
+}
+
+.demo-map-label:hover .demo-map-label-name,
+.demo-map-label:hover .demo-map-label-subtitle,
+.demo-map-label.selected .demo-map-label-name,
+.demo-map-label.selected .demo-map-label-subtitle {
+  color: #001c63;
+}
+
 .demo-marker {
   position: absolute;
   left: var(--x);
   top: var(--y);
   transform: translate(-50%, -50%);
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   padding: 0;
-  border: 1px solid rgba(0, 28, 99, 0.28);
+  border: 2px solid rgba(0, 28, 99, 0.54);
   border-radius: 999px;
-  background: rgba(247, 255, 199, 0.96);
-  box-shadow: 0 3px 10px rgba(0, 28, 99, 0.2);
+  background: rgba(238, 254, 175, 0.95);
   cursor: pointer;
-  z-index: 1;
+  z-index: 2;
   transition:
     background-color 160ms ease,
     border-color 160ms ease,
-    box-shadow 160ms ease,
     transform 160ms ease;
 }
 
 .demo-marker:hover {
   transform: translate(-50%, -50%) scale(1.18);
-  background: var(--accent);
-  border-color: var(--accent-deep);
-  box-shadow: 0 6px 16px rgba(0, 28, 99, 0.32);
+  background: var(--accent-deep);
+  border-color: var(--accent);
 }
 
 .demo-marker.selected {
   background: var(--accent-deep);
-  border-color: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 3px rgba(232, 254, 116, 0.72), 0 6px 16px rgba(0, 28, 99, 0.26);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(232, 254, 116, 0.42);
 }
 
 .demo-marker.selected:hover {
-  background: var(--accent);
-  border-color: rgba(255, 255, 255, 0.94);
+  background: var(--accent-deep);
+  border-color: var(--accent);
 }
 
 .demo-detail-card {
@@ -563,6 +611,34 @@ h2 {
   background: rgba(5, 66, 235, 0.08);
   color: var(--accent-deep);
   font-weight: 750;
+}
+
+.workflow-selected-description {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 3px;
+  max-width: 62rem;
+  margin-top: 4px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(5, 66, 235, 0.12);
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.workflow-selected-description strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.workflow-selected-description em {
+  color: var(--accent-deep);
+  font-style: normal;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .run-card {
@@ -922,6 +998,121 @@ h2 {
   margin-top: 14px;
 }
 
+.storhy-metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.storhy-model-chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.storhy-model-chain span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(5, 66, 235, 0.14);
+  background: rgba(5, 66, 235, 0.07);
+  color: var(--accent-deep);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.storhy-case-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(5, 66, 235, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(233, 236, 242, 0.74));
+}
+
+.storhy-case-card h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.storhy-case-card p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.storhy-case-meta,
+.storhy-case-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.storhy-case-meta span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(5, 66, 235, 0.08);
+  color: var(--accent-deep);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.storhy-case-value {
+  min-width: min(12rem, 100%);
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 28, 99, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.storhy-case-value span,
+.storhy-value-source,
+.metric-source {
+  text-transform: capitalize;
+}
+
+.storhy-case-value span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.storhy-case-value strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+}
+
+.storhy-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.storhy-decision-card {
+  padding: 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(5, 66, 235, 0.12);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.storhy-decision-card strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.storhy-decision-card p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .result-note {
   margin-top: 14px;
   padding: 10px 12px;
@@ -957,6 +1148,101 @@ h2 {
   display: block;
   font-size: 1.15rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.metric-source {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storhy-visual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.storhy-value-block {
+  padding: 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(5, 66, 235, 0.12);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.storhy-value-head h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.94rem;
+}
+
+.storhy-value-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.storhy-value-rows {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.storhy-value-row {
+  display: grid;
+  gap: 5px;
+}
+
+.storhy-value-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.storhy-value-label span {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.storhy-value-label strong {
+  color: var(--muted);
+  font-weight: 650;
+  text-align: right;
+}
+
+.storhy-value-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 28, 99, 0.08);
+}
+
+.storhy-value-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(5, 66, 235, 0.46);
+}
+
+.storhy-value-fill.negative {
+  background: rgba(191, 95, 47, 0.42);
+}
+
+.storhy-value-source {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .result-json {
@@ -1236,6 +1522,12 @@ h2 {
   color: #355c7d;
 }
 
+.result-kind-storhy {
+  border-color: rgba(5, 66, 235, 0.24);
+  background: rgba(5, 66, 235, 0.12);
+  color: var(--accent-deep);
+}
+
 .result-kind-missing,
 .result-kind-unknown {
   border-color: rgba(107, 111, 119, 0.22);
@@ -1372,6 +1664,12 @@ h2 {
   .ae-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .storhy-metric-grid,
+  .storhy-decision-grid,
+  .storhy-visual-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1404,6 +1702,12 @@ h2 {
   }
 
   .ae-metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .storhy-metric-grid,
+  .storhy-decision-grid,
+  .storhy-visual-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

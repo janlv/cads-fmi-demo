@@ -137,6 +137,9 @@ RUN echo "[image] Building bundled demo FMUs" && \
     python -m pythonfmu build -f create_fmu/producer_fmu.py -d fmu/models && \
     python -m pythonfmu build -f create_fmu/consumer_fmu.py -d fmu/models && \
     python -m pythonfmu build -f create_fmu/ae_event_stats_fmu.py -d fmu/models && \
+    for replica in create_fmu/storhy_replicas/*_fmu.py; do \
+        python -m pythonfmu build -f "$replica" -d fmu/models create_fmu/storhy_replicas/storhy_replica_common.py; \
+    done && \
     echo 'Built FMUs to /app/fmu/models'
 
 # Build Go workflow binaries (FMIL via cgo). The Go module lives under orchestrator/service.

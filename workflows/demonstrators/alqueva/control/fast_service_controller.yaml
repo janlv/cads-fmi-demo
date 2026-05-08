@@ -1,0 +1,52 @@
+metadata:
+  display_name: Alqueva Fast Service Controller
+  site_id: alqueva
+  category: control
+  result_family: storhy_mock
+  description: Assesses FCR/aFRR fast-service support and transient acceleration using BESS assistance.
+  tags: [alqueva, fcr, afrr, control]
+synthetic_case: data/storhy/synthetic/alqueva_hybrid_flexibility.yaml
+steps:
+  - name: fast_service_controller
+    fmu: fmu/models/FastServiceControllerReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_values: {site_id: 4, scenario_id: 4, profile_id: 2}
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, power_mw, damage_index, flexibility_delta_percent, availability_delta_percent, value_delta_eur, rul_days]
+    trace:
+      outputs: [power_mw, damage_index, flexibility_delta_percent, risk_index]
+      sample_every: 1.0
+  - name: predictive_maintenance
+    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_from:
+      input_score: fast_service_controller.score
+      input_confidence: fast_service_controller.confidence
+      input_risk_index: fast_service_controller.risk_index
+      input_damage_index: fast_service_controller.damage_index
+      input_rul_days: fast_service_controller.rul_days
+      input_availability_delta_percent: fast_service_controller.availability_delta_percent
+      input_flexibility_delta_percent: fast_service_controller.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_from:
+      input_score: predictive_maintenance.score
+      input_confidence: predictive_maintenance.confidence
+      input_risk_index: predictive_maintenance.risk_index
+      input_value_delta_eur: fast_service_controller.value_delta_eur
+      input_opex_delta_eur: predictive_maintenance.opex_delta_eur
+      input_rul_days: predictive_maintenance.rul_days
+      input_availability_delta_percent: predictive_maintenance.availability_delta_percent
+      input_flexibility_delta_percent: fast_service_controller.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, opex_delta_eur, availability_delta_percent, flexibility_delta_percent, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 1.0
+    result: data/storhy/alqueva/control/fast_service_controller_result.json

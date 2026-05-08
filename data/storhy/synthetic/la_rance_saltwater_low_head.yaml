@@ -1,0 +1,12 @@
+name: La Rance saltwater low-head case
+site: La Rance tidal power station
+period: Synthetic spring tidal cycle with harsh-fluid exposure.
+data_basis: Representative proposal values for saltwater corrosion and biofouling.
+operating_mode: Low-head tidal operation, cleaning interval planning, and BESS sizing.
+values:
+  salinity_psu: 34.0
+  tidal_head_m: 5.8
+  daily_start_stops: 5.0
+  corrosion_index: 0.42
+  biofouling_index: 0.46
+  bess_capacity_mwh: 18.0

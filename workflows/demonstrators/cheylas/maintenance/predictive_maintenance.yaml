@@ -1,0 +1,52 @@
+metadata:
+  display_name: Cheylas Predictive Maintenance
+  site_id: cheylas
+  category: maintenance
+  result_family: storhy_mock
+  description: Produces a CADS maintenance risk view from Cheylas edge sensor summaries.
+  tags: [cheylas, predictive-maintenance, cads]
+synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
+steps:
+  - name: condition_monitoring
+    fmu: fmu/models/ConditionMonitoringReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_values: {site_id: 2, scenario_id: 3, profile_id: 3, input_sediment_exposure: 0.36}
+    outputs: [score, confidence, risk_index, damage_index, sediment_exposure, rul_days, availability_delta_percent]
+    trace:
+      outputs: [risk_index, damage_index, rul_days]
+      sample_every: 1.0
+  - name: predictive_maintenance
+    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_from:
+      input_score: condition_monitoring.score
+      input_confidence: condition_monitoring.confidence
+      input_risk_index: condition_monitoring.risk_index
+      input_damage_index: condition_monitoring.damage_index
+      input_rul_days: condition_monitoring.rul_days
+      input_availability_delta_percent: condition_monitoring.availability_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+    trace:
+      outputs: [risk_index, damage_index, rul_days]
+      sample_every: 1.0
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_from:
+      input_score: predictive_maintenance.score
+      input_confidence: predictive_maintenance.confidence
+      input_risk_index: predictive_maintenance.risk_index
+      input_opex_delta_eur: predictive_maintenance.opex_delta_eur
+      input_rul_days: predictive_maintenance.rul_days
+      input_availability_delta_percent: predictive_maintenance.availability_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, opex_delta_eur, availability_delta_percent, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 1.0
+    result: data/storhy/cheylas/maintenance/predictive_maintenance_result.json

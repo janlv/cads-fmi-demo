@@ -1,0 +1,66 @@
+metadata:
+  display_name: Vilarinho HSC MIV Comparison
+  site_id: vilarinho
+  category: control
+  result_family: storhy_mock
+  description: Compares MIV regulation with HSC support and cost-benefit implications.
+  tags: [vilarinho, hsc, miv, comparison]
+synthetic_case: data/storhy/synthetic/vilarinho_miv_hsc.yaml
+steps:
+  - name: miv_regulation
+    fmu: fmu/models/MIVRegulationReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_values: {site_id: 5, scenario_id: 2, profile_id: 3, input_valve_opening_percent: 48.0}
+    outputs: [score, confidence, risk_index, valve_opening_percent, power_mw, flexibility_delta_percent, availability_delta_percent, damage_index]
+  - name: hsc_flexibility
+    fmu: fmu/models/HSCFlexibilityReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_values: {site_id: 5, scenario_id: 2, profile_id: 3}
+    start_from:
+      input_score: miv_regulation.score
+      input_confidence: miv_regulation.confidence
+      input_risk_index: miv_regulation.risk_index
+      input_flexibility_delta_percent: miv_regulation.flexibility_delta_percent
+      input_availability_delta_percent: miv_regulation.availability_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, power_mw, flexibility_delta_percent, availability_delta_percent, value_delta_eur, opex_delta_eur, co2_delta_tonnes]
+    trace:
+      outputs: [power_mw, flexibility_delta_percent, risk_index]
+      sample_every: 1.0
+  - name: sustainability_cba
+    fmu: fmu/models/SustainabilityCBAReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_from:
+      input_score: hsc_flexibility.score
+      input_confidence: hsc_flexibility.confidence
+      input_risk_index: hsc_flexibility.risk_index
+      input_value_delta_eur: hsc_flexibility.value_delta_eur
+      input_opex_delta_eur: hsc_flexibility.opex_delta_eur
+      input_co2_delta_tonnes: hsc_flexibility.co2_delta_tonnes
+      input_availability_delta_percent: hsc_flexibility.availability_delta_percent
+      input_flexibility_delta_percent: hsc_flexibility.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, kpi_score, value_delta_eur, opex_delta_eur, co2_delta_tonnes, availability_delta_percent, flexibility_delta_percent]
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_from:
+      input_score: sustainability_cba.score
+      input_confidence: sustainability_cba.confidence
+      input_risk_index: sustainability_cba.risk_index
+      input_value_delta_eur: sustainability_cba.value_delta_eur
+      input_opex_delta_eur: sustainability_cba.opex_delta_eur
+      input_co2_delta_tonnes: sustainability_cba.co2_delta_tonnes
+      input_availability_delta_percent: sustainability_cba.availability_delta_percent
+      input_flexibility_delta_percent: sustainability_cba.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, opex_delta_eur, co2_delta_tonnes, availability_delta_percent, flexibility_delta_percent]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 1.0
+    result: data/storhy/vilarinho/control/hsc_miv_comparison_result.json

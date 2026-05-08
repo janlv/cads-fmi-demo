@@ -1,0 +1,54 @@
+metadata:
+  display_name: Vilarinho MIV Regulation
+  site_id: vilarinho
+  category: control
+  result_family: storhy_mock
+  description: Evaluates main inlet valve opening strategies for power regulation.
+  tags: [vilarinho, miv, control]
+synthetic_case: data/storhy/synthetic/vilarinho_miv_hsc.yaml
+steps:
+  - name: miv_regulation
+    fmu: fmu/models/MIVRegulationReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_values: {site_id: 5, scenario_id: 3, profile_id: 1, input_valve_opening_percent: 44.0}
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, valve_opening_percent, power_mw, flexibility_delta_percent, availability_delta_percent, damage_index]
+    trace:
+      outputs: [valve_opening_percent, power_mw, risk_index]
+      sample_every: 1.0
+  - name: miv_fatigue
+    fmu: fmu/models/MIVFatigueReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_from:
+      input_score: miv_regulation.score
+      input_confidence: miv_regulation.confidence
+      input_risk_index: miv_regulation.risk_index
+      input_damage_index: miv_regulation.damage_index
+      input_valve_opening_percent: miv_regulation.valve_opening_percent
+      input_availability_delta_percent: miv_regulation.availability_delta_percent
+      input_flexibility_delta_percent: miv_regulation.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, valve_opening_percent, damage_index, rul_days, opex_delta_eur]
+    trace:
+      outputs: [damage_index, risk_index, rul_days]
+      sample_every: 1.0
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_from:
+      input_score: miv_fatigue.score
+      input_confidence: miv_fatigue.confidence
+      input_risk_index: miv_fatigue.risk_index
+      input_opex_delta_eur: miv_fatigue.opex_delta_eur
+      input_rul_days: miv_fatigue.rul_days
+      input_availability_delta_percent: miv_regulation.availability_delta_percent
+      input_flexibility_delta_percent: miv_regulation.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, opex_delta_eur, availability_delta_percent, flexibility_delta_percent, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 1.0
+    result: data/storhy/vilarinho/control/miv_regulation_result.json

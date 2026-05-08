@@ -1,0 +1,51 @@
+metadata:
+  display_name: Cheylas Fast Dewatering
+  site_id: cheylas
+  category: control
+  result_family: storhy_mock
+  description: Evaluates short operating windows and fast dewatering against fatigue impact.
+  tags: [cheylas, dewatering, control]
+synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
+steps:
+  - name: start_sequence_wear
+    fmu: fmu/models/StartSequenceWearReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_values: {site_id: 2, scenario_id: 4, profile_id: 1}
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, damage_index, rul_days, availability_delta_percent, flexibility_delta_percent, value_delta_eur, opex_delta_eur]
+    trace:
+      outputs: [damage_index, risk_index, rul_days]
+      sample_every: 1.0
+  - name: predictive_maintenance
+    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_from:
+      input_score: start_sequence_wear.score
+      input_confidence: start_sequence_wear.confidence
+      input_risk_index: start_sequence_wear.risk_index
+      input_damage_index: start_sequence_wear.damage_index
+      input_rul_days: start_sequence_wear.rul_days
+      input_availability_delta_percent: start_sequence_wear.availability_delta_percent
+      input_opex_delta_eur: start_sequence_wear.opex_delta_eur
+    outputs: [score, confidence, risk_index, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 36.0
+    step_size: 1.0
+    start_from:
+      input_score: predictive_maintenance.score
+      input_confidence: predictive_maintenance.confidence
+      input_risk_index: predictive_maintenance.risk_index
+      input_opex_delta_eur: predictive_maintenance.opex_delta_eur
+      input_rul_days: predictive_maintenance.rul_days
+      input_availability_delta_percent: predictive_maintenance.availability_delta_percent
+      input_flexibility_delta_percent: start_sequence_wear.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, opex_delta_eur, availability_delta_percent, flexibility_delta_percent, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 1.0
+    result: data/storhy/cheylas/control/fast_dewatering_result.json

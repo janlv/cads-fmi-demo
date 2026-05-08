@@ -1,0 +1,52 @@
+metadata:
+  display_name: La Rance Cleaning Interval
+  site_id: la-rance
+  category: maintenance
+  result_family: storhy_mock
+  description: Estimates ROV-compatible cleaning windows from biofouling and corrosion indicators.
+  tags: [la-rance, cleaning, rov, maintenance]
+synthetic_case: data/storhy/synthetic/la_rance_saltwater_low_head.yaml
+steps:
+  - name: corrosion_biofouling
+    fmu: fmu/models/CorrosionBiofoulingReplica.fmu
+    start_time: 0.0
+    stop_time: 180.0
+    step_size: 5.0
+    start_values: {site_id: 3, scenario_id: 4, profile_id: 2}
+    outputs: [score, confidence, risk_index, corrosion_index, biofouling_index, damage_index, rul_days]
+    trace:
+      outputs: [corrosion_index, biofouling_index, risk_index]
+      sample_every: 5.0
+  - name: cleaning_interval
+    fmu: fmu/models/CleaningIntervalReplica.fmu
+    start_time: 0.0
+    stop_time: 180.0
+    step_size: 5.0
+    start_from:
+      input_score: corrosion_biofouling.score
+      input_confidence: corrosion_biofouling.confidence
+      input_risk_index: corrosion_biofouling.risk_index
+      input_corrosion_index: corrosion_biofouling.corrosion_index
+      input_biofouling_index: corrosion_biofouling.biofouling_index
+      input_rul_days: corrosion_biofouling.rul_days
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, corrosion_index, biofouling_index, rul_days, availability_delta_percent, value_delta_eur]
+    trace:
+      outputs: [biofouling_index, risk_index, rul_days]
+      sample_every: 5.0
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 180.0
+    step_size: 5.0
+    start_from:
+      input_score: cleaning_interval.score
+      input_confidence: cleaning_interval.confidence
+      input_risk_index: cleaning_interval.risk_index
+      input_value_delta_eur: cleaning_interval.value_delta_eur
+      input_rul_days: cleaning_interval.rul_days
+      input_availability_delta_percent: cleaning_interval.availability_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, availability_delta_percent, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 5.0
+    result: data/storhy/la_rance/maintenance/cleaning_interval_result.json

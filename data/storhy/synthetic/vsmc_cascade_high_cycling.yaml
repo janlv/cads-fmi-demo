@@ -1,0 +1,12 @@
+name: VSMC high-cycling cascade week
+site: VSMC dams
+period: Synthetic winter week with tandem pumping dispatch.
+data_basis: Representative proposal values, converted to deterministic demo inputs.
+operating_mode: Cascade optimisation and variable-speed tandem pumping.
+values:
+  head_m: 74.0
+  daily_start_stops: 10.0
+  inflow_index: 0.62
+  market_price_eur_mwh: 94.0
+  target_flexibility_delta_percent: 9.5
+  expected_generation_mw: 230.0

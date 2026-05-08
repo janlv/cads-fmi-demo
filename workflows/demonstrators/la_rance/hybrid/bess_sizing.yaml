@@ -1,0 +1,52 @@
+metadata:
+  display_name: La Rance BESS Sizing
+  site_id: la-rance
+  category: hybrid
+  result_family: storhy_mock
+  description: Evaluates battery sizing for tidal generation shifting toward higher-value periods.
+  tags: [la-rance, bess, hybrid, sizing]
+synthetic_case: data/storhy/synthetic/la_rance_saltwater_low_head.yaml
+steps:
+  - name: bess_sizing
+    fmu: fmu/models/BESSSizingReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_values: {site_id: 3, scenario_id: 2, profile_id: 3}
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, soc_percent, flexibility_delta_percent, availability_delta_percent, value_delta_eur, damage_index, rul_days]
+    trace:
+      outputs: [soc_percent, flexibility_delta_percent, risk_index]
+      sample_every: 1.0
+  - name: sustainability_cba
+    fmu: fmu/models/SustainabilityCBAReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_from:
+      input_score: bess_sizing.score
+      input_confidence: bess_sizing.confidence
+      input_risk_index: bess_sizing.risk_index
+      input_value_delta_eur: bess_sizing.value_delta_eur
+      input_rul_days: bess_sizing.rul_days
+      input_availability_delta_percent: bess_sizing.availability_delta_percent
+      input_flexibility_delta_percent: bess_sizing.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, kpi_score, value_delta_eur, opex_delta_eur, co2_delta_tonnes, availability_delta_percent, flexibility_delta_percent]
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 48.0
+    step_size: 1.0
+    start_from:
+      input_score: sustainability_cba.score
+      input_confidence: sustainability_cba.confidence
+      input_risk_index: sustainability_cba.risk_index
+      input_value_delta_eur: sustainability_cba.value_delta_eur
+      input_opex_delta_eur: sustainability_cba.opex_delta_eur
+      input_co2_delta_tonnes: sustainability_cba.co2_delta_tonnes
+      input_availability_delta_percent: sustainability_cba.availability_delta_percent
+      input_flexibility_delta_percent: sustainability_cba.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, co2_delta_tonnes, availability_delta_percent, flexibility_delta_percent]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 1.0
+    result: data/storhy/la_rance/hybrid/bess_sizing_result.json

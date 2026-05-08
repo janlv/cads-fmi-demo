@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,38 +16,56 @@ import (
 )
 
 type WorkflowSummary struct {
-	Path      string `json:"path"`
-	Name      string `json:"name"`
-	StepCount int    `json:"stepCount"`
+	Path      string           `json:"path"`
+	Name      string           `json:"name"`
+	StepCount int              `json:"stepCount"`
+	Metadata  WorkflowMetadata `json:"metadata"`
+}
+
+type WorkflowMetadata struct {
+	DisplayName  string   `json:"displayName,omitempty" yaml:"display_name"`
+	SiteID       string   `json:"siteId,omitempty" yaml:"site_id"`
+	Category     string   `json:"category,omitempty" yaml:"category"`
+	ResultFamily string   `json:"resultFamily,omitempty" yaml:"result_family"`
+	Description  string   `json:"description,omitempty" yaml:"description"`
+	Tags         []string `json:"tags,omitempty" yaml:"tags"`
 }
 
 var ErrWorkflowOutsideDirectory = errors.New("workflow path must stay within workflows/")
 
 type workflowCatalogFile struct {
-	Steps []struct{} `yaml:"steps"`
+	Metadata WorkflowMetadata `yaml:"metadata"`
+	Steps    []struct{}       `yaml:"steps"`
 }
 
 // ListWorkflows returns the launchable workflows from the repository.
 func ListWorkflows(root string) ([]WorkflowSummary, error) {
-	patterns := []string{
-		filepath.Join(root, "workflows", "*.yaml"),
-		filepath.Join(root, "workflows", "*.yml"),
-	}
+	workflowsRoot := filepath.Join(root, "workflows")
 
 	seen := make(map[string]struct{})
 	var files []string
-	for _, pattern := range patterns {
-		matches, err := filepath.Glob(pattern)
+	if err := filepath.WalkDir(workflowsRoot, func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return nil, fmt.Errorf("glob workflows with %s: %w", pattern, err)
+			return err
 		}
-		for _, match := range matches {
-			if _, exists := seen[match]; exists {
-				continue
-			}
-			seen[match] = struct{}{}
-			files = append(files, match)
+		if entry.IsDir() {
+			return nil
 		}
+		ext := strings.ToLower(filepath.Ext(file))
+		if ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+		if _, exists := seen[file]; exists {
+			return nil
+		}
+		seen[file] = struct{}{}
+		files = append(files, file)
+		return nil
+	}); err != nil {
+		if os.IsNotExist(err) {
+			return []WorkflowSummary{}, nil
+		}
+		return nil, fmt.Errorf("walk workflows: %w", err)
 	}
 	sort.Strings(files)
 
@@ -72,6 +91,7 @@ func ListWorkflows(root string) ([]WorkflowSummary, error) {
 			Path:      rel,
 			Name:      strings.TrimSuffix(base, filepath.Ext(base)),
 			StepCount: len(doc.Steps),
+			Metadata:  doc.Metadata,
 		})
 	}
 

@@ -1,0 +1,12 @@
+name: Vilarinho MIV and HSC case
+site: Vilarinho das Furnas dam
+period: Synthetic wet-season week with hydraulic short-circuit operation.
+data_basis: Representative proposal values for main inlet valve control and multistage pumping.
+operating_mode: MIV regulation, fatigue monitoring, and HSC comparison.
+values:
+  head_m: 410.0
+  valve_opening_percent: 48.0
+  hydraulic_short_circuit_hours: 3.5
+  daily_start_stops: 8.0
+  expected_generation_mw: 132.0
+  expected_storage_mw: 70.0

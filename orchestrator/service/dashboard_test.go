@@ -241,15 +241,40 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 
 func TestListWorkflowsAndResolveLaunchWorkflow(t *testing.T) {
 	root := writeDashboardRepoFixture(t)
+	nestedDir := filepath.Join(root, "workflows", "demonstrators", "vsmc", "dispatch")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("create nested workflow dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedDir, "cascade_dispatch.yaml"), []byte(`
+metadata:
+  display_name: Cascade dispatch
+  site_id: vsmc
+  category: dispatch
+  result_family: storhy_mock
+  description: VSMC cascade dispatch replica workflow.
+  tags: [cascade, dispatch]
+steps:
+  - name: dispatch
+`), 0o644); err != nil {
+		t.Fatalf("write nested workflow: %v", err)
+	}
 
 	workflows, err := ListWorkflows(root)
 	if err != nil {
 		t.Fatalf("ListWorkflows() error = %v", err)
 	}
-	if len(workflows) != 3 {
-		t.Fatalf("ListWorkflows() len = %d, want 3", len(workflows))
+	if len(workflows) != 4 {
+		t.Fatalf("ListWorkflows() len = %d, want 4", len(workflows))
 	}
-	if workflows[2].Name != "python_chain" || workflows[2].StepCount != 2 {
+	if workflows[2].Name != "cascade_dispatch" ||
+		workflows[2].Path != "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml" ||
+		workflows[2].StepCount != 1 ||
+		workflows[2].Metadata.DisplayName != "Cascade dispatch" ||
+		workflows[2].Metadata.SiteID != "vsmc" ||
+		workflows[2].Metadata.ResultFamily != "storhy_mock" {
+		t.Fatalf("ListWorkflows() nested workflow = %+v, want metadata-rich nested workflow", workflows[2])
+	}
+	if workflows[3].Name != "python_chain" || workflows[3].StepCount != 2 {
 		t.Fatalf("ListWorkflows() workflows = %+v, want python_chain with 2 steps", workflows)
 	}
 

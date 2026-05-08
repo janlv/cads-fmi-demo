@@ -1,0 +1,12 @@
+name: Alqueva hybrid flexibility case
+site: Alqueva hydroelectric power station
+period: Synthetic summer week with floating PV and storage dispatch.
+data_basis: Representative proposal values for hybrid PSP, BESS, and PV operation.
+operating_mode: Hybrid EMS, fast ancillary services, and runner fatigue assessment.
+values:
+  pv_generation_mw: 42.0
+  bess_soc_percent: 58.0
+  daily_start_stops: 9.0
+  requested_fast_service_mw: 64.0
+  target_flexibility_delta_percent: 11.0
+  expected_generation_mw: 270.0

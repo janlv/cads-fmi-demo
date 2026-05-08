@@ -1,0 +1,52 @@
+metadata:
+  display_name: Alqueva Hybrid EMS
+  site_id: alqueva
+  category: hybrid
+  result_family: storhy_mock
+  description: Optimises joint PSP, floating PV, and BESS dispatch for energy and ancillary-service markets.
+  tags: [alqueva, hybrid, ems, bess, pv]
+synthetic_case: data/storhy/synthetic/alqueva_hybrid_flexibility.yaml
+steps:
+  - name: hybrid_ems
+    fmu: fmu/models/HybridEMSReplica.fmu
+    start_time: 0.0
+    stop_time: 72.0
+    step_size: 1.0
+    start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, soc_percent, power_mw, flexibility_delta_percent, availability_delta_percent, value_delta_eur, opex_delta_eur]
+    trace:
+      outputs: [soc_percent, power_mw, flexibility_delta_percent, risk_index]
+      sample_every: 2.0
+  - name: predictive_maintenance
+    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+    start_time: 0.0
+    stop_time: 72.0
+    step_size: 1.0
+    start_from:
+      input_score: hybrid_ems.score
+      input_confidence: hybrid_ems.confidence
+      input_risk_index: hybrid_ems.risk_index
+      input_value_delta_eur: hybrid_ems.value_delta_eur
+      input_opex_delta_eur: hybrid_ems.opex_delta_eur
+      input_availability_delta_percent: hybrid_ems.availability_delta_percent
+      input_flexibility_delta_percent: hybrid_ems.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 72.0
+    step_size: 1.0
+    start_from:
+      input_score: predictive_maintenance.score
+      input_confidence: predictive_maintenance.confidence
+      input_risk_index: predictive_maintenance.risk_index
+      input_value_delta_eur: hybrid_ems.value_delta_eur
+      input_opex_delta_eur: predictive_maintenance.opex_delta_eur
+      input_rul_days: predictive_maintenance.rul_days
+      input_availability_delta_percent: predictive_maintenance.availability_delta_percent
+      input_flexibility_delta_percent: hybrid_ems.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, opex_delta_eur, availability_delta_percent, flexibility_delta_percent, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 2.0
+    result: data/storhy/alqueva/hybrid/hybrid_ems_result.json

@@ -107,6 +107,36 @@ func TestBuildInputSeriesResolvesCSVWithinRoot(t *testing.T) {
 	}
 }
 
+func TestLoadSyntheticCaseFromRepoFile(t *testing.T) {
+	root := t.TempDir()
+	exec, err := NewExecutor(root)
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "data", "storhy", "synthetic"), 0o755); err != nil {
+		t.Fatalf("create synthetic dir: %v", err)
+	}
+	casePath := filepath.Join(root, "data", "storhy", "synthetic", "demo.yaml")
+	if err := os.WriteFile(casePath, []byte(`
+name: Demo case
+site: VSMC
+values:
+  head_m: 74
+  cycles_per_day: 12
+`), 0o644); err != nil {
+		t.Fatalf("write synthetic case: %v", err)
+	}
+
+	loaded, err := exec.loadSyntheticCase(filepath.Join("data", "storhy", "synthetic", "demo.yaml"))
+	if err != nil {
+		t.Fatalf("loadSyntheticCase() error = %v", err)
+	}
+	values, ok := loaded["values"].(map[string]any)
+	if loaded["name"] != "Demo case" || loaded["source"] != "data/storhy/synthetic/demo.yaml" || !ok || values["head_m"] != 74 {
+		t.Fatalf("loaded = %#v, want synthetic case with source and values", loaded)
+	}
+}
+
 func TestBuildInputSeriesDownloadsS3Object(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("S3_BUCKET", "sensor-data")

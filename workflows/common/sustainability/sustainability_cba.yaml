@@ -1,0 +1,44 @@
+metadata:
+  display_name: Sustainability CBA
+  site_id: portfolio
+  category: sustainability
+  result_family: storhy_mock
+  description: Shared WP7-style cost-benefit, environmental, and circularity mock workflow.
+  tags: [sustainability, cost-benefit, wp7]
+synthetic_case: data/storhy/synthetic/portfolio_common_case.yaml
+steps:
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 12.0
+    step_size: 1.0
+    start_values:
+      site_id: 0
+      scenario_id: 2
+      profile_id: 2
+      input_score: 76.0
+      input_risk_index: 0.3
+      input_flexibility_delta_percent: 6.0
+      input_availability_delta_percent: 3.0
+      input_value_delta_eur: 38000.0
+      input_co2_delta_tonnes: 980.0
+    outputs: [score, confidence, risk_index, kpi_score, value_delta_eur, opex_delta_eur, co2_delta_tonnes, availability_delta_percent, flexibility_delta_percent]
+  - name: sustainability_cba
+    fmu: fmu/models/SustainabilityCBAReplica.fmu
+    start_time: 0.0
+    stop_time: 12.0
+    step_size: 1.0
+    start_from:
+      input_score: kpi_assessment.kpi_score
+      input_confidence: kpi_assessment.confidence
+      input_risk_index: kpi_assessment.risk_index
+      input_value_delta_eur: kpi_assessment.value_delta_eur
+      input_opex_delta_eur: kpi_assessment.opex_delta_eur
+      input_co2_delta_tonnes: kpi_assessment.co2_delta_tonnes
+      input_availability_delta_percent: kpi_assessment.availability_delta_percent
+      input_flexibility_delta_percent: kpi_assessment.flexibility_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, opex_delta_eur, co2_delta_tonnes, availability_delta_percent, flexibility_delta_percent]
+    trace:
+      outputs: [kpi_score, risk_index, value_delta_eur]
+      sample_every: 1.0
+    result: data/storhy/common/sustainability/sustainability_cba_result.json

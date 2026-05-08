@@ -17,6 +17,8 @@ The key directories are:
 - `workflows/` stores declarative pipeline definitions. Each step names an FMU
   (Python-built or external, such as the bundled Simulink `CITest.fmu`), a few
   optional overrides, and an output location.
+- `workflows.md` documents the STOR-HY replica model catalog and the nested
+  demonstrator workflow YAMLs used by the dashboard prototype.
 - `orchestrator/service/internal/fmi` together with the Go CLIs
   (`cads-workflow-runner`, `cads-workflow-service`) load workflow files and
   execute FMUs directly through FMIL via cgo. Only FMI **Co-Simulation** FMUs
@@ -60,8 +62,11 @@ Edit or copy one of the YAML files under `workflows/` (e.g.,
 `workflows/python_chain.yaml`). Each step references one of the FMUs under
 `fmu/models/` (chain as many steps/FMUs as you need), declares outputs to
 capture, and can pass values downstream via `start_from`. Use `start_values`
-for literal inputs and `result` to persist outputs. The same YAML file is used
-everywhere (CLI, container, Kubernetes, Argo), so no extra metadata is required.
+for literal inputs and `result` to persist outputs. Optional top-level
+`metadata` fields such as `display_name`, `site_id`, `category`, and
+`result_family` are used by the dashboard catalog. Optional `synthetic_case`
+points at a repo-local YAML/JSON fixture that is copied into the workflow result
+payload for dashboard context.
 Once the workflow matches your scenario, you are ready to run it in the container.
 
 ### Step 2 – Choose an execution path
@@ -213,10 +218,10 @@ IMAGE=ghcr.io/org/cads-demo:demo123
 ./run_dashboard.sh --image "$IMAGE"
 ```
 
-Then open `http://localhost:8080/`. The dashboard serves one button per
-workflow under `workflows/`, lists recent hosted runs that point at repo
-workflows, and polls the Kaizen playground every 5 seconds for live duration
-updates.
+Then open `http://localhost:8080/`. The dashboard serves tabs for launchable
+workflow YAML files found recursively under `workflows/`, lists recent hosted
+runs that point at repo workflows, and polls the Kaizen playground every 5
+seconds for live duration updates.
 
 The dashboard is a control surface for the **remote** path, not a separate
 runtime. It still launches the configured container image in the hosted
@@ -373,9 +378,18 @@ FMU workflow (the bundled Producer FMU already consumes this CSV).
 
 ## Workflow format
 
-Each file in `workflows/` contains a minimal schema:
+Each file in `workflows/` contains a minimal schema. The optional `metadata`
+block is used for catalog and dashboard grouping, while `steps` is the runtime
+contract:
 
 ```yaml
+metadata:
+  display_name: Producer consumer chain
+  site_id: portfolio
+  category: demo
+  result_family: structured
+synthetic_case: data/storhy/synthetic/portfolio_common_case.yaml
+
 steps:
   - name: producer
     fmu: fmu/models/Producer.fmu
@@ -399,6 +413,9 @@ steps:
 
 All keys are optional except `name` and `fmu`:
 
+- `synthetic_case` – optional repo-local YAML/JSON fixture to include as
+  `_synthetic_case` in the result payload. The STOR-HY dashboard uses this to
+  show the synthetic operating case available inside hosted Argo pods.
 - `outputs` – list of variables to capture. If omitted, the runner gathers every
   variable whose causality is `output` or `calculatedParameter` (falling back to
   `time` when nothing matches).

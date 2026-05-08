@@ -1,0 +1,12 @@
+name: Cheylas sediment and cycling case
+site: Le Cheylas power station
+period: Synthetic alpine snowmelt week with high pump-turbine cycling.
+data_basis: Representative proposal values for sediment exposure and frequent starts.
+operating_mode: Fast dewatering, runner wear monitoring, and predictive maintenance.
+values:
+  head_m: 260.0
+  daily_start_stops: 14.0
+  sediment_load_kg_m3: 0.34
+  vibration_index: 0.48
+  expected_rul_days: 720.0
+  availability_target_percent: 95.0

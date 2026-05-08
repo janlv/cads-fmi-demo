@@ -7,12 +7,15 @@ source "$ROOT_DIR/scripts/lib/logging.sh"
 FMU_DIR="$ROOT_DIR/fmu/models"
 VENV_DIR="$SCRIPT_DIR/.venv"
 REQ_FILE="$SCRIPT_DIR/requirements.txt"
+STORHY_REPLICA_DIR="$SCRIPT_DIR/storhy_replicas"
+STORHY_REPLICA_COMMON="$STORHY_REPLICA_DIR/storhy_replica_common.py"
 
 usage() {
     cat <<'EOF'
 Usage: create_fmu/build_python_fmus.sh [--venv <path>] [--python <python3>]
 
-Builds the demo Python FMUs (Producer/Consumer) and drops them into fmu/models/.
+Builds the demo Python FMUs (Producer/Consumer/AE stats/STOR-HY replicas) and
+drops them into fmu/models/.
 
 Options:
   --venv        Path to the pythonfmu virtualenv (default: create_fmu/.venv)
@@ -77,5 +80,10 @@ log_step "Building Producer/Consumer/AEEventStats FMUs via pythonfmu"
 python -m pythonfmu build -f "$SCRIPT_DIR/producer_fmu.py" -d "$FMU_DIR"
 python -m pythonfmu build -f "$SCRIPT_DIR/consumer_fmu.py" -d "$FMU_DIR"
 python -m pythonfmu build -f "$SCRIPT_DIR/ae_event_stats_fmu.py" -d "$FMU_DIR"
+
+log_step "Building STOR-HY replica FMUs via pythonfmu"
+for replica in "$STORHY_REPLICA_DIR"/*_fmu.py; do
+    python -m pythonfmu build -f "$replica" -d "$FMU_DIR" "$STORHY_REPLICA_COMMON"
+done
 
 log_ok "FMUs built under $FMU_DIR"

@@ -29,16 +29,284 @@ const AECIS_TREND_WINDOW_SECONDS = 2.5;
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
+const STORHY_DEFAULT_SUMMARY = ["score", "kpi_score", "risk_index", "confidence", "rul_days", "availability_delta_percent", "flexibility_delta_percent", "value_delta_eur"];
+const STORHY_KPI_RISK_CHART = {
+  title: "KPI And Risk",
+  description: "Final KPI score and risk index over the simulated operating window.",
+  step: "kpi_assessment",
+  signals: [
+    { key: "kpi_score", label: "KPI score" },
+    { key: "risk_index", label: "Risk index" },
+  ],
+};
+const STORHY_MAINTENANCE_CHART = {
+  title: "Damage And RUL",
+  description: "Damage index and remaining useful life from the maintenance model.",
+  signals: [
+    { key: "damage_index", label: "Damage index" },
+    { key: "risk_index", label: "Risk index" },
+    { key: "rul_days", label: "RUL days" },
+  ],
+};
+const STORHY_BENEFIT_VALUES = {
+  title: "Benefits",
+  description: "Snapshot benefit indicators from the latest model step that emitted each value.",
+  values: ["value_delta_eur", "opex_delta_eur", "co2_delta_tonnes", "availability_delta_percent", "flexibility_delta_percent"],
+};
+const STORHY_RISK_VALUES = {
+  title: "Risk Indicators",
+  description: "Latest risk, health, and decision-support indicators.",
+  values: ["risk_index", "damage_index", "corrosion_index", "biofouling_index", "sediment_exposure", "confidence"],
+};
+const STORHY_DASHBOARD_CONFIG = {
+  "workflows/common/condition_monitoring/cads_condition_monitoring.yaml": {
+    summary: ["score", "confidence", "risk_index", "damage_index", "rul_days", "availability_delta_percent", "recommendation_code"],
+    charts: [
+      {
+        title: "Condition Indicators",
+        description: "Sensor-derived risk, damage, RUL, and sediment indicators.",
+        step: "condition_monitoring",
+        signals: ["risk_index", "damage_index", "rul_days", "sediment_exposure"],
+      },
+      { ...STORHY_MAINTENANCE_CHART, step: "predictive_maintenance" },
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/common/decision_support/degradation_cost_benefit.yaml": {
+    summary: ["score", "kpi_score", "risk_index", "rul_days", "value_delta_eur", "opex_delta_eur", "co2_delta_tonnes"],
+    charts: [
+      {
+        title: "Cost Benefit Trend",
+        description: "Sustainability CBA score, risk, and value delta.",
+        step: "sustainability_cba",
+        signals: ["kpi_score", "risk_index", "value_delta_eur"],
+      },
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/common/kpi/demo_kpi_assessment.yaml": {
+    summary: ["kpi_score", "score", "risk_index", "status_code", "recommendation_code", "confidence"],
+    charts: [STORHY_KPI_RISK_CHART],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/common/sustainability/sustainability_cba.yaml": {
+    summary: ["kpi_score", "value_delta_eur", "opex_delta_eur", "co2_delta_tonnes", "availability_delta_percent", "risk_index"],
+    charts: [
+      {
+        title: "Sustainability Trend",
+        description: "KPI score, risk, and value delta from the sustainability CBA model.",
+        step: "sustainability_cba",
+        signals: ["kpi_score", "risk_index", "value_delta_eur"],
+      },
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml": {
+    summary: ["score", "kpi_score", "risk_index", "power_mw", "reservoir_level_m", "flexibility_delta_percent", "value_delta_eur", "rul_days"],
+    charts: [
+      {
+        title: "Power And Reservoir",
+        description: "Cascade dispatch power output and reservoir operating level.",
+        step: "hydro_cascade_dispatch",
+        signals: ["power_mw", "reservoir_level_m"],
+      },
+      {
+        title: "Flexibility And Risk",
+        description: "Flexibility gain and dispatch risk over the operating window.",
+        step: "hydro_cascade_dispatch",
+        signals: ["flexibility_delta_percent", "risk_index"],
+      },
+      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml": {
+    summary: ["kpi_score", "flexibility_delta_percent", "power_mw", "value_delta_eur", "co2_delta_tonnes", "risk_index"],
+    charts: [
+      {
+        title: "HSC Power And Flexibility",
+        description: "Hydraulic short-circuit power response, flexibility gain, and risk.",
+        step: "hsc_flexibility",
+        signals: ["power_mw", "flexibility_delta_percent", "risk_index"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml": {
+    summary: ["score", "damage_index", "rul_days", "availability_delta_percent", "risk_index", "recommendation_code"],
+    charts: [
+      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES, STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/cheylas/control/fast_dewatering.yaml": {
+    summary: ["score", "damage_index", "rul_days", "risk_index", "availability_delta_percent", "recommendation_code"],
+    charts: [
+      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml": {
+    summary: ["score", "risk_index", "damage_index", "rul_days", "status_code", "recommendation_code"],
+    charts: [
+      {
+        title: "Observed Condition",
+        description: "Condition-monitoring risk, damage, and RUL trace.",
+        step: "condition_monitoring",
+        signals: ["risk_index", "damage_index", "rul_days"],
+      },
+      { ...STORHY_MAINTENANCE_CHART, step: "predictive_maintenance" },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml": {
+    summary: ["score", "sediment_exposure", "damage_index", "rul_days", "risk_index", "confidence"],
+    charts: [
+      {
+        title: "Sediment Exposure And Damage",
+        description: "Sediment exposure, runner damage, risk, and RUL from the runner wear model.",
+        step: "runner_sediment_wear",
+        signals: ["sediment_exposure", "damage_index", "risk_index", "rul_days"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml": {
+    summary: ["score", "corrosion_index", "biofouling_index", "risk_index", "confidence", "rul_days"],
+    charts: [
+      {
+        title: "Corrosion And Biofouling",
+        description: "Harsh-fluid corrosion, biofouling, risk, and RUL indicators.",
+        step: "corrosion_biofouling",
+        signals: ["corrosion_index", "biofouling_index", "risk_index", "rul_days"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml": {
+    summary: ["score", "corrosion_index", "biofouling_index", "risk_index", "value_delta_eur", "recommendation_code"],
+    charts: [
+      {
+        title: "Cleaning Drivers",
+        description: "Biofouling, risk, and RUL indicators used by the cleaning interval model.",
+        step: "cleaning_interval",
+        signals: ["biofouling_index", "risk_index", "rul_days"],
+      },
+      {
+        title: "Corrosion And Biofouling",
+        description: "Upstream harsh-fluid indicators before cleaning interval assessment.",
+        step: "corrosion_biofouling",
+        signals: ["corrosion_index", "biofouling_index", "risk_index"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES, STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml": {
+    summary: ["kpi_score", "soc_percent", "power_mw", "value_delta_eur", "co2_delta_tonnes", "risk_index", "flexibility_delta_percent"],
+    charts: [
+      {
+        title: "BESS State And Flexibility",
+        description: "Battery state of charge, flexibility contribution, and risk.",
+        step: "bess_sizing",
+        signals: ["soc_percent", "flexibility_delta_percent", "risk_index"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml": {
+    summary: ["score", "soc_percent", "power_mw", "flexibility_delta_percent", "value_delta_eur", "risk_index", "rul_days"],
+    charts: [
+      {
+        title: "Hybrid EMS Response",
+        description: "Battery state of charge, power output, flexibility, and risk.",
+        step: "hybrid_ems",
+        signals: ["soc_percent", "power_mw", "flexibility_delta_percent", "risk_index"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/alqueva/control/fast_service_controller.yaml": {
+    summary: ["score", "power_mw", "flexibility_delta_percent", "availability_delta_percent", "risk_index", "rul_days"],
+    charts: [
+      {
+        title: "Fast Service Response",
+        description: "Power response, flexibility, fatigue damage, and risk.",
+        step: "fast_service_controller",
+        signals: ["power_mw", "flexibility_delta_percent", "damage_index", "risk_index"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES, STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml": {
+    summary: ["score", "damage_index", "rul_days", "availability_delta_percent", "risk_index", "recommendation_code"],
+    charts: [
+      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/vilarinho/control/miv_regulation.yaml": {
+    summary: ["score", "valve_opening_percent", "power_mw", "risk_index", "damage_index", "availability_delta_percent"],
+    charts: [
+      {
+        title: "MIV Regulation",
+        description: "Main inlet valve opening, power response, and risk.",
+        step: "miv_regulation",
+        signals: ["valve_opening_percent", "power_mw", "risk_index"],
+      },
+      { ...STORHY_MAINTENANCE_CHART, step: "miv_fatigue" },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml": {
+    summary: ["score", "valve_opening_percent", "damage_index", "rul_days", "risk_index", "confidence"],
+    charts: [
+      {
+        title: "Condition Monitoring",
+        description: "Condition-monitoring risk, damage, and RUL indicators.",
+        step: "condition_monitoring",
+        signals: ["risk_index", "damage_index", "rul_days"],
+      },
+      { ...STORHY_MAINTENANCE_CHART, step: "miv_fatigue" },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml": {
+    summary: ["kpi_score", "valve_opening_percent", "power_mw", "flexibility_delta_percent", "value_delta_eur", "co2_delta_tonnes", "risk_index"],
+    charts: [
+      {
+        title: "HSC Flexibility Response",
+        description: "Hydraulic short-circuit power, flexibility, and risk after MIV regulation.",
+        step: "hsc_flexibility",
+        signals: ["power_mw", "flexibility_delta_percent", "risk_index"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES, STORHY_RISK_VALUES],
+  },
+};
 const DEMONSTRATORS = [
   {
     id: "portfolio",
     label: "All demonstrators",
     shortLabel: "All sites",
-    location: "France, Portugal, and Spain",
+    location: "France and Portugal",
     operator: "STOR-HY consortium",
     country: "Europe",
     focus: "Portfolio view for CADS workflow templates across the STOR-HY demonstrator set.",
-    capacity: "Six pilot sites",
+    capacity: "Five current pilot sites",
     workflowPaths: [AE_STATS_WORKFLOW_PATH, SIMULINK_WORKFLOW_PATH, PYTHON_CHAIN_WORKFLOW_PATH],
     facts: [
       "Pumped-storage hydropower and tidal-storage use cases",
@@ -53,8 +321,11 @@ const DEMONSTRATORS = [
     location: "Ain River, Bourgogne-Franche-Comte, France",
     operator: "EDF",
     country: "France",
-    mapX: 59.75,
-    mapY: 48.02,
+    mapX: 76.95,
+    mapY: 44.37,
+    mapLabelX: 78.85,
+    mapLabelY: 41.15,
+    mapSubtitle: "Vouglans - Saut Mortier - Coiselet",
     focus: "Cascade optimisation and variable-speed tandem pumping.",
     capacity: "362 MW generation + 72 MW storage",
     workflowPaths: [SIMULINK_WORKFLOW_PATH, PYTHON_CHAIN_WORKFLOW_PATH],
@@ -65,14 +336,17 @@ const DEMONSTRATORS = [
     ],
   },
   {
-    id: "le-cheylas",
+    id: "cheylas",
     label: "Le Cheylas power station",
     shortLabel: "Le Cheylas",
     location: "Isere Valley, Auvergne-Rhone-Alpes, France",
     operator: "EDF",
     country: "France",
-    mapX: 60.25,
-    mapY: 53.65,
+    mapX: 78.14,
+    mapY: 49.98,
+    mapLabelX: 79.45,
+    mapLabelY: 52.62,
+    mapSubtitle: "Pumped-storage power station",
     focus: "Wear assessment and sensor-driven monitoring under high pump-turbine cycling.",
     capacity: "500 MW generation and storage",
     workflowPaths: [AE_STATS_WORKFLOW_PATH, SIMULINK_WORKFLOW_PATH],
@@ -89,8 +363,12 @@ const DEMONSTRATORS = [
     location: "La Rance river estuary, Brittany, France",
     operator: "EDF",
     country: "France",
-    mapX: 48.16,
-    mapY: 32.95,
+    mapX: 49.17,
+    mapY: 30.22,
+    mapLabelX: 47.1,
+    mapLabelY: 27.2,
+    mapLabelAlign: "right",
+    mapSubtitle: "Tidal power station",
     focus: "Saltwater operation, corrosion, anti-fouling, and low tidal-head cycling.",
     capacity: "240 MW generation",
     workflowPaths: [AE_STATS_WORKFLOW_PATH],
@@ -107,8 +385,11 @@ const DEMONSTRATORS = [
     location: "Alqueva and Moura, Alentejo, Portugal",
     operator: "EDP",
     country: "Portugal",
-    mapX: 32.95,
-    mapY: 69.83,
+    mapX: 29.41,
+    mapY: 90.08,
+    mapLabelX: 31.15,
+    mapLabelY: 87.35,
+    mapSubtitle: "Hybrid PSP / BESS / FPV",
     focus: "Operational management for a hybrid pumped-storage, battery, and floating PV plant.",
     capacity: "520 MW generation and storage",
     workflowPaths: [PYTHON_CHAIN_WORKFLOW_PATH],
@@ -125,8 +406,12 @@ const DEMONSTRATORS = [
     location: "Homem River, North Region, Portugal",
     operator: "EDP",
     country: "Portugal",
-    mapX: 34.2,
-    mapY: 58.38,
+    mapX: 26.88,
+    mapY: 70.7,
+    mapLabelX: 24.65,
+    mapLabelY: 68.0,
+    mapLabelAlign: "right",
+    mapSubtitle: "Dam and hydropower plant",
     focus: "Main inlet valve control, hydraulic short-circuit operation, and multistage pumping.",
     capacity: "146 MW generation + 70 MW storage",
     workflowPaths: [SIMULINK_WORKFLOW_PATH],
@@ -134,24 +419,6 @@ const DEMONSTRATORS = [
       "Two reservoirs",
       "One multistage pump and one Francis turbine",
       "Main inlet valve and hydraulic short-circuit operation",
-    ],
-  },
-  {
-    id: "pozu-figaredo",
-    label: "Pozu Figaredo",
-    shortLabel: "Pozu Figaredo",
-    location: "Mieres, Asturias, Spain",
-    operator: "HUNOSA",
-    country: "Spain",
-    mapX: 39.28,
-    mapY: 53.33,
-    focus: "Hybrid PSP validation in a former coal mine using dense-fluid pumping.",
-    capacity: "100 kW generation and storage",
-    workflowPaths: [PYTHON_CHAIN_WORKFLOW_PATH],
-    facts: [
-      "Three mine pit reservoirs",
-      "One pump and one turbine",
-      "EU's first hybrid PSP system in a coal mine",
     ],
   },
 ];
@@ -269,6 +536,7 @@ function ensureSelectedDemonstrator() {
 
 function ensureSelectedWorkflow() {
   const candidates = visibleWorkflows();
+  const demo = selectedDemonstrator();
   if (candidates.length === 0) {
     state.selectedWorkflowPath = "";
     return;
@@ -285,6 +553,7 @@ function ensureSelectedWorkflow() {
   }
 
   const preferredPath =
+    candidates.find((workflow) => demo.id !== "portfolio" && workflowSiteId(workflow) === demo.id)?.path ||
     candidates.find((workflow) => workflow.path === AE_STATS_WORKFLOW_PATH)?.path ||
     candidates.find((workflow) => workflow.path === SIMULINK_WORKFLOW_PATH)?.path ||
     candidates[0]?.path ||
@@ -296,21 +565,67 @@ function selectedWorkflow() {
   return state.workflows.find((workflow) => workflow.path === state.selectedWorkflowPath) || null;
 }
 
+function workflowByPath(workflowPath) {
+  return state.workflows.find((workflow) => workflow.path === workflowPath) || null;
+}
+
 function selectedDemonstrator() {
   return DEMONSTRATORS.find((demo) => demo.id === state.selectedDemonstratorId) || DEMONSTRATORS[0];
 }
 
-function visibleWorkflows() {
-  const demo = selectedDemonstrator();
+function workflowSiteId(workflow) {
+  return String(workflow?.metadata?.siteId || "").trim();
+}
+
+function workflowCategory(workflow) {
+  return String(workflow?.metadata?.category || "").trim();
+}
+
+function workflowResultFamily(workflow) {
+  return String(workflow?.metadata?.resultFamily || "").trim();
+}
+
+function workflowsForDemonstrator(demo) {
   if (!demo || demo.id === "portfolio") {
     return state.workflows;
   }
+
   const allowed = new Set(demo.workflowPaths || []);
-  return state.workflows.filter((workflow) => allowed.has(workflow.path));
+  return state.workflows.filter((workflow) => allowed.has(workflow.path) || workflowSiteId(workflow) === demo.id);
+}
+
+function visibleWorkflows() {
+  return workflowsForDemonstrator(selectedDemonstrator());
 }
 
 function workflowLabel(workflow) {
-  return String(workflow?.name || workflow?.path || "workflow").replaceAll("_", " ");
+  return String(workflow?.metadata?.displayName || workflow?.name || workflow?.path || "workflow").replaceAll("_", " ");
+}
+
+function workflowDescription(workflow) {
+  if (!workflow) {
+    return "";
+  }
+  if (workflow.metadata?.description) {
+    return workflow.metadata.description;
+  }
+  if (workflow.path === AE_STATS_WORKFLOW_PATH) {
+    return "Compares edge-computed acoustic-emission event statistics for CH2 and CH6 from the emailed CSV tables.";
+  }
+  if (workflow.path === SIMULINK_WORKFLOW_PATH) {
+    return "Runs the AECIS FMU and displays rolling mean, RMS, and input-signal traces from the latest result.";
+  }
+  if (workflow.path === PYTHON_CHAIN_WORKFLOW_PATH) {
+    return "Runs the bundled Producer and Consumer Python FMUs as a simple chained workflow smoke test.";
+  }
+  return workflow.path || "";
+}
+
+function formatWorkflowCategory(category) {
+  return String(category || "")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .trim();
 }
 
 function readPersistedWorkflowPath() {
@@ -444,6 +759,7 @@ function renderDemonstrators() {
     <div class="demo-map-canvas" role="img" aria-label="Clickable map of STOR-HY demonstrator locations">
       <div class="demo-map-layer">
         <img class="demo-map-image" src="/static/storhy-demonstrators-map.png" alt="">
+        ${demonstratorsWithLocations.map((demo) => renderDemoMapLabel(demo, selected.id === demo.id)).join("")}
         ${demonstratorsWithLocations.map((demo) => renderDemoMarker(demo, selected.id === demo.id)).join("")}
       </div>
     </div>
@@ -463,6 +779,24 @@ function renderDemonstrators() {
   }
 }
 
+function renderDemoMapLabel(demo, isSelected) {
+  const position = demonstratorMapLabelPosition(demo);
+  const alignClass = demo.mapLabelAlign === "right" ? " align-right" : "";
+  const subtitle = demo.mapSubtitle ? `<span class="demo-map-label-subtitle">${escapeHTML(demo.mapSubtitle)}</span>` : "";
+  return `
+    <button
+      class="demo-map-label${alignClass}${isSelected ? " selected" : ""}"
+      type="button"
+      style="--x:${position.x}%; --y:${position.y}%"
+      data-demo-id="${escapeHTML(demo.id)}"
+      aria-label="Show ${escapeHTML(demo.label)} workflows"
+    >
+      <span class="demo-map-label-name">${escapeHTML(demo.shortLabel || demo.label)}</span>
+      ${subtitle}
+    </button>
+  `;
+}
+
 function renderDemoMarker(demo, isSelected) {
   const position = demonstratorMapPosition(demo);
   return `
@@ -471,7 +805,6 @@ function renderDemoMarker(demo, isSelected) {
       type="button"
       style="--x:${position.x}%; --y:${position.y}%"
       data-demo-id="${escapeHTML(demo.id)}"
-      title="${escapeHTML(`${demo.label} - ${demo.location}`)}"
       aria-label="Show ${escapeHTML(demo.label)} workflows"
     ></button>
   `;
@@ -484,11 +817,15 @@ function demonstratorMapPosition(demo) {
   };
 }
 
+function demonstratorMapLabelPosition(demo) {
+  return {
+    x: clampNumber(Number.isFinite(demo.mapLabelX) ? demo.mapLabelX : demo.mapX, 0, 100),
+    y: clampNumber(Number.isFinite(demo.mapLabelY) ? demo.mapLabelY : demo.mapY, 0, 100),
+  };
+}
+
 function renderDemonstratorDetails(demo) {
-  const availableWorkflowPaths = new Set(state.workflows.map((workflow) => workflow.path));
-  const workflows = (demo.workflowPaths || [])
-    .map((workflowPath) => state.workflows.find((workflow) => workflow.path === workflowPath) || { path: workflowPath, name: workflowPath.split("/").pop()?.replace(".yaml", "") || workflowPath, stepCount: 0 })
-    .filter((workflow) => demo.id === "portfolio" || availableWorkflowPaths.has(workflow.path));
+  const workflows = workflowsForDemonstrator(demo);
 
   return `
     <div class="demo-detail-card">
@@ -560,9 +897,23 @@ function renderWorkflows() {
   }
 
   if (context) {
+    const description = workflowDescription(selected);
+    const selectedMeta = selected
+      ? [
+          formatWorkflowCategory(workflowCategory(selected)),
+          `${selected.stepCount} step${selected.stepCount === 1 ? "" : "s"}`,
+        ].filter(Boolean).join(" | ")
+      : "";
     context.innerHTML = `
       <span class="workflow-context-site">${escapeHTML(demo.shortLabel || demo.label)}</span>
       <span>${escapeHTML(demo.id === "portfolio" ? "Showing every repo workflow." : `Showing workflows mapped to ${demo.label}.`)}</span>
+      ${selected && description ? `
+        <span class="workflow-selected-description">
+          <strong>${escapeHTML(workflowLabel(selected))}</strong>
+          ${selectedMeta ? `<em>${escapeHTML(selectedMeta)}</em>` : ""}
+          ${escapeHTML(description)}
+        </span>
+      ` : ""}
     `;
   }
 
@@ -583,6 +934,8 @@ function renderWorkflows() {
       const pending = state.pendingWorkflows.has(workflow.path);
       const isSelected = workflow.path === state.selectedWorkflowPath;
       const label = workflowLabel(workflow);
+      const category = formatWorkflowCategory(workflowCategory(workflow));
+      const metaPrefix = category ? `${category} | ` : "";
       return `
         <button
           class="workflow-tab${isSelected ? " selected" : ""}${pending ? " pending" : ""}"
@@ -593,7 +946,7 @@ function renderWorkflows() {
           data-select-workflow="${escapeHTML(workflow.path)}"
         >
           <span class="workflow-tab-title">${escapeHTML(label)}</span>
-          <span class="workflow-tab-meta">${workflow.stepCount} step${workflow.stepCount === 1 ? "" : "s"}${pending ? " | submitting" : ""}</span>
+          <span class="workflow-tab-meta">${escapeHTML(metaPrefix)}${workflow.stepCount} step${workflow.stepCount === 1 ? "" : "s"}${pending ? " | submitting" : ""}</span>
         </button>
       `;
     })
@@ -1022,6 +1375,13 @@ function renderWorkflowOutput() {
     return;
   }
 
+  if (workflowResultFamily(workflow) === "storhy_mock") {
+    container.classList.add("storhy-mock-output");
+    renderStorhyMockResult(container, workflow);
+    initializeECharts(container);
+    return;
+  }
+
   container.classList.add("generic-workflow-output");
   renderGenericWorkflowResult(container, workflow);
 }
@@ -1055,9 +1415,479 @@ function renderOutputHeader(workflow) {
     return;
   }
 
+  if (workflowResultFamily(workflow) === "storhy_mock") {
+    kicker.textContent = workflowCategory(workflow) ? formatWorkflowCategory(workflowCategory(workflow)) : "STOR-HY Replica";
+    title.textContent = workflowLabel(workflow);
+    copy.textContent = workflowDescription(workflow) || "Python FMU replica workflow for the selected STOR-HY demonstrator.";
+    return;
+  }
+
   kicker.textContent = "Output";
   title.textContent = workflowLabel(workflow);
-  copy.textContent = workflow.path;
+  copy.textContent = workflowDescription(workflow) || workflow.path;
+}
+
+function renderStorhyMockResult(container, workflow) {
+  const result = state.genericResult;
+
+  if (!result || result.workflowPath !== workflow.path || result.state === "loading") {
+    container.innerHTML = '<div class="empty-state">Waiting for the latest successful STOR-HY replica workflow result…</div>';
+    return;
+  }
+
+  if (result.state === "empty") {
+    container.innerHTML = `<div class="empty-state">${escapeHTML(result.message)}</div>`;
+    return;
+  }
+
+  if (result.state === "error") {
+    container.innerHTML = `<div class="empty-state">Unable to load results for <code>${escapeHTML(result.runName)}</code>.<br>${escapeHTML(result.message)}</div>`;
+    return;
+  }
+
+  const payload = result.payload || {};
+  const stepEntries = Object.entries(payload.stepResults || {});
+  const syntheticCase = payload.stepResults?._synthetic_case || null;
+  const modelStepEntries = stepEntries.filter(([stepName]) => !stepName.startsWith("_"));
+  if (modelStepEntries.length === 0) {
+    container.innerHTML = '<div class="empty-state">The latest run did not publish structured step results.</div>';
+    return;
+  }
+
+  const dashboardConfig = storhyDashboardConfig(workflow);
+  const [summaryStepName, summaryStep] = preferredStorhySummaryStep(modelStepEntries);
+  const metricCards = buildStorhyMetricCards(modelStepEntries, dashboardConfig.summary || STORHY_DEFAULT_SUMMARY).join("");
+  const status = storhyStatus(summaryStep?.status_code);
+  const recommendation = storhyRecommendation(summaryStep?.recommendation_code);
+  const syntheticCaseMarkup = renderStorhySyntheticCase(syntheticCase);
+  const valueBlocks = renderStorhyValueBlocks(modelStepEntries, dashboardConfig.valueBlocks || []);
+  const configuredTraceCards = renderStorhyConfiguredTraceCards(modelStepEntries, dashboardConfig.charts || []);
+  const fallbackTraceCard = configuredTraceCards
+    ? ""
+    : renderStorhyFallbackTraceCard(modelStepEntries);
+  const traceCards = configuredTraceCards || fallbackTraceCard;
+
+  container.innerHTML = `
+    <article class="result-card storhy-summary-card">
+      <div class="result-head">
+        <h3>${escapeHTML(payload.runName || result.runName)}</h3>
+        <span class="result-kind-pill result-kind-storhy">STOR-HY Mock</span>
+      </div>
+      <div class="result-meta">
+        <div>${escapeHTML(payload.workflowPath || workflow.path)}</div>
+        <div>${modelStepEntries.length} model step${modelStepEntries.length === 1 ? "" : "s"}</div>
+        <div>summary step ${escapeHTML(summaryStepName)}</div>
+      </div>
+      ${buildGenericFallbackMarkup(result)}
+      <div class="storhy-model-chain" aria-label="Replica model chain">
+        ${modelStepEntries.map(([stepName]) => `<span>${escapeHTML(formatWorkflowCategory(stepName))}</span>`).join("")}
+      </div>
+      ${syntheticCaseMarkup}
+      ${metricCards ? `<div class="metric-grid storhy-metric-grid">${metricCards}</div>` : ""}
+      ${valueBlocks ? `<div class="storhy-visual-grid">${valueBlocks}</div>` : ""}
+      <div class="storhy-decision-grid">
+        <div class="storhy-decision-card">
+          <span class="metric-label">Status</span>
+          <strong>${escapeHTML(status.label)}</strong>
+          <p>${escapeHTML(status.description)}</p>
+        </div>
+        <div class="storhy-decision-card">
+          <span class="metric-label">Recommendation</span>
+          <strong>${escapeHTML(recommendation.label)}</strong>
+          <p>${escapeHTML(recommendation.description)}</p>
+        </div>
+      </div>
+    </article>
+    ${traceCards ? `<div class="trace-stack">${traceCards}</div>` : ""}
+  `;
+}
+
+function storhyDashboardConfig(workflow) {
+  return STORHY_DASHBOARD_CONFIG[workflow?.path] || {
+    summary: STORHY_DEFAULT_SUMMARY,
+    charts: [],
+    valueBlocks: [STORHY_RISK_VALUES, STORHY_BENEFIT_VALUES],
+  };
+}
+
+function preferredStorhySummaryStep(stepEntries) {
+  const preferredNames = ["kpi_assessment", "sustainability_cba", "predictive_maintenance"];
+  for (const name of preferredNames) {
+    const entry = stepEntries.find(([stepName]) => stepName === name);
+    if (entry) {
+      return entry;
+    }
+  }
+  return stepEntries[stepEntries.length - 1];
+}
+
+function buildStorhyMetricCards(stepEntries, metricSpecs) {
+  return metricSpecs
+    .map((metricSpec) => {
+      const spec = normalizeStorhyMetricSpec(metricSpec);
+      const resolved = findStorhyMetricValue(stepEntries, spec.key, spec.step);
+      return resolved ? { ...spec, ...resolved } : null;
+    })
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((metric) => `
+      <div class="metric-chip">
+        <span class="metric-label">${escapeHTML(metric.label)}</span>
+        <span class="metric-value">${escapeHTML(formatStorhyMetric(metric.key, metric.value))}</span>
+        <span class="metric-source">${escapeHTML(formatWorkflowCategory(metric.stepName))}</span>
+      </div>
+    `);
+}
+
+function normalizeStorhyMetricSpec(metricSpec) {
+  if (typeof metricSpec === "string") {
+    return {
+      key: metricSpec,
+      label: storhyMetricLabel(metricSpec),
+      step: "",
+    };
+  }
+  return {
+    key: metricSpec.key,
+    label: metricSpec.label || storhyMetricLabel(metricSpec.key),
+    step: metricSpec.step || "",
+  };
+}
+
+function storhyMetricLabel(key) {
+  const labels = {
+    availability_delta_percent: "Availability delta",
+    biofouling_index: "Biofouling index",
+    co2_delta_tonnes: "CO2 delta",
+    confidence: "Confidence",
+    corrosion_index: "Corrosion index",
+    damage_index: "Damage index",
+    flexibility_delta_percent: "Flexibility delta",
+    kpi_score: "KPI score",
+    opex_delta_eur: "OPEX delta",
+    power_mw: "Power",
+    recommendation_code: "Recommendation",
+    reservoir_level_m: "Reservoir level",
+    risk_index: "Risk index",
+    rul_days: "RUL days",
+    score: "Score",
+    sediment_exposure: "Sediment exposure",
+    soc_percent: "State of charge",
+    status_code: "Status",
+    valve_opening_percent: "Valve opening",
+    value_delta_eur: "Value delta",
+  };
+  return labels[key] || formatWorkflowCategory(key);
+}
+
+function findStorhyMetricValue(stepEntries, key, preferredStep = "") {
+  if (!key) {
+    return null;
+  }
+  if (preferredStep) {
+    const entry = stepEntries.find(([stepName]) => stepName === preferredStep);
+    if (entry?.[1]?.[key] !== undefined) {
+      return {
+        stepName: entry[0],
+        value: entry[1][key],
+      };
+    }
+  }
+  for (const [stepName, stepResult] of [...stepEntries].reverse()) {
+    if (stepResult?.[key] !== undefined) {
+      return {
+        stepName,
+        value: stepResult[key],
+      };
+    }
+  }
+  return null;
+}
+
+function formatStorhyMetric(key, value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value);
+  }
+  if (key === "status_code") {
+    return storhyStatus(numeric).label;
+  }
+  if (key === "recommendation_code") {
+    return storhyRecommendation(numeric).label;
+  }
+  if (key.endsWith("_percent")) {
+    return `${formatMetric(numeric)}%`;
+  }
+  if (key.endsWith("_eur")) {
+    return `${formatMetric(numeric)} EUR`;
+  }
+  if (key.endsWith("_tonnes")) {
+    return `${formatMetric(numeric)} t`;
+  }
+  if (key === "rul_days") {
+    return `${formatMetric(numeric)} days`;
+  }
+  return formatMetric(numeric);
+}
+
+function storhyStatus(code) {
+  switch (Number(code)) {
+    case 2:
+      return {
+        label: "Action needed",
+        description: "The replica chain estimates high operational or asset risk.",
+      };
+    case 1:
+      return {
+        label: "Watch",
+        description: "The model chain flags a moderate risk level worth monitoring.",
+      };
+    default:
+      return {
+        label: "On track",
+        description: "The current operating envelope is inside the nominal demo range.",
+      };
+  }
+}
+
+function storhyRecommendation(code) {
+  switch (Number(code)) {
+    case 1:
+      return { label: "Inspect high-risk component", description: "Prioritise condition data review before the next operating campaign." };
+    case 2:
+      return { label: "Optimise dispatch schedule", description: "Review the proposed dispatch envelope against value and flexibility targets." };
+    case 3:
+      return { label: "Reduce cycling or review fatigue", description: "Check start-stop exposure and fatigue margins for the active unit." };
+    case 4:
+      return { label: "Review cleaning or coating interval", description: "Harsh-fluid indicators suggest maintenance timing should be revisited." };
+    case 5:
+      return { label: "Review economics before rollout", description: "Benefits are uncertain relative to the assumed operating scenario." };
+    default:
+      return { label: "Continue current operating envelope", description: "No immediate intervention is recommended by the replica model chain." };
+  }
+}
+
+function preferredStorhyTrace(stepEntries) {
+  for (const [stepName, stepResult] of [...stepEntries].reverse()) {
+    const trace = extractSimulinkTrace(stepResult);
+    if (trace) {
+      return { stepName, trace };
+    }
+  }
+  return null;
+}
+
+function buildStorhyTraceSeries(trace) {
+  const preferredSignals = [
+    "score",
+    "risk_index",
+    "kpi_score",
+    "availability_delta_percent",
+    "flexibility_delta_percent",
+    "damage_index",
+    "rul_days",
+    "power_mw",
+  ];
+  const availableSignals = preferredSignals.filter((name) => Array.isArray(trace?.signals?.[name]));
+  return buildScalarTraceSeries(trace, availableSignals.slice(0, 5));
+}
+
+function renderStorhySyntheticCase(syntheticCase) {
+  if (!syntheticCase || typeof syntheticCase !== "object") {
+    return "";
+  }
+  const values = syntheticCase.values && typeof syntheticCase.values === "object" ? syntheticCase.values : {};
+  const valueRows = Object.entries(values)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .slice(0, 8)
+    .map(([key, value]) => `
+      <div class="storhy-case-value">
+        <span>${escapeHTML(formatWorkflowCategory(key))}</span>
+        <strong>${escapeHTML(formatMetricOrText(value))}</strong>
+      </div>
+    `)
+    .join("");
+  return `
+    <section class="storhy-case-card">
+      <div>
+        <span class="metric-label">Synthetic Case</span>
+        <h4>${escapeHTML(syntheticCase.name || "Synthetic operating case")}</h4>
+        <p>${escapeHTML(syntheticCase.operating_mode || syntheticCase.data_basis || "Representative synthetic data included in the workflow image.")}</p>
+      </div>
+      <div class="storhy-case-meta">
+        ${syntheticCase.site ? `<span>${escapeHTML(syntheticCase.site)}</span>` : ""}
+        ${syntheticCase.period ? `<span>${escapeHTML(syntheticCase.period)}</span>` : ""}
+        ${syntheticCase.source ? `<span>${escapeHTML(syntheticCase.source)}</span>` : ""}
+      </div>
+      ${valueRows ? `<div class="storhy-case-values">${valueRows}</div>` : ""}
+    </section>
+  `;
+}
+
+function renderStorhyFallbackTraceCard(stepEntries) {
+  const trace = preferredStorhyTrace(stepEntries);
+  const traceSeries = trace ? buildStorhyTraceSeries(trace.trace) : [];
+  if (!trace || traceSeries.length === 0) {
+    return "";
+  }
+  return renderTraceCard(
+    "Replica Model Trace",
+    `Selected output signals from step ${formatWorkflowCategory(trace.stepName)}.`,
+    trace.trace.times,
+    traceSeries,
+  );
+}
+
+function renderStorhyConfiguredTraceCards(stepEntries, chartSpecs) {
+  return chartSpecs
+    .map((chartSpec) => renderStorhyConfiguredTraceCard(stepEntries, chartSpec))
+    .filter(Boolean)
+    .join("");
+}
+
+function renderStorhyConfiguredTraceCard(stepEntries, chartSpec) {
+  const candidates = chartSpec.step
+    ? stepEntries.filter(([stepName]) => stepName === chartSpec.step)
+    : stepEntries;
+  for (const [stepName, stepResult] of candidates) {
+    const trace = extractSimulinkTrace(stepResult);
+    if (!trace) {
+      continue;
+    }
+    const series = buildStorhyConfiguredTraceSeries(trace, chartSpec.signals || []);
+    if (series.length === 0) {
+      continue;
+    }
+    return renderTraceCard(
+      chartSpec.title || "Workflow Trace",
+      chartSpec.description || `Signals from step ${formatWorkflowCategory(stepName)}.`,
+      trace.times,
+      series,
+    );
+  }
+  return "";
+}
+
+function buildStorhyConfiguredTraceSeries(trace, signalSpecs) {
+  return signalSpecs
+    .map((signalSpec, index) => {
+      const spec = normalizeStorhySignalSpec(signalSpec);
+      const values = trace.signals?.[spec.key];
+      if (!Array.isArray(values)) {
+        return null;
+      }
+      const samples = values
+        .slice(0, trace.times.length)
+        .map((value) => coerceTraceNumber(value));
+      if (samples.length === 0 || samples.every((value) => !Number.isFinite(value))) {
+        return null;
+      }
+      return {
+        name: spec.label,
+        color: spec.color || paletteColor(index),
+        values: samples,
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeStorhySignalSpec(signalSpec) {
+  if (typeof signalSpec === "string") {
+    return {
+      key: signalSpec,
+      label: storhyMetricLabel(signalSpec),
+      color: "",
+    };
+  }
+  return {
+    key: signalSpec.key,
+    label: signalSpec.label || storhyMetricLabel(signalSpec.key),
+    color: signalSpec.color || "",
+  };
+}
+
+function renderStorhyValueBlocks(stepEntries, blockSpecs) {
+  return blockSpecs
+    .map((blockSpec) => renderStorhyValueBlock(stepEntries, blockSpec))
+    .filter(Boolean)
+    .join("");
+}
+
+function renderStorhyValueBlock(stepEntries, blockSpec) {
+  const rows = (blockSpec.values || [])
+    .map((valueSpec) => {
+      const spec = normalizeStorhyMetricSpec(valueSpec);
+      const resolved = findStorhyMetricValue(stepEntries, spec.key, spec.step);
+      return resolved ? { ...spec, ...resolved } : null;
+    })
+    .filter(Boolean);
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const scaleMaxByType = rows.reduce((accumulator, row) => {
+    const type = storhyValueScaleType(row.key);
+    const current = accumulator[type] || storhyValueDefaultMax(type);
+    accumulator[type] = Math.max(current, Math.abs(Number(row.value) || 0));
+    return accumulator;
+  }, {});
+  return `
+    <section class="storhy-value-block">
+      <div class="storhy-value-head">
+        <h4>${escapeHTML(blockSpec.title || "Indicators")}</h4>
+        ${blockSpec.description ? `<p>${escapeHTML(blockSpec.description)}</p>` : ""}
+      </div>
+      <div class="storhy-value-rows">
+        ${rows.map((row) => renderStorhyValueRow(row, scaleMaxByType[storhyValueScaleType(row.key)] || 1)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function storhyValueScaleType(key) {
+  if (key.endsWith("_eur")) {
+    return "money";
+  }
+  if (key.endsWith("_tonnes")) {
+    return "co2";
+  }
+  if (key.endsWith("_percent")) {
+    return "percent";
+  }
+  if (key.endsWith("_index") || key === "confidence" || key === "sediment_exposure") {
+    return "ratio";
+  }
+  return "absolute";
+}
+
+function storhyValueDefaultMax(type) {
+  if (type === "ratio") {
+    return 1;
+  }
+  if (type === "percent") {
+    return 10;
+  }
+  return 1;
+}
+
+function renderStorhyValueRow(row, maxAbs) {
+  const numeric = Number(row.value);
+  const width = Number.isFinite(numeric)
+    ? clampNumber((Math.abs(numeric) / maxAbs) * 100, 3, 100)
+    : 0;
+  const signedClass = numeric < 0 ? " negative" : "";
+  return `
+    <div class="storhy-value-row">
+      <div class="storhy-value-label">
+        <span>${escapeHTML(row.label)}</span>
+        <strong>${escapeHTML(formatStorhyMetric(row.key, row.value))}</strong>
+      </div>
+      <div class="storhy-value-track" aria-hidden="true">
+        <span class="storhy-value-fill${signedClass}" style="width:${width}%"></span>
+      </div>
+      <span class="storhy-value-source">${escapeHTML(formatWorkflowCategory(row.stepName))}</span>
+    </div>
+  `;
 }
 
 function renderGenericWorkflowResult(container, workflow) {
@@ -1612,6 +2442,33 @@ function classifyAeStatsRun(run) {
     return {
       kind: "ae",
       label: "AE Event Stats",
+    };
+  }
+  if (cached?.state === "error") {
+    return {
+      kind: "missing",
+      label: "No Result Payload",
+    };
+  }
+  return {
+    kind: "pending",
+    label: "Unchecked Result",
+  };
+}
+
+function classifyStorhyMockRun(run) {
+  const workflow = workflowByPath(run?.workflowPath || "");
+  if (workflowResultFamily(workflow) !== "storhy_mock") {
+    return null;
+  }
+  if (String(run.phase || "").toLowerCase() !== "succeeded") {
+    return null;
+  }
+  const cached = state.genericResultsCache.get(run.name);
+  if (cached?.state === "ready") {
+    return {
+      kind: "storhy",
+      label: "STOR-HY Mock",
     };
   }
   if (cached?.state === "error") {
@@ -2519,7 +3376,7 @@ function renderRuns() {
 }
 
 function renderRunResultPill(run) {
-  const resultType = classifySimulinkRun(run) || classifyAeStatsRun(run);
+  const resultType = classifySimulinkRun(run) || classifyAeStatsRun(run) || classifyStorhyMockRun(run);
   return resultType
     ? `<span class="result-kind-pill result-kind-${escapeHTML(resultType.kind)}">${escapeHTML(resultType.label)}</span>`
     : "";

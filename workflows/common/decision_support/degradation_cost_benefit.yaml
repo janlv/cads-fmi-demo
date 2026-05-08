@@ -1,0 +1,52 @@
+metadata:
+  display_name: Degradation Cost Benefit
+  site_id: portfolio
+  category: decision_support
+  result_family: storhy_mock
+  description: Shared mock workflow comparing degradation cost with operational value.
+  tags: [cads, decision-support, economics]
+synthetic_case: data/storhy/synthetic/portfolio_common_case.yaml
+steps:
+  - name: condition_monitoring
+    fmu: fmu/models/ConditionMonitoringReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_values:
+      site_id: 0
+      scenario_id: 3
+      profile_id: 2
+    outputs: [score, confidence, risk_index, damage_index, rul_days, availability_delta_percent]
+  - name: predictive_maintenance
+    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_from:
+      input_score: condition_monitoring.score
+      input_confidence: condition_monitoring.confidence
+      input_risk_index: condition_monitoring.risk_index
+      input_damage_index: condition_monitoring.damage_index
+      input_rul_days: condition_monitoring.rul_days
+      input_availability_delta_percent: condition_monitoring.availability_delta_percent
+    outputs: [score, confidence, risk_index, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+  - name: sustainability_cba
+    fmu: fmu/models/SustainabilityCBAReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_values:
+      input_value_delta_eur: 42000.0
+      input_co2_delta_tonnes: 1200.0
+      input_flexibility_delta_percent: 6.5
+    start_from:
+      input_score: predictive_maintenance.score
+      input_confidence: predictive_maintenance.confidence
+      input_risk_index: predictive_maintenance.risk_index
+      input_opex_delta_eur: predictive_maintenance.opex_delta_eur
+      input_availability_delta_percent: predictive_maintenance.availability_delta_percent
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, opex_delta_eur, co2_delta_tonnes, availability_delta_percent]
+    trace:
+      outputs: [risk_index, kpi_score, value_delta_eur]
+      sample_every: 1.0
+    result: data/storhy/common/decision_support/degradation_cost_benefit_result.json

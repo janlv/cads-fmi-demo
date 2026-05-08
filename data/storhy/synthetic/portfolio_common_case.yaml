@@ -1,0 +1,11 @@
+name: Portfolio reference case
+site: STOR-HY current demonstrator set
+period: Synthetic 2025 representative operating week
+data_basis: Proposal-derived synthetic values for dashboard demonstration.
+operating_mode: Cross-site monitoring and decision-support benchmark.
+values:
+  availability_target_percent: 96.0
+  cycling_intensity_index: 0.58
+  maintenance_backlog_index: 0.24
+  energy_price_eur_mwh: 82.0
+  avoided_co2_tonnes_year: 12500.0

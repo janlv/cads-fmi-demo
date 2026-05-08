@@ -1,0 +1,36 @@
+metadata:
+  display_name: La Rance Corrosion Biofouling
+  site_id: la-rance
+  category: harsh_fluid
+  result_family: storhy_mock
+  description: Tracks corrosion, biofouling, coating performance, and water-parameter exposure.
+  tags: [la-rance, corrosion, biofouling, saltwater]
+synthetic_case: data/storhy/synthetic/la_rance_saltwater_low_head.yaml
+steps:
+  - name: corrosion_biofouling
+    fmu: fmu/models/CorrosionBiofoulingReplica.fmu
+    start_time: 0.0
+    stop_time: 180.0
+    step_size: 5.0
+    start_values: {site_id: 3, scenario_id: 3, profile_id: 1}
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, corrosion_index, biofouling_index, damage_index, rul_days, opex_delta_eur]
+    trace:
+      outputs: [corrosion_index, biofouling_index, risk_index, rul_days]
+      sample_every: 5.0
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 180.0
+    step_size: 5.0
+    start_from:
+      input_score: corrosion_biofouling.score
+      input_confidence: corrosion_biofouling.confidence
+      input_risk_index: corrosion_biofouling.risk_index
+      input_damage_index: corrosion_biofouling.damage_index
+      input_rul_days: corrosion_biofouling.rul_days
+      input_opex_delta_eur: corrosion_biofouling.opex_delta_eur
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, opex_delta_eur, rul_days]
+    trace:
+      outputs: [kpi_score, risk_index]
+      sample_every: 5.0
+    result: data/storhy/la_rance/harsh_fluid/corrosion_biofouling_result.json

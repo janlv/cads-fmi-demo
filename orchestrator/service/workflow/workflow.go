@@ -16,6 +16,8 @@ import (
 
 var ErrPathEscapesRoot = errors.New("path escapes repository root")
 
+const syntheticCaseStepName = "_synthetic_case"
+
 // Executor runs workflow YAML definitions directly against FMUs via FMIL.
 type Executor struct {
 	root         string
@@ -78,10 +80,20 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 		return nil, fmt.Errorf("workflow %s does not define any steps", absPath)
 	}
 
-	results := make(map[string]map[string]any, len(doc.Steps))
+	results := make(map[string]map[string]any, len(doc.Steps)+1)
+	if doc.SyntheticCase != nil {
+		syntheticCase, err := e.loadSyntheticCase(doc.SyntheticCase)
+		if err != nil {
+			return nil, fmt.Errorf("synthetic_case invalid: %w", err)
+		}
+		results[syntheticCaseStepName] = syntheticCase
+	}
 	for _, step := range doc.Steps {
 		if step.Name == "" {
 			return nil, fmt.Errorf("workflow %s contains a step without name", absPath)
+		}
+		if step.Name == syntheticCaseStepName {
+			return nil, fmt.Errorf("workflow step name %s is reserved", syntheticCaseStepName)
 		}
 		if _, exists := results[step.Name]; exists {
 			return nil, fmt.Errorf("workflow step %s defined multiple times", step.Name)
@@ -183,7 +195,8 @@ func (e *Executor) resolveRepoPath(path string, kind string) (string, error) {
 }
 
 type workflowFile struct {
-	Steps []workflowStep `yaml:"steps"`
+	SyntheticCase any            `yaml:"synthetic_case"`
+	Steps         []workflowStep `yaml:"steps"`
 }
 
 type workflowStep struct {
@@ -217,6 +230,69 @@ type traceSpec struct {
 	Outputs     []string `yaml:"outputs"`
 	Inputs      []string `yaml:"inputs"`
 	SampleEvery *float64 `yaml:"sample_every"`
+}
+
+func (e *Executor) loadSyntheticCase(spec any) (map[string]any, error) {
+	switch value := spec.(type) {
+	case string:
+		path := strings.TrimSpace(value)
+		if path == "" {
+			return nil, fmt.Errorf("path is required")
+		}
+		casePath, err := e.resolveRepoPath(path, "synthetic case")
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(casePath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", casePath, err)
+		}
+		var loaded map[string]any
+		if err := yaml.Unmarshal(data, &loaded); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", casePath, err)
+		}
+		loaded, err = normalizeStringMap(loaded)
+		if err != nil {
+			return nil, err
+		}
+		loaded["source"] = filepath.ToSlash(path)
+		return loaded, nil
+	case map[string]any:
+		return normalizeStringMap(value)
+	default:
+		return nil, fmt.Errorf("must be a repo-local YAML/JSON path or mapping")
+	}
+}
+
+func normalizeStringMap(input map[string]any) (map[string]any, error) {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		normalized, err := normalizeSyntheticCaseValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		output[key] = normalized
+	}
+	return output, nil
+}
+
+func normalizeSyntheticCaseValue(value any) (any, error) {
+	switch typed := value.(type) {
+	case map[string]any:
+		return normalizeStringMap(typed)
+	case []any:
+		items := make([]any, 0, len(typed))
+		for _, item := range typed {
+			normalized, err := normalizeSyntheticCaseValue(item)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, normalized)
+		}
+		return items, nil
+	default:
+		return typed, nil
+	}
 }
 
 func (e *Executor) buildStartValues(step workflowStep, results map[string]map[string]any) (map[string]string, error) {
