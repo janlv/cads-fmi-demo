@@ -54,6 +54,13 @@ By default this writes:
 Send that encrypted `.age` file to the receiver. Do not commit the encrypted
 file or the plaintext kubeconfig to git.
 
+If the receiver will fetch the encrypted file from your machine with
+`--get-from`, leave it at the default path:
+
+```text
+~/Kaizen_CADS/kubeconfig.age
+```
+
 If your kubeconfig is somewhere else, pass its path with `--input`:
 
 ```bash
@@ -76,4 +83,10 @@ The receiver can then decrypt it with:
 
 ```bash
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
+```
+
+Or, if they can SSH to your machine and the encrypted file is still there:
+
+```bash
+./scripts/age_decrypt_kubeconfig.sh --get-from your_user@your_host
 ```

@@ -65,6 +65,17 @@ When you receive the encrypted kubeconfig file, decrypt it:
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
 ```
 
+If the sender leaves the encrypted file on their machine and you have SSH
+access, fetch and decrypt it directly:
+
+```bash
+./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
+```
+
+This fetches `~/Kaizen_CADS/kubeconfig.age` from the sender host by default.
+Use `--remote-path /path/to/kubeconfig.age` if the sender wrote it somewhere
+else.
+
 This writes the dashboard kubeconfig to `~/Kaizen_CADS/kubeconfig`.
 
 Start the dashboard:
@@ -133,6 +144,9 @@ manager.
 
 # Receiver: decrypt the encrypted kubeconfig into ~/Kaizen_CADS/kubeconfig.
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
+
+# Receiver: fetch the encrypted kubeconfig from a remote SSH account and decrypt it.
+./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
 ```
 
 ## Main Files

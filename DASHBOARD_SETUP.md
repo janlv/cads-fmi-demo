@@ -108,6 +108,17 @@ The receiving colleague decrypts it into the dashboard default location:
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
 ```
 
+If the encrypted file stays on the sender's machine and the receiver has SSH
+access, they can fetch and decrypt it directly:
+
+```bash
+./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
+```
+
+This fetches `~/Kaizen_CADS/kubeconfig.age` from the sender host by default.
+Use `--remote-path /path/to/kubeconfig.age` if the sender wrote it somewhere
+else.
+
 They can then run:
 
 ```bash
