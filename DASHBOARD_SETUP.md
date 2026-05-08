@@ -60,8 +60,8 @@ The launcher resolves Kaizen credentials in this order:
 Use this when one colleague needs to send another colleague a kubeconfig without
 emailing the credential in plaintext.
 
-The receiving colleague first installs `age`, creates an identity, and sends
-only the printed public recipient key:
+The receiving colleague first installs `age` on the dashboard machine, creates
+an identity there, and sends only the printed public recipient key:
 
 ```bash
 sudo apt install age
@@ -95,9 +95,11 @@ prompt when needed and saves the key on the remote host as
 `age_encrypt_kubeconfig.sh --recipient-file`.
 
 The output includes a public key beginning with `age1...`. That public key is
-safe to send back to the person who has the kubeconfig. The private key stays in
-`~/.config/age/key.txt`. The public key is also stored at
-`~/.config/cads/age-recipient.txt` so the decrypt helper can use it later.
+safe to send back to the person who has the kubeconfig. The private key stays on
+the dashboard machine in `~/.config/age/key.txt`. The public key is also stored
+at `~/.config/cads/age-recipient.txt` so the decrypt helper can use it later.
+If that public key file is missing but the private key exists, the decrypt
+helper recreates it locally.
 
 The person who has the kubeconfig should follow
 [`AGE_SENDER.md`](AGE_SENDER.md). They will either send back an encrypted

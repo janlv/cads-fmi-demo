@@ -24,8 +24,8 @@ sudo apt install age
 # macOS: brew install age
 ```
 
-Create your local age identity and send the printed public recipient key to the
-person who has the Kaizen kubeconfig:
+On the dashboard machine, create your local age identity and send the printed
+public recipient key to the person who has the Kaizen kubeconfig:
 
 ```bash
 ./scripts/age_create_identity.sh
@@ -57,9 +57,11 @@ prompt when needed and saves the key on the remote host as
 `age_encrypt_kubeconfig.sh --recipient-file`.
 
 The public key starts with `age1...` and is safe to share. The private key stays
-in `~/.config/age/key.txt` by default and must not be shared. The script also
-stores the public key at `~/.config/cads/age-recipient.txt`; the decrypt helper
-uses that file when fetching credentials from a remote host.
+on the dashboard machine in `~/.config/age/key.txt` by default and must not be
+shared. The script also stores the public key at
+`~/.config/cads/age-recipient.txt`; the decrypt helper uses that file when
+fetching credentials from a remote host. If that public key file is missing but
+the private key exists, the decrypt helper recreates it locally.
 
 When you receive the encrypted kubeconfig file, decrypt it:
 

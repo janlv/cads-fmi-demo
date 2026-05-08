@@ -12,7 +12,7 @@ sudo apt install age
 # macOS: brew install age
 ```
 
-Ask the receiver to run:
+Ask the receiver to run this on the dashboard machine:
 
 ```bash
 ./scripts/age_create_identity.sh

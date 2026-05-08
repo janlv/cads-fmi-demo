@@ -42,6 +42,23 @@ cleanup() {
     fi
 }
 
+ensure_recipient_file() {
+    if [[ -f "$recipient_file" ]]; then
+        return
+    fi
+
+    if ! command -v age-keygen >/dev/null 2>&1; then
+        echo "error: age-keygen is not installed or not on PATH" >&2
+        echo "hint: run scripts/age_create_identity.sh on this machine first" >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$recipient_file")"
+    age-keygen -y "$identity" > "$recipient_file"
+    chmod 600 "$recipient_file"
+    echo "Derived public age recipient file from local identity: $recipient_file"
+}
+
 fetch_remote_input() {
     local source="$1"
     local path="$2"
@@ -62,11 +79,7 @@ fetch_remote_input() {
         return 1
     fi
 
-    if [[ ! -f "$recipient_file" ]]; then
-        echo "error: public age recipient file not found: $recipient_file" >&2
-        echo "hint: run scripts/age_create_identity.sh first" >&2
-        return 1
-    fi
+    ensure_recipient_file
 
     recipient="$(<"$recipient_file")"
     if [[ -z "$recipient" || "$recipient" != age1* || "$recipient" == *[[:space:]]* ]]; then
