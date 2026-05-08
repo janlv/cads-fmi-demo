@@ -68,6 +68,32 @@ sudo apt install age
 ./scripts/age_create_identity.sh
 ```
 
+Then they send the public key to the credential sender using one of these
+options.
+
+Open a prefilled email draft:
+
+```bash
+./scripts/age_create_identity.sh --mailto sender@example.com
+```
+
+Copy the public key to the clipboard:
+
+```bash
+./scripts/age_create_identity.sh --copy
+```
+
+Send the public key directly to the sender's machine over SSH:
+
+```bash
+./scripts/age_create_identity.sh --send-to sender_user@sender_host
+```
+
+The SSH command sends only the public key. It uses the normal `ssh` password
+prompt when needed and saves the key on the remote host as
+`~/.config/cads/age-recipient.txt`, which the sender can pass to
+`age_encrypt_kubeconfig.sh --recipient-file`.
+
 The output includes a public key beginning with `age1...`. That public key is
 safe to send back to the person who has the kubeconfig. The private key stays in
 `~/.config/age/key.txt`.

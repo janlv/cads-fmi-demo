@@ -18,6 +18,22 @@ Ask the receiver to run:
 ./scripts/age_create_identity.sh
 ```
 
+They can send you the public key by email, chat, or SSH. If they know your email
+address, they can open a prefilled email draft:
+
+```bash
+./scripts/age_create_identity.sh --mailto your.address@example.com
+```
+
+If they can SSH to your machine, they can send the public key directly:
+
+```bash
+./scripts/age_create_identity.sh --send-to your_user@your_host
+```
+
+That uses the normal `ssh` password prompt when needed and writes their public
+key to `~/.config/cads/age-recipient.txt` on your machine.
+
 They should send you only the printed public recipient key. It starts with
 `age1...`. Do not ask for their private key.
 
@@ -45,6 +61,15 @@ If your kubeconfig is somewhere else, pass its path with `--input`:
     --recipient age1_receiver_public_key_here \
     --input /path/to/kubeconfig \
     --out /path/to/kubeconfig.age
+```
+
+If the receiver used `--send-to`, use the recipient file written on your
+machine:
+
+```bash
+./scripts/age_encrypt_kubeconfig.sh \
+    --recipient-file ~/.config/cads/age-recipient.txt \
+    --input ~/Kaizen_CADS/kubeconfig
 ```
 
 The receiver can then decrypt it with:

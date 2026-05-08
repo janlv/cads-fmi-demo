@@ -31,6 +31,31 @@ person who has the Kaizen kubeconfig:
 ./scripts/age_create_identity.sh
 ```
 
+Then send the public key to the credential sender using one of these options.
+
+Open a prefilled email draft:
+
+```bash
+./scripts/age_create_identity.sh --mailto sender@example.com
+```
+
+Copy the key to your clipboard and paste it into your preferred message channel:
+
+```bash
+./scripts/age_create_identity.sh --copy
+```
+
+Send the key directly to the sender's machine over SSH:
+
+```bash
+./scripts/age_create_identity.sh --send-to sender_user@sender_host
+```
+
+The SSH command sends only the public key. It uses the normal `ssh` password
+prompt when needed and saves the key on the remote host as
+`~/.config/cads/age-recipient.txt`, which the sender can pass to
+`age_encrypt_kubeconfig.sh --recipient-file`.
+
 The public key starts with `age1...` and is safe to share. The private key stays
 in `~/.config/age/key.txt` by default and must not be shared.
 
@@ -99,6 +124,12 @@ manager.
 
 # Receiver: create an age identity and print the public recipient key.
 ./scripts/age_create_identity.sh
+
+# Receiver: open a prefilled email draft for sending the public key.
+./scripts/age_create_identity.sh --mailto sender@example.com
+
+# Receiver: send the public key to a remote SSH account.
+./scripts/age_create_identity.sh --send-to sender_user@sender_host
 
 # Receiver: decrypt the encrypted kubeconfig into ~/Kaizen_CADS/kubeconfig.
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
