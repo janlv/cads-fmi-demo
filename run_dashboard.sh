@@ -5,10 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
-if [[ -f "$ROOT_DIR/scripts/host_ca_env.sh" ]]; then
-    # shellcheck disable=SC1090
-    source "$ROOT_DIR/scripts/host_ca_env.sh" "$ROOT_DIR" >/dev/null 2>&1 || true
-fi
+cads_source_host_ca "$ROOT_DIR" || true
 
 export PATH="$ROOT_DIR/.local/bin:$PATH"
 

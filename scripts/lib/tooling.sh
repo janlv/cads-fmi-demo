@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared CLI/tool installation helpers for repo scripts.
 
-if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
+_cads_tooling_shell_pid="${BASHPID:-$$}"
+if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
     CADS_GO_VERSION="${CADS_GO_VERSION:-1.22.2}"
     CADS_ARGO_VERSION="${CADS_ARGO_VERSION:-v3.5.6}"
     CADS_KUBECTL_VERSION="${CADS_KUBECTL_VERSION:-v1.30.0}"
@@ -36,7 +37,10 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
             log_error "Missing expected file: $apt_package_list"
             exit 1
         fi
-        mapfile -t packages < <(grep -vE '^\s*(#|$)' "$apt_package_list")
+        local packages=()
+        while IFS= read -r pkg; do
+            packages+=("$pkg")
+        done < <(grep -vE '^\s*(#|$)' "$apt_package_list")
         if ((${#packages[@]} == 0)); then
             return
         fi
@@ -219,5 +223,5 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$BASHPID" ]]; then
         fi
     }
 
-    CADS_TOOLING_SH_LOADED="$BASHPID"
+    CADS_TOOLING_SH_LOADED="$_cads_tooling_shell_pid"
 fi

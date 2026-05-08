@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared runtime helpers for repo scripts.
 
-if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$BASHPID" ]]; then
+_cads_runtime_shell_pid="${BASHPID:-$$}"
+if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$_cads_runtime_shell_pid" ]]; then
     cads_setup_local_path() {
         local root_dir="$1"
         local local_bin_dir="$root_dir/.local/bin"
@@ -18,7 +19,7 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$BASHPID" ]]; then
 
     cads_sanitize_resource_name() {
         local value="$1"
-        value="${value,,}"
+        value="$(printf '%s\n' "$value" | tr '[:upper:]' '[:lower:]')"
         value="$(echo "$value" | tr -c 'a-z0-9.-' '-')"
         while [[ "$value" =~ ^[^a-z0-9]+ ]]; do
             value="${value#?}"
@@ -99,10 +100,24 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$BASHPID" ]]; then
 
     cads_source_host_ca() {
         local root_dir="$1"
+        local had_errexit=0
+        local status=0
         if [[ -f "$root_dir/scripts/host_ca_env.sh" ]]; then
+            case "$-" in
+                *e*)
+                    had_errexit=1
+                    set +e
+                    ;;
+            esac
             # shellcheck disable=SC1090
-            source "$root_dir/scripts/host_ca_env.sh" "$root_dir" >/dev/null 2>&1 || true
+            source "$root_dir/scripts/host_ca_env.sh" "$root_dir" >/dev/null 2>&1
+            status=$?
+            if ((had_errexit)); then
+                set -e
+            fi
+            return "$status"
         fi
+        return 0
     }
 
     cads_resolve_kubeconfig() {
@@ -253,5 +268,5 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$BASHPID" ]]; then
         return 1
     }
 
-    CADS_RUNTIME_SH_LOADED="$BASHPID"
+    CADS_RUNTIME_SH_LOADED="$_cads_runtime_shell_pid"
 fi

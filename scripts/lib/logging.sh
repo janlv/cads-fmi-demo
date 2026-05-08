@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared colorized logging helpers for repo scripts.
 
-if [[ "${CADS_LOGGING_SH_LOADED:-}" != "$BASHPID" ]]; then
+_cads_logging_shell_pid="${BASHPID:-$$}"
+if [[ "${CADS_LOGGING_SH_LOADED:-}" != "$_cads_logging_shell_pid" ]]; then
     if [[ -t 1 ]]; then
         CADS_COLOR_STEP=$'\033[1;34m'
         CADS_COLOR_INFO=$'\033[1;36m'
@@ -123,7 +124,10 @@ if [[ "${CADS_LOGGING_SH_LOADED:-}" != "$BASHPID" ]]; then
             "$CADS_COLOR_DIM" "$state_label" "$CADS_COLOR_RESET" "$max_lines"
 
         while true; do
-            mapfile -t lines < <(tail -n "$max_lines" "$logfile" 2>/dev/null || true)
+            lines=()
+            while IFS= read -r line; do
+                lines+=("$line")
+            done < <(tail -n "$max_lines" "$logfile" 2>/dev/null || true)
             line_count="$(wc -l <"$logfile" 2>/dev/null | tr -d '[:space:]')"
             if [[ -z "$line_count" ]]; then
                 line_count=0
@@ -232,5 +236,5 @@ if [[ "${CADS_LOGGING_SH_LOADED:-}" != "$BASHPID" ]]; then
         _cads_run_with_prefix "$@"
     }
 
-    CADS_LOGGING_SH_LOADED="$BASHPID"
+    CADS_LOGGING_SH_LOADED="$_cads_logging_shell_pid"
 fi
