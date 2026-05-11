@@ -73,18 +73,18 @@ export ARGO_TOKEN=...
 From the repo root you can also use the convenience launcher:
 
 ```bash
-./run_dashboard.sh
+./run_playground.sh
 ```
 
-By default, `run_dashboard.sh` automatically prepares a remote image when
-needed and reuses the last prepared image when the git tree is clean and
-unchanged. Before starting the new service, it also stops an older dashboard
-session already listening on the selected port.
+By default, `run_playground.sh` connects the local dashboard to the configured
+Playground image without building or publishing. Before starting the new
+service, it also stops an older dashboard session already listening on the
+selected port.
 
-When remote preparation needs to publish a new `ghcr.io/...` image, the
-launcher now tries to authenticate `podman` or `docker` to GHCR automatically
-using `GHCR_TOKEN`, `GITHUB_TOKEN`, or a valid `gh auth login -h github.com -s write:packages`
-session.
+When you need to publish a new bundled `ghcr.io/...` image, use
+`./run_publish.sh`. It tries to authenticate `podman` or `docker` to GHCR
+using `GHCR_TOKEN`, `GITHUB_TOKEN`, or a valid
+`gh auth login -h github.com -s write:packages` session.
 
 The dashboard is still a frontend for the hosted Kaizen path, so the auth model
 has two parts:
@@ -105,13 +105,13 @@ Hosted workflow submissions also project the Kaizen S3 secret
 If you want to force a fresh remote image build/publish before launch:
 
 ```bash
-./run_dashboard.sh --prepare-remote
+./run_publish.sh
 ```
 
 If you want to skip automatic remote preparation entirely:
 
 ```bash
-./run_dashboard.sh --no-prepare-remote
+./run_playground.sh
 ```
 
 You can still pass `--image ghcr.io/org/cads-demo:demo123` if you want to pin

@@ -1,33 +1,69 @@
 # Environment Preparation
 
-The repository now exposes separate local and remote preparation paths:
+The repository has one main host preparation path:
 
 ```bash
-./prepare_local.sh
-./prepare_remote.sh --image ghcr.io/org/cads-demo:demo123 --kubeconfig ~/Kaizen_CADS/kubeconfig
+./prepare.sh
+./run_publish.sh
 ```
 
-## Local preparation
+`prepare.sh` auto-detects Linux vs macOS but keeps the workflow the same on both
+systems. It installs repo-local Go, Argo CLI, and kubectl under `./.local/` and
+checks that `age` is available for encrypted kubeconfig exchange.
 
-`prepare_local.sh` keeps the local Minikube demo self-contained on Debian/Ubuntu
-hosts. It installs Podman and a few helper packages, downloads the Go toolchain
-plus the required CLIs (Argo, kubectl, Minikube) into `./.local/`, and starts a
-rootless Minikube profile named `minikube`.
+## Host preparation
 
-1. Installs the package list in `scripts/package-lists/linux-apt.txt` using
-   `sudo apt-get`. The list currently contains Podman and helper tools used by
-   Minikube.
+The default path is intentionally lean. It prepares the hosted dashboard and
+remote workflow client tooling without requiring a container runtime or starting
+a local cluster:
+
+```bash
+./prepare.sh
+```
+
+When you also want a fully local Minikube demo loop, add one option on either
+Linux or macOS:
+
+```bash
+./prepare.sh --with-local-minikube
+```
+
+On Debian/Ubuntu, `prepare.sh` can install the minimal packages listed in
+`scripts/package-lists/linux-dashboard-apt.txt` using `sudo apt-get`. When
+`--with-local-minikube` or `--require-container-runtime` is used, it installs
+the broader local/build package list in `scripts/package-lists/linux-apt.txt`.
+On macOS, install small host tools such as `age`, Git, and Podman/Docker with
+Homebrew, MacPorts, or your normal desktop installer.
+
+1. Installs/checks small host prerequisites where the OS supports it.
 2. Downloads Go `1.22.2` and extracts it to `./.local/go`. All repo scripts
    prepend `./.local/go/bin` to `PATH`, so no shell config changes are required.
-3. Fetches the Argo CLI (`v3.5.6`), `kubectl` (`v1.30.0`), and Minikube
-   (`v1.33.1`) directly from their upstream release URLs and installs them to
-   `./.local/bin`.
-4. Starts Minikube with the Podman driver when available (falls back to Docker
-   otherwise) so the demo always runs against a clean local cluster.
+3. Fetches the Argo CLI (`v3.5.6`) and `kubectl` (`v1.30.0`) directly from
+   their upstream release URLs and installs them to `./.local/bin`.
+4. Verifies Podman/Docker only when you pass `--require-container-runtime` or
+   `--with-local-minikube`.
+5. Installs and starts Minikube only when `--with-local-minikube` is supplied.
+
+For the normal **Playground** path, continue with
+`./run_playground.sh`. Build/publish work is the separate
+**Publish to Playground** path and requires Podman or Docker.
+
+If your network performs TLS inspection, Podman image pulls may fail before the
+bootstrap container can start. Place corporate CA `.crt`/`.pem` files under
+`scripts/certs/`, then run:
+
+```bash
+scripts/install_podman_ca.sh --cert-dir scripts/certs
+podman pull docker.io/library/python:3.11-slim
+```
 
 ## Remote preparation
 
-`prepare_remote.sh` is the minimal hosted-playground preflight. It prepares a
+If you need to publish freshly built hosted images, use `./run_publish.sh`.
+It wraps GHCR authentication, remote preparation, and dashboard launch. The
+lower-level commands live under `scripts/commands/` for expert use.
+
+`scripts/commands/prepare_remote.sh` is the minimal hosted-playground preflight. It prepares a
 hosted image tag for the Kaizen playground and can auto-generate the remote tag
 when `--image` is omitted.
 
@@ -41,7 +77,7 @@ when `--image` is omitted.
    container engine via `scripts/publish_image.sh`.
 
 Corporate TLS inspection can break image pulls. Drop any required certificate
-bundles under `scripts/certs/` (`.crt`/`.pem` files) and `build.sh` will sync
+bundles under `scripts/certs/` (`.crt`/`.pem` files) and `scripts/commands/build.sh` will sync
 them into the Minikube VM before loading the container image. Host-side tools
 (`kubectl`, `helm`, etc.) can reuse the same bundle by running
 `source scripts/host_ca_env.sh` (optionally pass another target directory, e.g.,
@@ -64,5 +100,6 @@ manually:
 - For remote usage, make sure you have either `ARGO_TOKEN` set or a kubeconfig
   that contains the playground token.
 
-Once those prerequisites exist, `build.sh`, `run_local.sh`, and `run_remote.sh`
-can execute without touching system packages.
+Once those prerequisites exist, `scripts/commands/build.sh`,
+`scripts/commands/run_local.sh`, and `scripts/commands/run_remote.sh` can
+execute without touching system packages.

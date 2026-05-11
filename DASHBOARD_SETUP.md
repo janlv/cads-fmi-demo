@@ -3,19 +3,54 @@
 This guide is for users who want to run their own local browser dashboard while
 launching workflows into the shared Kaizen Argo playground.
 
+For the OS-independent user paths, see [`USER_PATHS.md`](USER_PATHS.md).
+
 The dashboard itself runs on your laptop at `http://localhost:8080/`. Workflow
 pods run remotely in Kaizen using the configured container image.
+You can launch new workflow runs from the dashboard and inspect recent runs.
 
 ## Prerequisites
 
-- Linux shell with `bash`
+- Bash shell on Linux or macOS
 - Git
-- Go and a local container engine are installed automatically by the project
-  helpers when needed
+- Go is installed locally by the project helpers when needed
+- A local container engine only when building/publishing images or using local
+  Minikube development
 - Access to the Kaizen Argo playground through either an Argo bearer token or a
   kubeconfig
-- Optional: GitHub/GHCR package-write access if you need to publish a freshly
-  built workflow image
+- Optional: a published workflow image tag if you want this dashboard to launch
+  the exact same workflows as another machine
+- GitHub/GHCR package-write access only if you need to publish a freshly built
+  workflow image
+
+### Host Preparation
+
+Use the same prepare command on Linux and macOS:
+
+```bash
+./prepare.sh
+```
+
+The default path prepares hosted dashboard client dependencies only. It does not
+start a local cluster, and it does not require Podman/Docker unless you later
+build/publish images.
+
+On Debian/Ubuntu, `prepare.sh` can install package prerequisites through
+`apt-get`. On macOS, install host tools such as `age`, Git, and Podman/Docker
+with Homebrew, MacPorts, or the normal desktop installer.
+
+`podman info` or `docker info` must succeed only for build/publish work or
+local Minikube development. The connect-only dashboard path does not need a
+container runtime.
+
+If Docker Hub or GHCR pulls fail with an unknown certificate authority error,
+copy your corporate CA certificates into `scripts/certs/` and sync them into the
+Podman VM:
+
+```bash
+scripts/install_podman_ca.sh --cert-dir scripts/certs
+podman pull docker.io/library/python:3.11-slim
+```
 
 ## 1. Clone The Repo
 
@@ -45,7 +80,7 @@ mkdir -p ~/Kaizen_CADS
 Explicit kubeconfig path:
 
 ```bash
-./run_dashboard.sh --kubeconfig /path/outside/this/repo/kubeconfig
+./run_playground.sh --kubeconfig /path/outside/this/repo/kubeconfig
 ```
 
 The launcher resolves Kaizen credentials in this order:
@@ -65,6 +100,7 @@ an identity there, and sends only the printed public recipient key:
 
 ```bash
 sudo apt install age
+# macOS: brew install age
 ./scripts/age_create_identity.sh
 ```
 
@@ -128,14 +164,41 @@ sender stores it somewhere else.
 They can then run:
 
 ```bash
-./run_dashboard.sh
+./run_playground.sh
 ```
 
 The scripts are thin wrappers around `age`; they do not store keys in the repo.
 The generated private key, decrypted kubeconfig, and encrypted handoff file stay
 under the user's home directory by default.
 
-## 3. Prepare Registry Access When Needed
+## 3. Choose A User Path
+
+### Playground Dashboard
+
+Use this when another machine, such as your Linux PC, already published the
+workflow image and you want the Mac dashboard to connect to the same Playground
+environment.
+
+On the machine that already works, print the image tag:
+
+```bash
+source .local/state/dashboard-remote-image.env
+printf '%s\n' "$cached_image"
+```
+
+On this machine, start the dashboard without building or publishing:
+
+```bash
+./run_playground.sh
+```
+
+If you need to override the configured image:
+
+```bash
+./run_playground.sh --image ghcr.io/org/cads-fmi-demo:tag
+```
+
+### Publish To Playground
 
 The dashboard can reuse an already published image. In that case, Kaizen
 credentials are enough.
@@ -144,31 +207,50 @@ If the repository has local changes and the launcher needs to build and publish
 a new image, authenticate your local machine to GHCR with package-write access:
 
 ```bash
-gh auth login -h github.com -s write:packages
+./run_publish.sh
 ```
 
-You can also export `GHCR_TOKEN` or `GITHUB_TOKEN` in your shell. These tokens
-are used only by the local container engine when pushing the image.
+`run_publish.sh` uses `GHCR_TOKEN`, `GITHUB_TOKEN`, or your existing `gh`
+login to authenticate GHCR when needed. These tokens are used only by the local
+container engine when pushing the image.
 
-## 4. Build Demo FMUs For A Fresh Checkout
+Publishing updates the configured Playground image tag with a full repo image.
+It does not publish just one workflow file. If you replaced one mock workflow,
+test that one workflow with Local Dev first, then run:
 
-If you want to run the bundled demo workflows from a fresh checkout, build the
-Python FMUs once:
+```bash
+./run_publish.sh
+```
+
+### Local Dev
+
+Use this when you want quick CLI-only local workflow/model testing without
+Kaizen Playground, GHCR publishing, or a dashboard:
+
+```bash
+./run_local_dev.sh workflows/python_chain.yaml
+```
+
+## 4. Build Demo FMUs When Publishing Or Developing Locally
+
+Playground Dashboard users who connect to an existing published image do not need to build
+FMUs locally. If you use the Publish to Playground or Local Dev path from a fresh checkout,
+build the Python FMUs once:
 
 ```bash
 ./create_fmu/build_python_fmus.sh
 ```
 
-The dashboard launcher can build the Go service and the workflow image when
-needed, but FMUs still need to exist under `fmu/models/` for workflows that
+The Publish and Local Dev launchers can build the Go service and workflow image
+when needed, but FMUs still need to exist under `fmu/models/` for workflows that
 reference them.
 
 ## 5. Start The Dashboard
 
-Default launch:
+Default Playground launch:
 
 ```bash
-./run_dashboard.sh
+./run_playground.sh
 ```
 
 Then open:
@@ -180,17 +262,17 @@ http://localhost:8080/
 Useful variants:
 
 ```bash
-# Force a fresh remote image build and publish.
-./run_dashboard.sh --prepare-remote
+# Inspect existing runs without launching new workflows from a pinned image.
+./run_playground.sh
 
-# Start the local dashboard process without remote image preparation.
-./run_dashboard.sh --no-prepare-remote
-
-# Pin an explicit image tag for dashboard-launched runs.
-./run_dashboard.sh --image ghcr.io/org/cads-demo:demo123
+# Build/publish a new Playground image and start the dashboard.
+./run_publish.sh
 
 # Use a non-default port.
-./run_dashboard.sh --addr :8081
+./run_playground.sh --addr :8081
+
+# Local workflow/model development without Playground.
+./run_local_dev.sh workflows/python_chain.yaml
 ```
 
 ## Credential Handling
@@ -243,10 +325,10 @@ If `remoteEnabled` is `false`, inspect the `problems` field. Common causes are:
 - the kubeconfig points at the wrong cluster or namespace
 - the selected remote image is not published or cannot be pulled by Kaizen
 
-To stop an old dashboard occupying port `8080`, rerun `./run_dashboard.sh`; the
+To stop an old dashboard occupying port `8080`, rerun `./run_playground.sh`; the
 launcher stops previous dashboard sessions for this repo automatically. If a
 non-dashboard process owns the port, either stop that process or use:
 
 ```bash
-./run_dashboard.sh --addr :8081
+./run_playground.sh --addr :8081
 ```

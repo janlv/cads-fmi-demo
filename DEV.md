@@ -1,15 +1,15 @@
 # Developer Notes
 
 This document captures optional manual steps and environment details that most
-users do not need when following `prepare_local.sh` + `build.sh`. Use it when you want
-to tinker with the tooling directly.
+users do not need when following the root entrypoints. Use it when you want to
+tinker with the tooling directly.
 
 ---
 
 ## Go workflow binaries
 
-`build.sh` already compiles both executables and drops them in `bin/`. To build
-them yourself (for example, while iterating on the code), run:
+`scripts/commands/build.sh` already compiles both executables and drops them in
+`bin/`. To build them yourself (for example, while iterating on the code), run:
 
 ```bash
 cd orchestrator/service
@@ -37,8 +37,9 @@ Useful extras:
   the workflow runner evolves).
 - Set `GODEBUG=cgocheck=2` while iterating on the FMIL bindings to surface cgo
   misuse early.
-- When working with alternative FMIL installs, pass `--fmil-home` to `build.sh`
-  or export `FMIL_HOME` before running the manual commands above.
+- When working with alternative FMIL installs, pass `--fmil-home` to
+  `scripts/commands/build.sh` or export `FMIL_HOME` before running the manual
+  commands above.
 
 ---
 
@@ -75,13 +76,14 @@ Tips:
 
 ## Container image tweaks
 
-- `build.sh` compiles the Go binaries and builds the container image (preferring
-  Podman but falling back to Docker). Re-run it whenever you change the Go code,
-  FMUs, or Dockerfile contents.
-- `run_local.sh` now handles Minikube CA sync, Argo controller installation,
-  image preload, and PVC-backed local submission.
-- `prepare_remote.sh` validates hosted-Argo access and publishes the selected
-  image tag; `run_remote.sh` submits the hosted workflow manifest.
+- `scripts/commands/build.sh` compiles the Go binaries and builds the container
+  image (preferring Podman but falling back to Docker). Re-run it whenever you
+  change the Go code, FMUs, or Dockerfile contents.
+- `scripts/commands/run_local.sh` handles Minikube CA sync, Argo controller
+  installation, image preload, and PVC-backed local submission.
+- `scripts/commands/prepare_remote.sh` validates hosted-Argo access and
+  publishes the selected image tag; `scripts/commands/run_remote.sh` submits
+  the hosted workflow manifest.
 - Override `--image` to push/tag alternative names and `--fmil-home` to reuse an
   existing FMIL installation rather than installing under `./.local/`.
 - To debug inside the container, start an interactive shell:
@@ -106,7 +108,8 @@ Tips:
   renders the hosted-Argo manifest into `deploy/argo/`.
 - Customize the manifests (additional env vars, volumes, secrets) by editing the
   generated files before applying or by extending the generator script.
-- `run_local.sh workflows/foo.yaml` validates the Minikube context, applies the
-  PVC manifest, and delegates to `scripts/run_argo_workflow.sh`.
-- `run_remote.sh workflows/foo.yaml --image ghcr.io/... --kubeconfig ...`
+- `scripts/commands/run_local.sh workflows/foo.yaml` validates the Minikube
+  context, applies the PVC manifest, and delegates to
+  `scripts/run_argo_workflow.sh`.
+- `scripts/commands/run_remote.sh workflows/foo.yaml --image ghcr.io/... --kubeconfig ...`
   generates the hosted manifest and submits it through the remote Argo server.

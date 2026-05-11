@@ -31,11 +31,12 @@ Only the scheduler and operator surface change.
 
 The local path is the supported in-repo Kubernetes development flow:
 
-- `prepare_local.sh` installs local tooling and boots Minikube
-- `build.sh` builds the container image and Go binaries
-- `run_local.sh` drives local Argo submission
+- `./run_local_dev.sh` is the user-facing entrypoint
+- `scripts/commands/prepare_local.sh` installs local tooling and boots Minikube
+- `scripts/commands/build.sh` builds the container image and Go binaries
+- `scripts/commands/run_local.sh` drives local Argo submission
 
-`run_local.sh` still depends on:
+`scripts/commands/run_local.sh` still depends on:
 
 - `scripts/run_argo_workflow.sh`
 - `scripts/generate_manifests.sh`
@@ -48,17 +49,21 @@ supported path, not a legacy leftover.
 
 The hosted path targets `argoworkflows.cads.kzslab.dev`:
 
-- `prepare_remote.sh` validates Argo access and publishes a hosted image tag
-- `run_remote.sh` generates a hosted manifest and submits it to the playground
+- `./run_publish.sh` is the user-facing entrypoint for publishing the bundled
+  image and starting the dashboard
+- `scripts/commands/prepare_remote.sh` validates Argo access and publishes a
+  hosted image tag
+- `scripts/commands/run_remote.sh` generates a hosted manifest and submits it
+  to the playground
 
 The hosted workflow runs the same CADS image, but without the local PVC/configmap
 assumptions used by the Minikube flow.
 
 ### Dashboard path
 
-`run_dashboard.sh` starts a local browser UI that talks to the hosted Kaizen
-playground through the local Go service. The browser never talks directly to the
-Argo server. Instead:
+`./run_playground.sh` starts a local browser UI that talks to the hosted Kaizen
+playground through the local Go service without building or publishing. The
+browser never talks directly to the Argo server. Instead:
 
 1. the local service resolves auth and configuration
 2. the service lists workflows and hosted runs
@@ -99,14 +104,13 @@ workflows.
 
 The supported commands now map cleanly to responsibilities:
 
-- **Local environment**: `prepare_local.sh`
-- **Build**: `build.sh`
-- **Local execution**: `run_local.sh`
-- **Hosted image preparation**: `prepare_remote.sh`
-- **Hosted execution**: `run_remote.sh`
-- **Hosted browser UI**: `run_dashboard.sh`
-- **Hosted inspection helpers**: `run_argo.sh`, `run_list_s3_objects.sh`,
-  `run_inspect_s3_object.sh`
+- **Playground dashboard**: `./run_playground.sh`
+- **Publish to Playground**: `./run_publish.sh`
+- **Local Dev**: `./run_local_dev.sh`
+- **Lower-level commands**: `scripts/commands/`
+- **Hosted inspection helpers**: `scripts/commands/run_argo.sh`,
+  `scripts/commands/run_list_s3_objects.sh`,
+  `scripts/commands/run_inspect_s3_object.sh`
 
 Deprecated compatibility wrappers and compose-era parity are no longer part of
 the supported architecture.

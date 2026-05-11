@@ -1,13 +1,13 @@
 # Build Pipeline
 
-`build.sh` is now a pure build step. It is idempotent and safe to rerun whenever
+`scripts/commands/build.sh` is now a pure build step. It is idempotent and safe to rerun whenever
 you touch FMUs, Go code, or the Dockerfile. If the repo-local Go toolchain is
 missing, the script bootstraps it under `./.local/go` automatically; all other
-cluster/registry preparation remains outside `build.sh`.
+cluster/registry preparation remains outside the build command.
 
 ```bash
-./build.sh
-./build.sh --image ghcr.io/org/cads-demo:dev --fmil-home "$HOME/fmil"
+scripts/commands/build.sh
+scripts/commands/build.sh --image ghcr.io/org/cads-demo:dev --fmil-home "$HOME/fmil"
 ```
 
 ## High-level workflow
@@ -22,16 +22,38 @@ cluster/registry preparation remains outside `build.sh`.
 3. **pythonfmu resources** – Runs `scripts/install_platform_resources.py`
    (streamed via `log_stream_cmd`). This script bootstraps the cached
    `pythonfmu` resources for the active architecture by spinning up a temporary
-   Docker image when the cache is missing.
+   Docker/Podman container when the cache is missing.
 4. **Go binaries** – Builds `cads-workflow-runner` and `cads-workflow-service`
    with cgo enabled (FMIL headers/libraries are wired via `CGO_*` exports). The
    binaries land in `bin/`.
-5. **Container image** – Prefers Podman but falls back to Docker; whichever tool
-   is found builds the Dockerfile into the requested tag (`cads-fmi-demo:latest`
-   by default). The build context is the repo root.
+5. **Container image** – Prefers a running Podman runtime but falls back to a
+   running Docker runtime; whichever tool is reachable builds the Dockerfile
+   into the requested tag (`cads-fmi-demo:latest` by default). The build context
+   is the repo root.
 
-Local cluster preparation now lives in `run_local.sh`, while remote image
-publication lives in `prepare_remote.sh`.
+## Host Paths
+
+### Linux and macOS
+
+Both Linux and macOS use the same host preparation path:
+
+```bash
+./prepare.sh
+```
+
+Use the Local Dev path when you want the self-contained local loop:
+
+```bash
+./run_local_dev.sh workflows/python_chain.yaml
+```
+
+On Debian/Ubuntu, `prepare.sh` can install Podman plus helper packages with
+`apt`. On macOS, install/start Podman or Docker outside the repo first. If
+`podman info` fails, fix Podman before rerunning the dashboard. Having Podman
+Desktop open is not sufficient unless its Podman engine/machine is running.
+
+Local cluster preparation is wrapped by `run_local_dev.sh`, while Playground
+image publication is wrapped by `run_publish.sh`.
 
 ## Arguments
 
@@ -45,15 +67,17 @@ publication lives in `prepare_remote.sh`.
 
 - `bin/cads-workflow-runner` and `bin/cads-workflow-service`
 - Container image tagged as the requested name (default `cads-fmi-demo:latest`)
-- No cluster-side changes; local Argo/controller setup happens in `run_local.sh`,
-  and remote image publication happens in `prepare_remote.sh`
+- No cluster-side changes; local Argo/controller setup happens in
+  `scripts/commands/run_local.sh`, and remote image publication happens in
+  `scripts/commands/prepare_remote.sh`
 
 ## Troubleshooting
 
-- **Missing toolchains** – Re-run `./prepare_local.sh` or `./prepare_remote.sh`
-  to regenerate the local Go/CLI installs. `build.sh` only reuses what already
-  exists under `./.local/`.
+- **Missing toolchains** – Re-run `./prepare.sh` to regenerate the local
+  Go/CLI installs. The build command only reuses what already exists under
+  `./.local/`.
 - **FMIL path issues** – Pass `--fmil-home` pointing to the desired install or
   export `FMIL_HOME` before invoking the script.
-- **Container runtime missing** – Install Podman or Docker. `build.sh` needs one
-  of them available locally even for remote-only workflows.
+- **Container runtime missing or stopped** – Install/start Podman or Docker.
+  The build command needs one of them reachable locally even for remote-only workflows.
+  On macOS, verify `podman machine start` and `podman info` in the same shell.
