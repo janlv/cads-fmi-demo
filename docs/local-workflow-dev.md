@@ -7,7 +7,7 @@ local image, and copies artifacts back into the repository.
 This path is for developers. It is not needed for a dashboard user who connects
 to the hosted Kaizen Playground.
 
-This is the **Local Dev** path in [`USER_PATHS.md`](USER_PATHS.md).
+This is the **Local Dev** path in [`user-paths.md`](user-paths.md).
 It is intentionally CLI-only and does not start a dashboard. The browser
 dashboard is only for the Kaizen Playground paths.
 

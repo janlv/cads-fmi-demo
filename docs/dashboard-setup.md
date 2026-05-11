@@ -3,7 +3,7 @@
 This guide is for users who want to run their own local browser dashboard while
 launching workflows into the shared Kaizen Argo playground.
 
-For the OS-independent user paths, see [`USER_PATHS.md`](USER_PATHS.md).
+For the OS-independent user paths, see [`user-paths.md`](user-paths.md).
 
 The dashboard itself runs on your laptop at `http://localhost:8080/`. Workflow
 pods run remotely in Kaizen using the configured container image.
@@ -138,7 +138,7 @@ If that public key file is missing but the private key exists, the decrypt
 helper recreates it locally.
 
 The person who has the kubeconfig should follow
-[`AGE_SENDER.md`](AGE_SENDER.md). They will either send back an encrypted
+[`age-sender.md`](age-sender.md). They will either send back an encrypted
 `.age` file or keep their plaintext kubeconfig available for the receiver's
 `--get-from` SSH flow. Do not commit kubeconfigs or encrypted handoff files to
 git.

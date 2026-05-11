@@ -16,7 +16,7 @@ All three paths execute the same workflow YAML files through the same Go/FMIL
 runtime. The difference is where Argo runs the workflow and how you interact
 with it.
 
-See [`USER_PATHS.md`](USER_PATHS.md) for the OS-independent user paths:
+See [`user-paths.md`](user-paths.md) for the OS-independent user paths:
 Playground Dashboard, Publish to Playground, and CLI-only Local Dev.
 
 ## Local flow

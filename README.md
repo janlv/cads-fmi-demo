@@ -16,7 +16,7 @@ The repo is organized around three OS-independent user paths:
 - **Local Dev**: build and test one workflow/model quickly in local Minikube
   without Kaizen Playground, GHCR publishing, or a dashboard.
 
-See [`USER_PATHS.md`](USER_PATHS.md) for the support matrix.
+See [`docs/user-paths.md`](docs/user-paths.md) for the support matrix.
 
 ## Simple Architecture
 
@@ -158,18 +158,18 @@ different published image, pass it explicitly:
 For most users, the commands above are enough. Use the detailed documents when
 you need to troubleshoot or customize the flow:
 
-- [`USER_PATHS.md`](USER_PATHS.md) for the three supported user paths.
-- [`PLAYGROUND_DASHBOARD.md`](PLAYGROUND_DASHBOARD.md) for the default
+- [`docs/user-paths.md`](docs/user-paths.md) for the three supported user paths.
+- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) for the default
   Playground Dashboard path.
-- [`DASHBOARD_SETUP.md`](DASHBOARD_SETUP.md) for the full dashboard setup.
-- [`LOCAL_WORKFLOW_DEV.md`](LOCAL_WORKFLOW_DEV.md) for local Minikube workflow
+- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) for the full dashboard setup.
+- [`docs/local-workflow-dev.md`](docs/local-workflow-dev.md) for local Minikube workflow
   development.
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) for common failures.
-- [`PREPARE.md`](PREPARE.md) for setup details and optional local Minikube.
-- [`RUN.md`](RUN.md) for direct workflow submission without the dashboard.
-- [`WORKFLOW_PUBLISHING_APPROACHES.md`](WORKFLOW_PUBLISHING_APPROACHES.md) for
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) for common failures.
+- [`docs/prepare.md`](docs/prepare.md) for setup details and optional local Minikube.
+- [`docs/run.md`](docs/run.md) for direct workflow submission without the dashboard.
+- [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md) for
   workflow/model publishing architecture options.
-- [`AGE_SENDER.md`](AGE_SENDER.md) if you are sending the kubeconfig to someone
+- [`docs/age-sender.md`](docs/age-sender.md) if you are sending the kubeconfig to someone
   else.
 
 ## Credential Policy
@@ -224,7 +224,7 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 - `scripts/commands/` contains lower-level build, local, remote, dashboard, and
   inspection commands for expert use.
 - `workflows/` contains workflow YAML definitions.
-- `workflows.md` documents the STOR-HY demonstrator workflows and replica model
+- `docs/workflows.md` documents the STOR-HY demonstrator workflows and replica model
   catalog.
 - `create_fmu/storhy_replicas/` contains Python source for the demo replica
   FMUs.
@@ -234,26 +234,26 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 
 ## Documentation
 
-- [`AGE_SENDER.md`](AGE_SENDER.md) – sender-side age encryption workflow for a
+- [`docs/age-sender.md`](docs/age-sender.md) – sender-side age encryption workflow for a
   Kaizen kubeconfig.
-- [`USER_PATHS.md`](USER_PATHS.md) – OS-independent supported user paths and
+- [`docs/user-paths.md`](docs/user-paths.md) – OS-independent supported user paths and
   current support status.
-- [`PLAYGROUND_DASHBOARD.md`](PLAYGROUND_DASHBOARD.md) – connect a local
+- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) – connect a local
   dashboard to an existing published Playground workflow image.
-- [`LOCAL_WORKFLOW_DEV.md`](LOCAL_WORKFLOW_DEV.md) – local Minikube workflow
+- [`docs/local-workflow-dev.md`](docs/local-workflow-dev.md) – local Minikube workflow
   development path.
-- [`DASHBOARD_SETUP.md`](DASHBOARD_SETUP.md) – local dashboard setup and
+- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) – local dashboard setup and
   credential handling.
-- [`workflows.md`](workflows.md) – STOR-HY demonstrator workflow and model
+- [`docs/workflows.md`](docs/workflows.md) – STOR-HY demonstrator workflow and model
   mapping.
-- [`RUN.md`](RUN.md) – direct workflow submission paths and runtime behavior.
-- [`BUILD.md`](BUILD.md) – image and binary build details.
-- [`WORKFLOW_PUBLISHING_APPROACHES.md`](WORKFLOW_PUBLISHING_APPROACHES.md) –
+- [`docs/run.md`](docs/run.md) – direct workflow submission paths and runtime behavior.
+- [`docs/build.md`](docs/build.md) – image and binary build details.
+- [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md) –
   options for separating workflow publishing from runtime/model publishing.
-- [`PREPARE.md`](PREPARE.md) – local and remote environment preparation.
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) – common setup and runtime issues.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) – system structure and design intent.
-- [`DEV.md`](DEV.md) – contributor notes.
+- [`docs/prepare.md`](docs/prepare.md) – local and remote environment preparation.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) – common setup and runtime issues.
+- [`docs/architecture.md`](docs/architecture.md) – system structure and design intent.
+- [`docs/dev.md`](docs/dev.md) – contributor notes.
 - [`create_fmu/README.md`](create_fmu/README.md) – FMU generation details.
 - [`orchestrator/service/README.md`](orchestrator/service/README.md) – Go
   service and CLI details.
@@ -270,5 +270,5 @@ approved workflow definitions separately to the Playground, for example as Argo
 WorkflowTemplates. That would let a workflow developer update one workflow
 without rebuilding the runtime/model image.
 
-See [`WORKFLOW_PUBLISHING_APPROACHES.md`](WORKFLOW_PUBLISHING_APPROACHES.md)
+See [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md)
 for the detailed comparison of alternatives and tradeoffs.

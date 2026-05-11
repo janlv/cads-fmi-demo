@@ -4,7 +4,7 @@ Use this path when the workflows have already been built and published by
 someone else, and you only want to run the dashboard locally against the same
 Kaizen Playground environment.
 
-This is the **Playground Dashboard** path in [`USER_PATHS.md`](USER_PATHS.md).
+This is the **Playground Dashboard** path in [`user-paths.md`](user-paths.md).
 
 This path does not build FMUs, does not build a container image, does not push
 to GHCR, and does not start Minikube.
