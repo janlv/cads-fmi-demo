@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
-default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
+default_kubeconfig="$ROOT_DIR/.local/kaizen/kubeconfig"
 ARGO_SERVER="${ARGO_SERVER:-argoworkflows.cads.kzslab.dev}"
 ARGO_NAMESPACE="${ARGO_NAMESPACE:-playground}"
 KUBECONFIG_PATH=""

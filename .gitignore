@@ -24,6 +24,7 @@ data/storhy/synthetic/*
 
 # Local tooling
 .DS_Store
+Kaizen_CADS/
 
 # Go binaries
 orchestrator/service/cads-workflow-runner

@@ -67,7 +67,7 @@ variables:
 ```bash
 export ARGO_TOKEN=...
 ./cads-workflow-service --serve --addr :8080
-./cads-workflow-service --serve --addr :8080 --kubeconfig ~/Kaizen_CADS/kubeconfig
+./cads-workflow-service --serve --addr :8080 --kubeconfig .local/kaizen/kubeconfig
 ```
 
 From the repo root you can also use the convenience launcher:

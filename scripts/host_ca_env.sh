@@ -8,7 +8,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 [host-ca] This script exports CA-related environment variables. Run it as:
 
   source scripts/host_ca_env.sh            # use repo-relative certs
-  source scripts/host_ca_env.sh "$PWD"     # target another folder (e.g. Kaizen_CADS)
+  source scripts/host_ca_env.sh "$PWD"     # target another folder
 EOF
     exit 1
 fi

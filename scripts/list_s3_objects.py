@@ -114,7 +114,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--kubeconfig",
         default=_env_default("KUBECONFIG", default_kubeconfig_path()),
-        help="Kubeconfig path for secret lookup (default: $KUBECONFIG or ~/Kaizen_CADS/kubeconfig when present).",
+        help="Kubeconfig path for secret lookup (default: $KUBECONFIG or .local/kaizen/kubeconfig when present).",
     )
     parser.add_argument(
         "--no-k8s-secret",
@@ -432,7 +432,6 @@ def candidate_ca_bundle_paths() -> list[Path]:
         Path(_env_default("SSL_CERT_FILE")),
         Path("/etc/ssl/certs/ca-certificates.crt"),
         Path(".local/custom-ca-bundle.pem"),
-        Path.home() / "Kaizen_CADS" / ".local" / "custom-ca-bundle.pem",
     ]
     seen: set[Path] = set()
     resolved: list[Path] = []
@@ -448,7 +447,7 @@ def candidate_ca_bundle_paths() -> list[Path]:
 
 
 def default_kubeconfig_path() -> str:
-    path = Path.home() / "Kaizen_CADS" / "kubeconfig"
+    path = Path(__file__).resolve().parents[1] / ".local" / "kaizen" / "kubeconfig"
     return str(path) if path.exists() else ""
 
 

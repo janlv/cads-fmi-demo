@@ -62,7 +62,7 @@ the most recent local build as the source image.
 `scripts/commands/run_remote.sh` then:
 
 1. Resolves Argo auth from `ARGO_TOKEN`, `KUBECONFIG`, `--kubeconfig`, or the
-   default `~/Kaizen_CADS/kubeconfig`.
+   default `.local/kaizen/kubeconfig`.
 2. Reuses the last image prepared by `scripts/commands/prepare_remote.sh` when
    no explicit image is given.
 3. Calls `scripts/generate_remote_workflow.sh` to emit the hosted manifest.
@@ -94,7 +94,7 @@ Useful variants:
 ```bash
 ./run_playground.sh
 ./run_publish.sh
-./run_playground.sh --kubeconfig ~/Kaizen_CADS/kubeconfig
+./run_playground.sh --kubeconfig .local/kaizen/kubeconfig
 ```
 
 ## S3 helpers

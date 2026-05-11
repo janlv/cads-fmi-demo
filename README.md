@@ -130,10 +130,11 @@ access, encrypt it remotely and decrypt it locally:
 
 This uses the stored public key, asks `ssh` for the remote password if needed,
 and runs `age` on the sender host. The remote kubeconfig path defaults to
-`~/Kaizen_CADS/kubeconfig`. Use `--remote-path /path/to/kubeconfig` if the
-sender stores it somewhere else.
+`.local/kaizen/kubeconfig` relative to the sender's login directory. Use
+`--remote-path /path/to/kubeconfig` if the sender stores it somewhere else.
 
-This writes the dashboard kubeconfig to `~/Kaizen_CADS/kubeconfig`.
+This writes the dashboard kubeconfig to `.local/kaizen/kubeconfig` in this
+checkout.
 
 Start the dashboard against the configured Playground image:
 
@@ -176,7 +177,7 @@ you need to troubleshoot or customize the flow:
 Do not commit playground credentials, kubeconfigs, S3 keys, bearer tokens, or
 registry tokens. This repository currently reports as public on GitHub, and
 even private repositories are not safe storage for shared playground
-credentials. Use environment variables, `~/Kaizen_CADS/kubeconfig`, or a secret
+credentials. Use environment variables, `.local/kaizen/kubeconfig`, or a secret
 manager.
 
 ## Useful Commands
@@ -206,7 +207,7 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 # Receiver: send the public key to a remote SSH account.
 ./scripts/age_create_identity.sh --send-to sender_user@sender_host
 
-# Receiver: decrypt the encrypted kubeconfig into ~/Kaizen_CADS/kubeconfig.
+# Receiver: decrypt the encrypted kubeconfig into .local/kaizen/kubeconfig.
 ./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
 
 # Receiver: encrypt the remote kubeconfig over SSH and decrypt it locally.

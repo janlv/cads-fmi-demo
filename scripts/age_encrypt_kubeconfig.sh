@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-input="${KUBECONFIG:-$HOME/Kaizen_CADS/kubeconfig}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+input="${KUBECONFIG:-$ROOT_DIR/.local/kaizen/kubeconfig}"
 output=""
 recipients=()
 recipient_files=()
@@ -16,7 +17,8 @@ Options:
   -r, --recipient KEY       age public recipient key. May be repeated.
   -R, --recipient-file PATH File containing age recipients. May be repeated.
   -i, --input PATH          Kubeconfig to encrypt.
-                            Default: $KUBECONFIG or ~/Kaizen_CADS/kubeconfig
+                            Default: $KUBECONFIG or .local/kaizen/kubeconfig
+                            in this checkout
   -o, --out PATH            Encrypted output file.
                             Default: <input>.age
 

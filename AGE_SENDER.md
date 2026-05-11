@@ -42,13 +42,13 @@ Encrypt your kubeconfig for that recipient:
 ```bash
 ./scripts/age_encrypt_kubeconfig.sh \
     --recipient age1_receiver_public_key_here \
-    --input ~/Kaizen_CADS/kubeconfig
+    --input .local/kaizen/kubeconfig
 ```
 
 By default this writes:
 
 ```text
-~/Kaizen_CADS/kubeconfig.age
+.local/kaizen/kubeconfig.age
 ```
 
 Send that encrypted `.age` file to the receiver. Do not commit the encrypted
@@ -59,7 +59,7 @@ to pre-create `kubeconfig.age`. Keep the plaintext kubeconfig at the default
 path and make sure `age` is installed on your machine:
 
 ```text
-~/Kaizen_CADS/kubeconfig
+.local/kaizen/kubeconfig
 ```
 
 If your kubeconfig is somewhere else, pass its path with `--input`:
@@ -77,7 +77,7 @@ machine:
 ```bash
 ./scripts/age_encrypt_kubeconfig.sh \
     --recipient-file ~/.config/cads/age-recipient.txt \
-    --input ~/Kaizen_CADS/kubeconfig
+    --input .local/kaizen/kubeconfig
 ```
 
 The receiver can then decrypt it with:

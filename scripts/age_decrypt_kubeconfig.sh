@@ -3,11 +3,12 @@ set -euo pipefail
 
 identity="${AGE_KEY_FILE:-$HOME/.config/age/key.txt}"
 recipient_file="${AGE_RECIPIENT_FILE:-$HOME/.config/cads/age-recipient.txt}"
-output="$HOME/Kaizen_CADS/kubeconfig"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+output="$ROOT_DIR/.local/kaizen/kubeconfig"
 input=""
 force=0
 remote_source=""
-remote_path="~/Kaizen_CADS/kubeconfig"
+remote_path=".local/kaizen/kubeconfig"
 downloaded_input=""
 
 usage() {
@@ -23,16 +24,16 @@ Options:
                        Public age recipient file used by --get-from.
                        Default: $AGE_RECIPIENT_FILE or ~/.config/cads/age-recipient.txt
   -o, --out PATH       Decrypted kubeconfig path.
-                       Default: ~/Kaizen_CADS/kubeconfig
+                       Default: .local/kaizen/kubeconfig in this checkout
   --get-from USER@HOST Encrypt the remote kubeconfig with the stored public
                        recipient key, fetch it, and decrypt it locally. The
                        remote SSH password is requested by ssh when needed.
   --remote-path PATH   Remote plaintext kubeconfig path for --get-from.
-                       Default: ~/Kaizen_CADS/kubeconfig
+                       Default: .local/kaizen/kubeconfig on the remote host
   --force              Overwrite an existing output file.
 
 After decrypting, run:
-  ./run_dashboard.sh
+  ./run_playground.sh
 EOF
 }
 
@@ -249,5 +250,5 @@ Decrypted kubeconfig written to:
   $output
 
 You can now run:
-  ./run_dashboard.sh
+  ./run_playground.sh
 EOF

@@ -6,7 +6,7 @@ source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 WORKFLOW=""
-default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
+default_kubeconfig="$ROOT_DIR/.local/kaizen/kubeconfig"
 default_remote_image="ghcr.io/janlv/cads-fmi-demo:playground"
 if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; then
     # shellcheck disable=SC1091

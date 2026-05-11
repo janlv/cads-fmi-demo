@@ -69,12 +69,12 @@ Argo token:
 export ARGO_TOKEN=...
 ```
 
-Kubeconfig at the default path:
+Kubeconfig at the default repo-local path:
 
 ```bash
-mkdir -p ~/Kaizen_CADS
+mkdir -p .local/kaizen
 # place the playground kubeconfig at:
-# ~/Kaizen_CADS/kubeconfig
+# .local/kaizen/kubeconfig
 ```
 
 Explicit kubeconfig path:
@@ -88,7 +88,7 @@ The launcher resolves Kaizen credentials in this order:
 1. `ARGO_TOKEN`
 2. `KUBECONFIG`
 3. `--kubeconfig ...`
-4. `~/Kaizen_CADS/kubeconfig`
+4. `.local/kaizen/kubeconfig`
 
 ### Optional: Encrypted Kubeconfig Handoff With age
 
@@ -158,8 +158,8 @@ SSH access, they can encrypt it remotely and decrypt it locally:
 
 This uses the stored public key, asks `ssh` for the remote password if needed,
 and runs `age` on the sender host. The remote kubeconfig path defaults to
-`~/Kaizen_CADS/kubeconfig`. Use `--remote-path /path/to/kubeconfig` if the
-sender stores it somewhere else.
+`.local/kaizen/kubeconfig` relative to the sender's login directory. Use
+`--remote-path /path/to/kubeconfig` if the sender stores it somewhere else.
 
 They can then run:
 
@@ -295,7 +295,7 @@ gh repo view janlv/cads-fmi-demo --json visibility,isPrivate
 Even if the repository is later made private, do not store shared playground
 credentials in git. Secrets can leak through history, forks, logs, container
 layers, caches, and local clones. Prefer environment variables, files under
-`~/Kaizen_CADS/`, or an institutional secret manager.
+`.local/kaizen/`, or an institutional secret manager.
 
 If a real credential has ever been committed or pushed, treat it as compromised:
 rotate it, remove it from current files, and clean history only as a follow-up

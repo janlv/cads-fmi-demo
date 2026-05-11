@@ -14,7 +14,7 @@ if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; 
     source "$ROOT_DIR/config/playground.env"
 fi
 
-default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
+default_kubeconfig="$ROOT_DIR/.local/kaizen/kubeconfig"
 LOCAL_BASE_DIR="$ROOT_DIR/.local"
 LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
 LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
