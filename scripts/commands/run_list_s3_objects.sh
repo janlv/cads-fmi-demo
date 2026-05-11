@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
-default_remote_image="ghcr.io/janlv/cads-fmi-demo:latest"
+default_remote_image="ghcr.io/janlv/cads-fmi-demo:playground"
+if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/config/playground.env"
+fi
 state_dir="$ROOT_DIR/.local/state"
 state_file="$state_dir/dashboard-remote-image.env"
 ARGO_SERVER="${ARGO_SERVER:-argoworkflows.cads.kzslab.dev}"
@@ -16,9 +20,9 @@ KUBECONFIG_PATH=""
 IMAGE="${CADS_WORKFLOW_IMAGE:-$default_remote_image}"
 SECRET_NAME="storhy-argo-artifacts-s3-credentials"
 SECRET_NAMESPACE="playground"
-OBJECT_KEY=""
-BUCKET_OVERRIDE=""
-PREVIEW_BYTES="4096"
+PREFIX=""
+LIMIT="200"
+FLAT=0
 PATH_STYLE=0
 OUTPUT=""
 explicit_image=0
@@ -27,15 +31,15 @@ cads_setup_local_path "$ROOT_DIR"
 
 usage() {
     cat <<'EOF'
-Usage: ./run_inspect_s3_object.sh <key> [--image ghcr.io/org/cads-demo:tag]
-                                   [--bucket name] [--bytes N] [--path-style]
-                                   [--kubeconfig path] [--argo-server host]
-                                   [--namespace name] [--service-account name]
-                                   [--secret-name name] [--secret-namespace name]
-                                   [--output manifest.yaml]
+Usage: scripts/commands/run_list_s3_objects.sh [--image ghcr.io/org/cads-demo:tag]
+                                [--kubeconfig path] [--argo-server host]
+                                [--namespace name] [--service-account name]
+                                [--secret-name name] [--secret-namespace name]
+                                [--prefix path/] [--limit N] [--flat]
+                                [--path-style] [--output manifest.yaml]
 
-Runs a small Argo workflow in the Kaizen playground that fetches one S3 object,
-prints its metadata, and shows a small content preview in the workflow logs.
+Submits a small Argo workflow to the hosted Kaizen playground that lists the
+configured S3 bucket contents from inside the cluster and streams the logs.
 EOF
 }
 
@@ -89,7 +93,7 @@ monitor_workflow_startup() {
 
         if workflow_has_output "$name"; then
             if (( startup_note_shown == 1 )); then
-                log_subinfo "Container output detected; the S3 inspection code is now running."
+                log_subinfo "Container output detected; the S3 listing code is now running."
             fi
             return 0
         fi
@@ -107,18 +111,6 @@ monitor_workflow_startup() {
 }
 
 parse_args() {
-    if (($# == 0)); then
-        usage
-        exit 1
-    fi
-    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-        usage
-        exit 0
-    fi
-
-    OBJECT_KEY="$1"
-    shift || true
-
     while (($#)); do
         case "$1" in
             -h|--help)
@@ -129,17 +121,6 @@ parse_args() {
                 shift
                 IMAGE="${1:-}"
                 explicit_image=1
-                ;;
-            --bucket)
-                shift
-                BUCKET_OVERRIDE="${1:-}"
-                ;;
-            --bytes)
-                shift
-                PREVIEW_BYTES="${1:-}"
-                ;;
-            --path-style)
-                PATH_STYLE=1
                 ;;
             --kubeconfig)
                 shift
@@ -165,6 +146,20 @@ parse_args() {
                 shift
                 SECRET_NAMESPACE="${1:-}"
                 ;;
+            --prefix)
+                shift
+                PREFIX="${1:-}"
+                ;;
+            --limit)
+                shift
+                LIMIT="${1:-}"
+                ;;
+            --flat)
+                FLAT=1
+                ;;
+            --path-style)
+                PATH_STYLE=1
+                ;;
             --output)
                 shift
                 OUTPUT="${1:-}"
@@ -189,8 +184,8 @@ if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && $explicit_image -eq 0 ]]; then
     fi
 fi
 
-if [[ -z "$OBJECT_KEY" || -z "$ARGO_NAMESPACE" || -z "$SERVICE_ACCOUNT" || -z "$ARGO_SERVER" ]]; then
-    log_error "Object key, Argo server, namespace, and service account must be non-empty."
+if [[ -z "$ARGO_NAMESPACE" || -z "$SERVICE_ACCOUNT" || -z "$ARGO_SERVER" ]]; then
+    log_error "Argo server, namespace, and service account must be non-empty."
     exit 1
 fi
 
@@ -199,8 +194,8 @@ if [[ -z "$SECRET_NAME" || -z "$SECRET_NAMESPACE" ]]; then
     exit 1
 fi
 
-if [[ ! "$PREVIEW_BYTES" =~ ^[0-9]+$ ]] || (( PREVIEW_BYTES <= 0 )); then
-    log_error "--bytes must be a positive integer."
+if [[ ! "$LIMIT" =~ ^[0-9]+$ ]] || (( LIMIT <= 0 )); then
+    log_error "--limit must be a positive integer."
     exit 1
 fi
 
@@ -220,14 +215,14 @@ if [[ -z "$TOKEN" ]]; then
     exit 1
 fi
 
-RESOURCE_NAME="cads-inspect-s3-object-$(date +%Y%m%d%H%M%S)"
+RESOURCE_NAME="cads-list-s3-objects-$(date +%Y%m%d%H%M%S)"
 MANIFEST_PATH="$OUTPUT"
 if [[ -z "$MANIFEST_PATH" ]]; then
-    MANIFEST_PATH="$(mktemp "${TMPDIR:-/tmp}/cads-inspect-s3.XXXXXX.yaml")"
+    MANIFEST_PATH="$(mktemp "${TMPDIR:-/tmp}/cads-list-s3.XXXXXX.yaml")"
     trap 'rm -f "$MANIFEST_PATH"' EXIT
 fi
 
-log_step "Generating in-cluster S3 inspection workflow manifest"
+log_step "Generating in-cluster S3 listing workflow manifest"
 {
     cat <<EOF
 apiVersion: argoproj.io/v1alpha1
@@ -237,23 +232,28 @@ metadata:
   namespace: ${ARGO_NAMESPACE}
 spec:
   serviceAccountName: ${SERVICE_ACCOUNT}
-  entrypoint: inspect-s3
+  entrypoint: list-s3
   templates:
-    - name: inspect-s3
+    - name: list-s3
       container:
         image: ${IMAGE}
-        imagePullPolicy: IfNotPresent
-        command: ["python3", "scripts/inspect_s3_object.py"]
+        imagePullPolicy: Always
+        command: ["python3", "scripts/list_s3_objects.py"]
         args:
-          - "${OBJECT_KEY}"
+          - "--long"
           - "--no-k8s-secret"
-          - "--bytes"
-          - "${PREVIEW_BYTES}"
+          - "--limit"
+          - "${LIMIT}"
 EOF
-    if [[ -n "$BUCKET_OVERRIDE" ]]; then
+    if [[ -n "$PREFIX" ]]; then
         cat <<EOF
-          - "--bucket"
-          - "${BUCKET_OVERRIDE}"
+          - "--prefix"
+          - "${PREFIX}"
+EOF
+    fi
+    if (( FLAT == 1 )); then
+        cat <<'EOF'
+          - "--flat"
 EOF
     fi
     if (( PATH_STYLE == 1 )); then
@@ -314,7 +314,7 @@ kill "$monitor_pid" 2>/dev/null || true
 wait "$monitor_pid" 2>/dev/null || true
 
 if ((status != 0)); then
-    log_warn "Remote S3 inspection submission failed; fetching status and logs for ${RESOURCE_NAME}"
+    log_warn "Remote S3 listing submission failed; fetching status and logs for ${RESOURCE_NAME}"
     argo get "$RESOURCE_NAME" \
         -n "$ARGO_NAMESPACE" \
         -s "$ARGO_SERVER" \
@@ -330,7 +330,7 @@ fi
 
 phase="$(workflow_phase "$RESOURCE_NAME" || true)"
 if [[ "$phase" != "Succeeded" ]]; then
-    log_warn "S3 inspection workflow finished with phase '${phase:-unknown}'; fetching status and logs for ${RESOURCE_NAME}"
+    log_warn "S3 listing workflow finished with phase '${phase:-unknown}'; fetching status and logs for ${RESOURCE_NAME}"
     argo get "$RESOURCE_NAME" \
         -n "$ARGO_NAMESPACE" \
         -s "$ARGO_SERVER" \
@@ -344,11 +344,11 @@ if [[ "$phase" != "Succeeded" ]]; then
     exit 1
 fi
 
-log_step "Fetching S3 inspection logs for ${RESOURCE_NAME}"
+log_step "Fetching S3 listing logs for ${RESOURCE_NAME}"
 argo logs "$RESOURCE_NAME" \
     -n "$ARGO_NAMESPACE" \
     -s "$ARGO_SERVER" \
     --token "$TOKEN" \
     --argo-http1
 
-log_ok "S3 inspection workflow completed."
+log_ok "S3 listing workflow completed."

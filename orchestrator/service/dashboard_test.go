@@ -77,7 +77,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			ArgoServer:          "argoworkflows.cads.kzslab.dev",
 			Namespace:           "playground",
 			ServiceAccount:      "playground-admin",
-			Image:               "ghcr.io/janlv/cads-fmi-demo:latest",
+			Image:               "ghcr.io/janlv/cads-fmi-demo:playground",
 			PollIntervalSeconds: 5,
 		},
 		runs: []RunSummary{{
@@ -88,7 +88,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			StartedAt:       &startedAt,
 			DurationSeconds: 12,
 			Progress:        "1/1",
-			Image:           "ghcr.io/janlv/cads-fmi-demo:latest",
+			Image:           "ghcr.io/janlv/cads-fmi-demo:playground",
 			ServiceAccount:  "playground-admin",
 		}},
 	}

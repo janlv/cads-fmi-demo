@@ -4,7 +4,7 @@ Install architecture-specific pythonfmu resource bundles.
 
 Resources are cached under ``create_fmu/artifacts/cache/<profile>/pythonfmu_resources``. When the
 cache is missing, the script bootstraps it automatically by spinning up a
-temporary Python Docker image for the relevant architecture, installing
+temporary Python container image for the relevant architecture, installing
 pythonfmu, rebuilding the exporter, and copying its resource directory back to
 the host.
 """
@@ -12,6 +12,7 @@ the host.
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import shutil
 import subprocess
@@ -46,8 +47,26 @@ CERT_ERROR_PATTERNS = (
     "httpsconnectionpool",
 )
 
-CERTS_DIR = ROOT / "scripts" / "certs"
+DEFAULT_CERTS_DIR = ROOT / "scripts" / "certs"
+LEGACY_CERTS_DIR = ROOT / "certs"
 EXPORT_SCRIPT = ROOT / "scripts" / "export_company_certs.py"
+
+
+def _has_cert_files(path: Path) -> bool:
+    return path.exists() and any(
+        f.is_file() and f.suffix.lower() in {".crt", ".pem"} for f in path.iterdir()
+    )
+
+
+def _certs_dir() -> Path:
+    override = os.environ.get("CADS_HOST_CA_CERT_DIR")
+    if override:
+        return Path(override)
+    if _has_cert_files(DEFAULT_CERTS_DIR):
+        return DEFAULT_CERTS_DIR
+    if _has_cert_files(LEGACY_CERTS_DIR):
+        return LEGACY_CERTS_DIR
+    return DEFAULT_CERTS_DIR
 
 
 class StageWindow:
@@ -182,13 +201,14 @@ def _certs_handling() -> tuple[list[str], str, str, bool]:
     certs_mount: list[str] = []
     certs_snippet = ""
     certs_env = ""
+    certs_dir = _certs_dir()
     ca_files = [
         f
-        for f in CERTS_DIR.iterdir()
+        for f in certs_dir.iterdir()
         if f.is_file() and f.suffix.lower() in {".crt", ".pem"}
-    ] if CERTS_DIR.exists() else []
+    ] if certs_dir.exists() else []
     if ca_files:
-        certs_mount = ["-v", f"{CERTS_DIR.resolve()}:/tmp/company-certs:ro"]
+        certs_mount = ["-v", f"{certs_dir.resolve()}:/tmp/company-certs:ro"]
         certs_env = (
             "export REQUESTS_CA_BUNDLE=/tmp/company-ca.pem\n"
             "export PIP_CERT=/tmp/company-ca.pem\n"
@@ -220,11 +240,32 @@ def _certs_handling() -> tuple[list[str], str, str, bool]:
     return certs_mount, certs_snippet, certs_env, bool(ca_files)
 
 
-def _build_docker_cmd(destination_root: Path, platform_flag: str, certs_mount: list[str], script: str) -> list[str]:
+def _select_container_tool() -> str | None:
+    for tool in ("docker", "podman"):
+        if shutil.which(tool) is None:
+            continue
+        probe = subprocess.run(
+            [tool, "info"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if probe.returncode == 0:
+            return tool
+    return None
+
+
+def _build_container_cmd(
+    container_tool: str,
+    destination_root: Path,
+    platform_flag: str,
+    certs_mount: list[str],
+    script: str,
+) -> list[str]:
     if not PATCH_SCRIPT.exists():
         raise SystemExit(f"Missing patch script: {PATCH_SCRIPT}")
     return [
-        "docker",
+        container_tool,
         "run",
         "--rm",
         f"--platform={platform_flag}",
@@ -233,7 +274,7 @@ def _build_docker_cmd(destination_root: Path, platform_flag: str, certs_mount: l
         "-v",
         f"{PATCH_SCRIPT.resolve()}:/tmp/patch_pythonfmu_export.py:ro",
         *certs_mount,
-        "python:3.11-slim",
+        "docker.io/library/python:3.11-slim",
         "bash",
         "-lc",
         script,
@@ -260,8 +301,12 @@ def bootstrap_source(
     if src_dir.exists() and any(src_dir.iterdir()):
         return
 
-    if shutil.which("docker") is None:
-        raise SystemExit("Docker is required to bootstrap platform resources automatically.")
+    container_tool = _select_container_tool()
+    if container_tool is None:
+        raise SystemExit(
+            "A running Docker or Podman runtime is required to bootstrap platform resources automatically. "
+            "If you use Podman on macOS, run `podman machine start` and verify `podman info` succeeds."
+        )
 
     platform_flag = DOCKER_PLATFORMS[source]
     destination_root = src_dir.parent
@@ -304,7 +349,13 @@ def bootstrap_source(
             "PY\n"
         )
 
-        docker_cmd = _build_docker_cmd(destination_root, platform_flag, certs_mount, docker_script)
+        container_cmd = _build_container_cmd(
+            container_tool,
+            destination_root,
+            platform_flag,
+            certs_mount,
+            docker_script,
+        )
         attempt_label = f" (attempt {attempt})" if attempt > 1 else ""
         if stage_window_lines is None:
             max_lines = 50 if verbose else 6
@@ -313,10 +364,10 @@ def bootstrap_source(
         else:
             max_lines = stage_window_lines
         stage = StageWindow(
-            f"Bootstrapping resources for '{source}' using Docker ({platform_flag}){attempt_label}",
+            f"Bootstrapping resources for '{source}' using {container_tool} ({platform_flag}){attempt_label}",
             max_lines=max_lines,
         )
-        returncode, output = _run_with_stage(docker_cmd, stage)
+        returncode, output = _run_with_stage(container_cmd, stage)
 
         if returncode == 0:
             stage.finalize(success=True, message=f"Resources for '{source}' ready")
@@ -336,7 +387,7 @@ def bootstrap_source(
 
         raise SystemExit(
             f"Failed to bootstrap resources for '{source}'. "
-            f"Docker exited with {returncode}. Output:\n{output}"
+            f"{container_tool} exited with {returncode}. Output:\n{output}"
         )
 
     if not src_dir.exists() or not any(src_dir.iterdir()):
@@ -415,7 +466,7 @@ def main() -> None:
     parser.add_argument(
         "--no-bootstrap",
         action="store_true",
-        help="Fail if cached resources are missing instead of generating them via Docker.",
+        help="Fail if cached resources are missing instead of generating them via Docker or Podman.",
     )
     parser.add_argument(
         "--verbose",

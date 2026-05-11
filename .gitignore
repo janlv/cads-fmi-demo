@@ -1,5 +1,6 @@
 # Do not add sensitive certificates to the repo
 scripts/certs/
+certs/
 
 __pycache__/
 *.py[cod]

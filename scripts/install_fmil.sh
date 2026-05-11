@@ -3,7 +3,7 @@ set -euo pipefail
 
 DEFAULT_PREFIX="${FMIL_HOME:-$HOME/fmil}"
 REPO_URL=${FMIL_REPO_URL:-"https://github.com/modelon-community/fmi-library.git"}
-REPO_REF=${FMIL_REPO_REF:-"main"}
+REPO_REF=${FMIL_REPO_REF:-"master"}
 
 usage() {
     cat <<'EOF'
@@ -13,11 +13,11 @@ Downloads, builds, and installs FMIL (fmilib) if it is not already available
 under the requested prefix. Defaults:
 
   --prefix    $HOME/fmil  (or the current FMIL_HOME if set)
-  --ref       main        (override via FMIL_REPO_REF env var)
+  --ref       master      (override via FMIL_REPO_REF env var)
 
 Examples:
   scripts/install_fmil.sh
-  scripts/install_fmil.sh --prefix "$HOME/.local/fmil" --ref v2.4
+  scripts/install_fmil.sh --prefix "$HOME/.local/fmil" --ref 2.4
 EOF
 }
 
@@ -60,7 +60,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 have_fmil() {
-    [[ -d "$PREFIX/include/FMI" ]] && [[ -f "$PREFIX/lib/libfmilib_shared.so" ]]
+    [[ -d "$PREFIX/include/FMI" ]] &&
+        ([[ -f "$PREFIX/lib/libfmilib_shared.so" ]] ||
+            [[ -f "$PREFIX/lib/libfmilib_shared.dylib" ]] ||
+            [[ -f "$PREFIX/bin/fmilib_shared.dll" ]])
 }
 
 if have_fmil && [[ "$FORCE" != true ]]; then

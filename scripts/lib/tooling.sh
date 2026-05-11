@@ -30,6 +30,59 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
         esac
     }
 
+    cads_detect_os() {
+        case "$(uname -s)" in
+            Linux) printf 'linux\n' ;;
+            Darwin) printf 'darwin\n' ;;
+            *)
+                log_error "Unsupported operating system: $(uname -s)"
+                exit 1
+                ;;
+        esac
+    }
+
+    cads_has_cert_files() {
+        local cert_dir="$1"
+        [[ -d "$cert_dir" ]] || return 1
+        find "$cert_dir" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit | grep -q .
+    }
+
+    cads_select_host_cert_dir() {
+        local root_dir="$1"
+        local env_cert_dir="${CADS_HOST_CA_CERT_DIR:-}"
+        if [[ -n "$env_cert_dir" ]]; then
+            printf '%s\n' "$env_cert_dir"
+            return
+        fi
+        if cads_has_cert_files "$root_dir/scripts/certs"; then
+            printf '%s\n' "$root_dir/scripts/certs"
+            return
+        fi
+        if cads_has_cert_files "$root_dir/certs"; then
+            printf '%s\n' "$root_dir/certs"
+            return
+        fi
+        printf '%s\n' "$root_dir/scripts/certs"
+    }
+
+    cads_stage_host_certs() {
+        local root_dir="$1"
+        local dest_dir="$2"
+        local cert_dir cert_real dest_real
+        cert_dir="$(cads_select_host_cert_dir "$root_dir")"
+        mkdir -p "$dest_dir"
+        cert_real="$(cd "$cert_dir" 2>/dev/null && pwd -P || true)"
+        dest_real="$(cd "$dest_dir" 2>/dev/null && pwd -P || true)"
+        if [[ -n "$cert_real" && "$cert_real" == "$dest_real" ]]; then
+            return
+        fi
+        find "$dest_dir" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -delete
+        if ! cads_has_cert_files "$cert_dir"; then
+            return
+        fi
+        find "$cert_dir" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -exec cp {} "$dest_dir/" \;
+    }
+
     cads_install_linux_packages() {
         local apt_package_list="$1"
         cads_require_cmd sudo
@@ -73,9 +126,10 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
     cads_install_go() {
         local local_base_dir="$1"
         local local_go_dir="$2"
-        local arch tarball tmp
+        local arch os tarball tmp
         arch="$(cads_detect_arch)"
-        tarball="go${CADS_GO_VERSION}.linux-${arch}.tar.gz"
+        os="$(cads_detect_os)"
+        tarball="go${CADS_GO_VERSION}.${os}-${arch}.tar.gz"
         tmp="$(mktemp -d)"
         log_substep "Installing Go ${CADS_GO_VERSION}"
         curl -fsSL "https://go.dev/dl/${tarball}" -o "$tmp/go.tgz"
@@ -90,13 +144,18 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
         local local_go_dir="$2"
         log_step "Ensuring Go ${CADS_GO_VERSION}"
         if command -v go >/dev/null 2>&1; then
-            local current
-            current="$(go version | awk '{print $3}' | sed 's/^go//')"
+            local current raw_current
+            raw_current="$(go version 2>/dev/null || true)"
+            current="$(printf '%s\n' "$raw_current" | awk '{print $3}' | sed 's/^go//')"
             if [[ "$current" == "$CADS_GO_VERSION" ]]; then
                 log_subok "Go ${current} already installed"
                 return
             fi
-            log_subwarn "Go version ${current} found but ${CADS_GO_VERSION} required; reinstalling locally."
+            if [[ -n "$current" ]]; then
+                log_subwarn "Go version ${current} found but ${CADS_GO_VERSION} required; reinstalling locally."
+            else
+                log_subwarn "Existing Go binary is not usable on this host; reinstalling locally."
+            fi
         else
             log_subinfo "Go not found; installing locally."
         fi
@@ -105,9 +164,10 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
 
     cads_install_argo_cli() {
         local local_bin_dir="$1"
-        local arch asset url tmp
+        local arch os asset url tmp
         arch="$(cads_detect_arch)"
-        asset="argo-linux-${arch}.gz"
+        os="$(cads_detect_os)"
+        asset="argo-${os}-${arch}.gz"
         url="https://github.com/argoproj/argo-workflows/releases/download/${CADS_ARGO_VERSION}/${asset}"
         tmp="$(mktemp -d)"
         log_substep "Installing Argo CLI ${CADS_ARGO_VERSION}"
@@ -138,9 +198,10 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
 
     cads_install_kubectl_cli() {
         local local_bin_dir="$1"
-        local arch url
+        local arch os url
         arch="$(cads_detect_arch)"
-        url="https://dl.k8s.io/release/${CADS_KUBECTL_VERSION}/bin/linux/${arch}/kubectl"
+        os="$(cads_detect_os)"
+        url="https://dl.k8s.io/release/${CADS_KUBECTL_VERSION}/bin/${os}/${arch}/kubectl"
         log_substep "Installing kubectl ${CADS_KUBECTL_VERSION}"
         cads_install_binary "$url" "$local_bin_dir/kubectl"
         log_subok "kubectl ${CADS_KUBECTL_VERSION} installed"
@@ -166,9 +227,10 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
 
     cads_install_minikube_cli() {
         local local_bin_dir="$1"
-        local arch url
+        local arch os url
         arch="$(cads_detect_arch)"
-        url="https://storage.googleapis.com/minikube/releases/${CADS_MINIKUBE_VERSION}/minikube-linux-${arch}"
+        os="$(cads_detect_os)"
+        url="https://storage.googleapis.com/minikube/releases/${CADS_MINIKUBE_VERSION}/minikube-${os}-${arch}"
         log_substep "Installing Minikube ${CADS_MINIKUBE_VERSION}"
         cads_install_binary "$url" "$local_bin_dir/minikube"
         log_subok "Minikube ${CADS_MINIKUBE_VERSION} installed"
@@ -192,6 +254,18 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
     }
 
     cads_select_minikube_driver() {
+        if [[ "$(cads_detect_os)" == "darwin" ]]; then
+            if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+                printf 'docker\n'
+                return
+            fi
+            if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+                printf 'podman\n'
+                return
+            fi
+            log_error "Neither Docker nor Podman is running; start one before running Minikube."
+            exit 1
+        fi
         if command -v podman >/dev/null 2>&1; then
             printf 'podman\n'
             return
@@ -214,7 +288,7 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
         local driver
         driver="$(cads_select_minikube_driver)"
         local -a start_args=(start -p "$minikube_profile" --driver="$driver")
-        if [[ "$driver" == "podman" && "$(id -u)" != "0" ]]; then
+        if [[ "$driver" == "podman" && "$(cads_detect_os)" == "linux" && "$(id -u)" != "0" ]]; then
             start_args+=("--rootless")
         fi
         log_step "Starting Minikube profile '${minikube_profile}' (driver=${driver})"

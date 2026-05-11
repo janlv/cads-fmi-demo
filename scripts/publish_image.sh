@@ -52,7 +52,7 @@ cads_ensure_ghcr_login "$IMAGE" "$container_tool"
 
 if ! log_stream_cmd "Publishing container image $IMAGE (${container_tool})" "$container_tool" push "$IMAGE"; then
     if cads_is_ghcr_image "$IMAGE"; then
-        log_error "GHCR push failed. Ensure the selected token can write packages, or refresh gh auth login -h github.com -s write:packages."
+        log_error "GHCR push failed. Run ./prepare_ghcr.sh, or ensure the selected token can write packages."
     fi
     exit 1
 fi

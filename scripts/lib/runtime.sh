@@ -35,13 +35,20 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$_cads_runtime_shell_pid" ]]; then
 
     cads_select_container_tool() {
         if command -v podman >/dev/null 2>&1; then
-            printf 'podman\n'
-            return 0
+            if podman info >/dev/null 2>&1; then
+                printf 'podman\n'
+                return 0
+            fi
+            log_warn "Podman is installed but not reachable. On macOS, run 'podman machine start' and verify 'podman info'."
         fi
         if command -v docker >/dev/null 2>&1; then
-            printf 'docker\n'
-            return 0
+            if docker info >/dev/null 2>&1; then
+                printf 'docker\n'
+                return 0
+            fi
+            log_warn "Docker is installed but not reachable. Start Docker and verify 'docker info'."
         fi
+        log_error "No running container runtime found. Install/start Podman or Docker."
         return 1
     }
 
@@ -248,7 +255,7 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$_cads_runtime_shell_pid" ]]; then
         token="$(cads_resolve_ghcr_token || true)"
         if [[ -z "$token" ]]; then
             log_warn "No automatic GHCR credentials found. Reusing existing ${container_tool} login if present."
-            log_warn "To automate GHCR publishing, set GHCR_TOKEN or GITHUB_TOKEN, or run gh auth login -h github.com -s write:packages once."
+            log_warn "To automate GHCR publishing, run ./prepare_ghcr.sh or set GHCR_TOKEN/GITHUB_TOKEN."
             return 0
         fi
 
@@ -264,7 +271,7 @@ if [[ "${CADS_RUNTIME_SH_LOADED:-}" != "$_cads_runtime_shell_pid" ]]; then
             return 0
         fi
 
-        log_error "Automatic ghcr.io login failed. Refresh gh auth login -h github.com -s write:packages, or set GHCR_USERNAME plus GHCR_TOKEN."
+        log_error "Automatic ghcr.io login failed. Run ./prepare_ghcr.sh, or set GHCR_USERNAME plus GHCR_TOKEN."
         return 1
     }
 

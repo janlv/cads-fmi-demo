@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/config/playground.env"
+fi
+IMAGE="${CADS_WORKFLOW_IMAGE:-}"
+SKIP_BUILD=0
+dashboard_args=()
+prepare_remote_args=()
+
+usage() {
+    cat <<'EOF'
+Usage: ./run_publish.sh [--image ghcr.io/org/cads-fmi-demo:tag] [--skip-build] [dashboard args...]
+
+User path: Publish to Playground
+Build locally, publish the workflow image to GHCR, prepare the Kaizen
+Playground, and start the local dashboard against that published image.
+
+If --image is omitted, config/playground.env or CADS_WORKFLOW_IMAGE is used.
+This publishes the full current repo image, not one workflow file in isolation.
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --image)
+            shift
+            IMAGE="${1:-}"
+            if [[ -z "$IMAGE" ]]; then
+                echo "[error] --image expects a value" >&2
+                exit 1
+            fi
+            ;;
+        --image=*)
+            IMAGE="${1#*=}"
+            if [[ -z "$IMAGE" ]]; then
+                echo "[error] --image expects a value" >&2
+                exit 1
+            fi
+            ;;
+        --skip-build)
+            SKIP_BUILD=1
+            ;;
+        --kubeconfig|--argo-server)
+            flag="$1"
+            shift
+            value="${1:-}"
+            if [[ -z "$value" ]]; then
+                echo "[error] $flag expects a value" >&2
+                exit 1
+            fi
+            prepare_remote_args+=("$flag" "$value")
+            dashboard_args+=("$flag" "$value")
+            ;;
+        --namespace)
+            shift
+            value="${1:-}"
+            if [[ -z "$value" ]]; then
+                echo "[error] --namespace expects a value" >&2
+                exit 1
+            fi
+            prepare_remote_args+=(--namespace "$value")
+            dashboard_args+=(--argo-namespace "$value")
+            ;;
+        --kubeconfig=*|--argo-server=*)
+            prepare_remote_args+=("$1")
+            dashboard_args+=("$1")
+            ;;
+        --namespace=*)
+            value="${1#*=}"
+            prepare_remote_args+=("$1")
+            dashboard_args+=("--argo-namespace=$value")
+            ;;
+        *)
+            dashboard_args+=("$1")
+            ;;
+    esac
+    shift || true
+done
+
+if [[ -z "$IMAGE" ]]; then
+    echo "[error] No image configured. Set CADS_WORKFLOW_IMAGE, edit config/playground.env, or pass --image." >&2
+    usage
+    exit 1
+fi
+
+bash "$ROOT_DIR/prepare.sh" --require-container-runtime
+if (( !SKIP_BUILD )); then
+    bash "$ROOT_DIR/scripts/commands/build.sh" --image "$IMAGE"
+fi
+bash "$ROOT_DIR/scripts/commands/prepare_ghcr.sh"
+bash "$ROOT_DIR/scripts/commands/prepare_remote.sh" --image "$IMAGE" "${prepare_remote_args[@]}"
+exec "$ROOT_DIR/scripts/commands/run_dashboard.sh" --connect-existing --image "$IMAGE" "${dashboard_args[@]}"

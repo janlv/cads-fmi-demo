@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 ARG TARGETARCH
 ARG GOLANG_VERSION=1.22.2
+ARG CADS_CERTS_SHA=none
 
 # System dependencies for FMIL, Go build, and pythonfmu
 RUN echo "[image] Installing base system dependencies" \
@@ -23,6 +24,7 @@ RUN echo "[image] Installing base system dependencies" \
 # Ensure custom CA certificates are trusted before network downloads (e.g. Go tarball)
 COPY scripts/certs/ /tmp/certs/
 RUN set -eux; \
+    echo "[image] Certificate bundle digest: ${CADS_CERTS_SHA}"; \
     echo "[image] Syncing bootstrap certificates from /tmp/certs"; \
     FOUND_CERT=$(find /tmp/certs -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \
     if [ -n "$FOUND_CERT" ]; then \
@@ -37,7 +39,7 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 # Install Go toolchain
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN echo "[image] Installing Go ${GOLANG_VERSION}" \
-    && curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xz
+    && curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
 
 # Build and install FMIL (fmilib)
 RUN echo "[image] Cloning and building FMIL" \

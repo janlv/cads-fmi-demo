@@ -1,24 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
+source "$ROOT_DIR/scripts/lib/tooling.sh"
 
 cads_source_host_ca "$ROOT_DIR" || true
 
-export PATH="$ROOT_DIR/.local/bin:$PATH"
+cads_setup_local_path "$ROOT_DIR"
+if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/config/playground.env"
+fi
 
 default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
+LOCAL_BASE_DIR="$ROOT_DIR/.local"
+LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
+LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
 have_explicit_kubeconfig=0
 have_explicit_addr=0
 prepare_remote_mode="auto"
 skip_build=0
+connect_existing=0
 remote_image="${CADS_WORKFLOW_IMAGE:-}"
 resolved_kubeconfig="${KUBECONFIG:-}"
 service_args=()
 listen_addr=""
-default_remote_image="ghcr.io/janlv/cads-fmi-demo:latest"
+default_remote_image="ghcr.io/janlv/cads-fmi-demo:playground"
 state_dir="$ROOT_DIR/.local/state"
 state_file="$state_dir/dashboard-remote-image.env"
 explicit_image=0
@@ -60,6 +69,21 @@ save_dashboard_state() {
 cached_image="$image"
 cached_signature="$signature"
 EOF
+}
+
+ensure_dashboard_service_binary() {
+    if [[ -x "$ROOT_DIR/bin/cads-workflow-service" ]]; then
+        return
+    fi
+
+    log_info "Dashboard service binary is missing; building the local dashboard service only."
+    log_info "This does not build or publish the workflow container image."
+    cads_ensure_go "$LOCAL_BASE_DIR" "$LOCAL_GO_DIR"
+    mkdir -p "$ROOT_DIR/bin"
+    (
+        cd "$ROOT_DIR/orchestrator/service"
+        log_stream_cmd "Building local dashboard service" env CGO_ENABLED=0 go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+    )
 }
 
 derive_dashboard_image() {
@@ -191,13 +215,15 @@ stop_existing_dashboard_session() {
 
 usage() {
     cat <<'EOF'
-Usage: ./run_dashboard.sh [--image ghcr.io/org/cads-demo:tag] [--prepare-remote|--no-prepare-remote]
-                          [--skip-build] [--kubeconfig path] [--addr :8080]
+Usage: scripts/commands/run_dashboard.sh [--image ghcr.io/org/cads-demo:tag] [--prepare-remote|--no-prepare-remote]
+                                        [--connect-existing] [--skip-build] [--kubeconfig path] [--addr :8080]
 
 Starts the local dashboard for the hosted Kaizen playground.
 
 Convenience flags:
   --image IMAGE          Set CADS_WORKFLOW_IMAGE for dashboard-launched runs.
+  --connect-existing     Connect to the existing Playground environment only.
+                         Does not build, publish, or prepare a remote image.
   --prepare-remote       Force build/publish before launch.
   --no-prepare-remote    Skip automatic remote preparation and start immediately.
   default behavior       Automatically prepare a remote image when needed and
@@ -205,7 +231,8 @@ Convenience flags:
                          and unchanged.
   automatic stop         Stops an older dashboard session already listening on
                          the selected port before launching the new one.
-  --skip-build           With --prepare-remote, skip ./build.sh and only run ./prepare_remote.sh.
+  --skip-build           With --prepare-remote, skip scripts/commands/build.sh and
+                         only run scripts/commands/prepare_remote.sh.
 
 All other flags are passed through to cads-workflow-service.
 EOF
@@ -236,6 +263,11 @@ while (($#)); do
             ;;
         --prepare-remote|--sync-image)
             prepare_remote_mode="force"
+            ;;
+        --connect-existing|--existing-playground)
+            prepare_remote_mode="off"
+            skip_build=1
+            connect_existing=1
             ;;
         --no-prepare-remote)
             prepare_remote_mode="off"
@@ -294,6 +326,18 @@ if [[ -z "${ARGO_TOKEN:-}" && -z "$resolved_kubeconfig" && -f "$default_kubeconf
     resolved_kubeconfig="$default_kubeconfig"
 fi
 
+if (( connect_existing )) && [[ -z "$remote_image" ]]; then
+    load_dashboard_state
+    if [[ -n "${cached_image:-}" ]]; then
+        remote_image="$cached_image"
+        log_info "Using cached Playground workflow image $remote_image"
+    else
+        log_warn "No workflow image was configured for --connect-existing."
+        log_warn "Existing runs can still be inspected, but launching new runs may use the service default image."
+        log_warn "For exact parity with another machine, set config/playground.env, pass --image, or set CADS_WORKFLOW_IMAGE to the image tag used there."
+    fi
+fi
+
 should_prepare_remote=0
 current_signature=""
 if [[ "$prepare_remote_mode" == "force" ]]; then
@@ -322,16 +366,16 @@ if (( should_prepare_remote )); then
     fi
 
     if (( !skip_build )); then
-        bash "$ROOT_DIR/build.sh" --image "$remote_image"
+        bash "$ROOT_DIR/scripts/commands/build.sh" --image "$remote_image"
     else
-        log_info "Skipping ./build.sh before remote preparation"
+        log_info "Skipping scripts/commands/build.sh before remote preparation"
     fi
 
     prepare_args=(--image "$remote_image")
     if [[ -n "$resolved_kubeconfig" ]]; then
         prepare_args+=(--kubeconfig "$resolved_kubeconfig")
     fi
-    bash "$ROOT_DIR/prepare_remote.sh" "${prepare_args[@]}"
+    bash "$ROOT_DIR/scripts/commands/prepare_remote.sh" "${prepare_args[@]}"
 
     if [[ -z "$current_signature" ]] && dashboard_source_is_clean; then
         current_signature="$(dashboard_source_signature || true)"
@@ -339,10 +383,7 @@ if (( should_prepare_remote )); then
     save_dashboard_state "$remote_image" "$current_signature"
 fi
 
-if [[ ! -x "$ROOT_DIR/bin/cads-workflow-service" ]]; then
-    log_error "Missing bin/cads-workflow-service. Run ./build.sh first, or allow automatic remote preparation."
-    exit 1
-fi
+ensure_dashboard_service_binary
 
 extra_args=()
 if [[ -z "${ARGO_TOKEN:-}" && $have_explicit_kubeconfig -eq 0 && -n "$resolved_kubeconfig" ]]; then
@@ -351,7 +392,11 @@ fi
 
 if [[ $have_explicit_addr -eq 0 ]]; then
     listen_addr=":8080"
-    extra_args=(--addr "$listen_addr" "${extra_args[@]}")
+    if ((${#extra_args[@]} > 0)); then
+        extra_args=(--addr "$listen_addr" "${extra_args[@]}")
+    else
+        extra_args=(--addr "$listen_addr")
+    fi
 fi
 
 if [[ -n "$remote_image" ]]; then
@@ -366,4 +411,12 @@ fi
 
 stop_existing_dashboard_session "$listen_addr"
 
-exec "$ROOT_DIR/bin/cads-workflow-service" --serve --workdir "$ROOT_DIR" "${extra_args[@]}" "${service_args[@]}"
+cmd=("$ROOT_DIR/bin/cads-workflow-service" --serve --workdir "$ROOT_DIR")
+if ((${#extra_args[@]} > 0)); then
+    cmd+=("${extra_args[@]}")
+fi
+if ((${#service_args[@]} > 0)); then
+    cmd+=("${service_args[@]}")
+fi
+
+exec "${cmd[@]}"

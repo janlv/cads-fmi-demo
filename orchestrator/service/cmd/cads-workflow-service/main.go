@@ -29,7 +29,7 @@ func main() {
 	flag.StringVar(&argoServer, "argo-server", "", "Hosted Argo server host (default ARGO_SERVER or argoworkflows.cads.kzslab.dev)")
 	flag.StringVar(&argoNamespace, "argo-namespace", "", "Hosted Argo namespace (default ARGO_NAMESPACE or playground)")
 	flag.StringVar(&argoServiceAccount, "argo-service-account", "", "Hosted Argo service account (default ARGO_SERVICE_ACCOUNT or playground-storhy-playground-pg-admin)")
-	flag.StringVar(&remoteImage, "remote-image", "", "Hosted workflow image (default CADS_WORKFLOW_IMAGE or ghcr.io/janlv/cads-fmi-demo:latest)")
+	flag.StringVar(&remoteImage, "remote-image", "", "Hosted workflow image (default CADS_WORKFLOW_IMAGE or ghcr.io/janlv/cads-fmi-demo:playground)")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Optional kubeconfig used when ARGO_TOKEN is not set")
 	flag.Parse()
 

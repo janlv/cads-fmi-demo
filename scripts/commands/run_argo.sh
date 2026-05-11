@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
@@ -17,7 +17,7 @@ cads_setup_local_path "$ROOT_DIR"
 
 usage() {
     cat <<'EOF'
-Usage: ./run_argo.sh [wrapper options] <argo-subcommand> [argo args...]
+Usage: scripts/commands/run_argo.sh [wrapper options] <argo-subcommand> [argo args...]
 
 Wrapper options:
   --kubeconfig path   Use this kubeconfig to resolve the Argo token.
@@ -28,10 +28,10 @@ Wrapper options:
   -h, --help          Show this wrapper help.
 
 Examples:
-  ./run_argo.sh list
-  ./run_argo.sh logs cads-list-s3-objects-20260422133557 --tail 200
-  ./run_argo.sh get cads-list-s3-objects-20260422133557 -o json
-  ./run_argo.sh submit deploy/argo/list_s3_objects.yaml --watch
+  scripts/commands/run_argo.sh list
+  scripts/commands/run_argo.sh logs cads-list-s3-objects-20260422133557 --tail 200
+  scripts/commands/run_argo.sh get cads-list-s3-objects-20260422133557 -o json
+  scripts/commands/run_argo.sh submit deploy/argo/list_s3_objects.yaml --watch
 EOF
 }
 

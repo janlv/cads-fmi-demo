@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 
@@ -9,11 +9,11 @@ MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-minikube}"
 
 usage() {
     cat <<'EOF'
-Usage: ./clean.sh
+Usage: scripts/commands/clean.sh
 
 Removes generated artifacts (.local toolchain, bin/, caches, images) and
-deletes the local Minikube profile so subsequent ./prepare_local.sh and
-./build.sh runs start from a blank slate.
+deletes the local Minikube profile so subsequent prepare/build runs start from
+a blank slate.
 EOF
 }
 
@@ -109,4 +109,4 @@ if [[ -d "$ROOT_DIR/.local" ]]; then
     cleanup_path ".local"
 fi
 
-log_ok "Clean up complete. Re-run ./prepare_local.sh and ./build.sh as needed."
+log_ok "Clean up complete. Re-run ./prepare.sh, ./run_local_dev.sh, or ./run_publish.sh as needed."

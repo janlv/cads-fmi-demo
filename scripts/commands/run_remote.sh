@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 WORKFLOW=""
 default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
-default_remote_image="ghcr.io/janlv/cads-fmi-demo:latest"
+default_remote_image="ghcr.io/janlv/cads-fmi-demo:playground"
+if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/config/playground.env"
+fi
 state_dir="$ROOT_DIR/.local/state"
 state_file="$state_dir/dashboard-remote-image.env"
 IMAGE="${CADS_WORKFLOW_IMAGE:-$default_remote_image}"
@@ -23,7 +27,7 @@ cads_setup_local_path "$ROOT_DIR"
 
 usage() {
     cat <<'EOF'
-Usage: ./run_remote.sh <workflow.yaml> [--image ghcr.io/org/cads-demo:tag]
+Usage: scripts/commands/run_remote.sh <workflow.yaml> [--image ghcr.io/org/cads-demo:tag]
                       [--kubeconfig path] [--argo-server host]
                       [--namespace name] [--service-account name]
                       [--s3-credentials-secret name]
@@ -31,7 +35,7 @@ Usage: ./run_remote.sh <workflow.yaml> [--image ghcr.io/org/cads-demo:tag]
 
 Generates and submits a hosted-Argo workflow manifest to the remote playground.
 If --image is omitted, the script reuses CADS_WORKFLOW_IMAGE or the last image
-prepared by ./prepare_remote.sh when available.
+prepared by scripts/commands/prepare_remote.sh when available.
 EOF
 }
 

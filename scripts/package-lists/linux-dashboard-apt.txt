@@ -1,0 +1,6 @@
+age
+ca-certificates
+curl
+git
+gzip
+tar

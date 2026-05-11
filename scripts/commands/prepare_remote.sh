@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 source "$ROOT_DIR/scripts/lib/tooling.sh"
-
-if [[ "$(uname -s)" != "Linux" ]]; then
-    log_error "prepare_remote.sh currently supports Linux hosts only."
-    exit 1
-fi
 
 LOCAL_BASE_DIR="$ROOT_DIR/.local"
 LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
 LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
 default_kubeconfig="$HOME/Kaizen_CADS/kubeconfig"
 default_local_image="cads-fmi-demo:latest"
-default_remote_image="ghcr.io/janlv/cads-fmi-demo:latest"
+default_remote_image="ghcr.io/janlv/cads-fmi-demo:playground"
 state_dir="$ROOT_DIR/.local/state"
 state_file="$state_dir/dashboard-remote-image.env"
 build_state_file="$state_dir/build-image.env"
@@ -27,11 +22,16 @@ ARGO_NAMESPACE="${ARGO_NAMESPACE:-playground}"
 
 mkdir -p "$LOCAL_BIN_DIR"
 cads_setup_local_path "$ROOT_DIR"
+if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/config/playground.env"
+fi
+IMAGE="${IMAGE:-${CADS_WORKFLOW_IMAGE:-}}"
 
 usage() {
     cat <<'EOF'
-Usage: ./prepare_remote.sh [--image ghcr.io/org/cads-demo:tag] [--kubeconfig path]
-                           [--argo-server host] [--namespace name]
+Usage: scripts/commands/prepare_remote.sh [--image ghcr.io/org/cads-demo:tag] [--kubeconfig path]
+                                          [--argo-server host] [--namespace name]
 
 Validates remote Argo access and publishes the selected image tag for hosted
 playground runs.
@@ -166,11 +166,18 @@ fi
 cads_source_host_ca "$ROOT_DIR"
 
 log_step "Validating Argo access to ${ARGO_SERVER} (${ARGO_NAMESPACE})"
-if ! run_with_logged_output argo list \
+argo_args=(
+    list
     -n "$ARGO_NAMESPACE" \
     -s "$ARGO_SERVER" \
     --token "$TOKEN" \
-    --argo-http1 >/dev/null; then
+    --argo-http1
+)
+if [[ -n "$KUBECONFIG_PATH" ]]; then
+    argo_args+=(--kubeconfig "$KUBECONFIG_PATH")
+fi
+
+if ! run_with_logged_output argo "${argo_args[@]}" >/dev/null; then
     log_error "Unable to authenticate with the remote Argo server."
     exit 1
 fi
@@ -193,7 +200,7 @@ if ! local_image_exists "$IMAGE" "$container_tool"; then
 
     if [[ -z "$source_image" ]]; then
         log_error "Local image '$IMAGE' was not found, and no fallback source image is available to retag."
-        log_error "Run ./build.sh first, or pass --image with a tag that already exists locally."
+        log_error "Run scripts/commands/build.sh first, or pass --image with a tag that already exists locally."
         exit 1
     fi
 
@@ -217,9 +224,9 @@ Remote environment preparation complete. Published image:
   $IMAGE
 
 Continue with:
-  ./run_remote.sh workflows/python_chain.yaml
-  ./run_inspect_s3_object.sh artifacts/my-file
+  scripts/commands/run_remote.sh workflows/python_chain.yaml
+  scripts/commands/run_inspect_s3_object.sh artifacts/my-file
 
 To override this prepared image explicitly:
-  CADS_WORKFLOW_IMAGE=$IMAGE ./run_remote.sh workflows/python_chain.yaml
+  CADS_WORKFLOW_IMAGE=$IMAGE scripts/commands/run_remote.sh workflows/python_chain.yaml
 EOF

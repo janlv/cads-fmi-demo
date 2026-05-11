@@ -21,7 +21,7 @@ const (
 	defaultArgoServer          = "argoworkflows.cads.kzslab.dev"
 	defaultArgoNamespace       = "playground"
 	defaultArgoServiceAccount  = "playground-storhy-playground-pg-admin"
-	defaultRemoteImage         = "ghcr.io/janlv/cads-fmi-demo:latest"
+	defaultRemoteImage         = "ghcr.io/janlv/cads-fmi-demo:playground"
 	defaultS3CredentialsSecret = "storhy-argo-artifacts-s3-credentials"
 	defaultPollInterval        = 5 * time.Second
 )
@@ -790,7 +790,7 @@ func generateRemoteWorkflowManifest(name string, namespace string, serviceAccoun
 	}
 	template.Name = "run-workflow"
 	template.Container.Image = image
-	template.Container.ImagePullPolicy = "IfNotPresent"
+	template.Container.ImagePullPolicy = "Always"
 	template.Container.Command = []string{"/app/bin/cads-workflow-runner"}
 	template.Container.Args = []string{"--json-output", "--workflow", workflowPath}
 	template.Container.Env = buildRemoteWorkflowEnvVars(defaultS3CredentialsSecret)

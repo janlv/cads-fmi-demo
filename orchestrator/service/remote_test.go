@@ -25,7 +25,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	        {
 	          "name": "run-workflow",
 	          "container": {
-	            "image": "ghcr.io/janlv/cads-fmi-demo:latest",
+	            "image": "ghcr.io/janlv/cads-fmi-demo:playground",
 	            "args": ["--workflow", "workflows/python_chain.yaml"]
 	          }
 	        }
@@ -49,7 +49,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	        {
 	          "name": "run-workflow",
 	          "container": {
-	            "image": "ghcr.io/janlv/cads-fmi-demo:latest",
+	            "image": "ghcr.io/janlv/cads-fmi-demo:playground",
 	            "args": ["--workflow=workflows/calculate_aecis.yaml"]
 	          }
 	        }

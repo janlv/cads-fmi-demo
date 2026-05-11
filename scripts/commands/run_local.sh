@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
 source "$ROOT_DIR/scripts/lib/tooling.sh"
@@ -18,7 +18,7 @@ cads_setup_local_path "$ROOT_DIR"
 
 usage() {
     cat <<'EOF'
-Usage: ./run_local.sh <workflow.yaml> [--image image:tag]
+Usage: scripts/commands/run_local.sh <workflow.yaml> [--image image:tag]
 
 Submits the workflow to the Argo controller running inside the local Minikube
 cluster.

@@ -7,7 +7,7 @@ source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 ARGO_DIR="$ROOT_DIR/deploy/argo"
 
-IMAGE="ghcr.io/janlv/cads-fmi-demo:latest"
+IMAGE="ghcr.io/janlv/cads-fmi-demo:playground"
 WORKFLOW=""
 SERVICE_ACCOUNT="playground-storhy-playground-pg-admin"
 NAMESPACE="playground"
@@ -107,7 +107,7 @@ spec:
     - name: run-workflow
       container:
         image: ${IMAGE}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         command: ["/app/bin/cads-workflow-runner"]
         args: ["--json-output", "--workflow", "${WORKFLOW}"]
         env:

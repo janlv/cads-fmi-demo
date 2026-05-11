@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 source "$ROOT_DIR/scripts/lib/logging.sh"
 source "$ROOT_DIR/scripts/lib/runtime.sh"
@@ -21,7 +21,7 @@ CONTAINER_TOOL=""
 
 usage() {
     cat <<'EOF'
-Usage: ./build.sh [--image image:tag] [--fmil-home path]
+Usage: scripts/commands/build.sh [--image image:tag] [--fmil-home path]
 
 Builds the CADS FMI demo container image and the Go workflow binaries.
 EOF
@@ -82,7 +82,10 @@ require_cmd() {
 }
 
 have_fmil() {
-    [[ -d "$FMIL_HOME/include/FMI" && -f "$FMIL_HOME/lib/libfmilib_shared.so" ]]
+    [[ -d "$FMIL_HOME/include/FMI" ]] &&
+        ([[ -f "$FMIL_HOME/lib/libfmilib_shared.so" ]] ||
+            [[ -f "$FMIL_HOME/lib/libfmilib_shared.dylib" ]] ||
+            [[ -f "$FMIL_HOME/bin/fmilib_shared.dll" ]])
 }
 
 ensure_fmil() {
@@ -123,7 +126,12 @@ build_container_image() {
         log_error "Neither podman nor docker is available to build the container image."
         exit 1
     fi
-    log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL})" "$CONTAINER_TOOL" build -t "$IMAGE" "$ROOT_DIR"
+    cads_stage_host_certs "$ROOT_DIR" "$ROOT_DIR/scripts/certs"
+    local certs_sha="none"
+    if cads_has_cert_files "$ROOT_DIR/scripts/certs"; then
+        certs_sha="$(find "$ROOT_DIR/scripts/certs" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -exec cksum {} \; | sort | cksum | awk '{print $1 "-" $2}')"
+    fi
+    log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL})" "$CONTAINER_TOOL" build --build-arg "CADS_CERTS_SHA=$certs_sha" -t "$IMAGE" "$ROOT_DIR"
 }
 
 ensure_fmil
@@ -139,4 +147,4 @@ build_container_image
 
 save_build_state
 
-log_ok "Build complete for image $IMAGE. Use ./run_local.sh or ./run_remote.sh to submit a workflow."
+log_ok "Build complete for image $IMAGE. Use ./run_local_dev.sh or scripts/commands/run_remote.sh to submit a workflow."

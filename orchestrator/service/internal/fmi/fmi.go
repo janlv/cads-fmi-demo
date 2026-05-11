@@ -4,7 +4,8 @@ package fmi
 
 /*
 #cgo CXXFLAGS: -std=c++17
-#cgo LDFLAGS: -lfmilib_shared -lpugixml -lzip -lm -ldl -lstdc++
+#cgo linux LDFLAGS: -lfmilib_shared -lpugixml -lzip -lm -ldl -lstdc++
+#cgo darwin LDFLAGS: -lfmilib_shared -lm -lc++
 #include <stdlib.h>
 #include "runner_bridge.h"
 */
