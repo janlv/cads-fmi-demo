@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,5 +290,58 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	}
 	if run.Name != "cads-python-chain-20260416170000" || run.WorkflowPath != "workflows/python_chain.yaml" {
 		t.Fatalf("run = %+v, want normalized submitted run", run)
+	}
+}
+
+func TestArgoRemoteClientListRunsUsesKubeconfigWhenAvailable(t *testing.T) {
+	client := NewArgoRemoteClient(t.TempDir(), ArgoOptionInputs{
+		ArgoServer: "argoworkflows.cads.kzslab.dev",
+		Namespace:  "playground",
+		Kubeconfig: "/tmp/kubeconfig",
+	}, func(key string) string {
+		if key == "ARGO_TOKEN" {
+			return "env-token"
+		}
+		return ""
+	})
+	client.argoCmd = "argo"
+	client.problems = nil
+	client.now = func() time.Time {
+		return time.Date(2026, 4, 16, 17, 0, 0, 0, time.UTC)
+	}
+	client.exec = func(_ context.Context, command string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "--kubeconfig /tmp/kubeconfig") {
+			t.Fatalf("args = %v, want kubeconfig auth", args)
+		}
+		if strings.Contains(joined, "--token") || strings.Contains(joined, "env-token") {
+			t.Fatalf("args = %v, did not want token auth when kubeconfig is available", args)
+		}
+		return []byte(`[]`), nil
+	}
+
+	if _, err := client.ListRuns(context.Background(), 20); err != nil {
+		t.Fatalf("ListRuns() error = %v", err)
+	}
+}
+
+func TestArgoRemoteClientRunArgoRedactsTokenFromErrors(t *testing.T) {
+	client := &ArgoRemoteClient{
+		argoCmd: "argo",
+		config:  ArgoConfig{Token: "super-secret-token"},
+		exec: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+			return nil, errors.New("command failed with super-secret-token")
+		},
+	}
+
+	_, err := client.runArgo(context.Background(), "list", "--token", "super-secret-token")
+	if err == nil {
+		t.Fatal("runArgo() error = nil, want error")
+	}
+	if strings.Contains(err.Error(), "super-secret-token") {
+		t.Fatalf("runArgo() error leaked token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("runArgo() error = %v, want redaction marker", err)
 	}
 }

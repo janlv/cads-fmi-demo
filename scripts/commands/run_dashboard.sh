@@ -18,6 +18,8 @@ default_kubeconfig="$ROOT_DIR/.local/kaizen/kubeconfig"
 LOCAL_BASE_DIR="$ROOT_DIR/.local"
 LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
 LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
+LOCAL_GO_BUILD_CACHE="$ROOT_DIR/.local/go-build"
+LOCAL_GO_MOD_CACHE="$ROOT_DIR/.local/go-mod"
 have_explicit_kubeconfig=0
 have_explicit_addr=0
 prepare_remote_mode="auto"
@@ -72,17 +74,31 @@ EOF
 }
 
 ensure_dashboard_service_binary() {
-    if [[ -x "$ROOT_DIR/bin/cads-workflow-service" ]]; then
-        return
+    local service_bin="$ROOT_DIR/bin/cads-workflow-service"
+    local rebuild_reason="missing"
+    if [[ -x "$service_bin" ]]; then
+        if [[ -z "$(find "$ROOT_DIR/orchestrator/service" -type f \( -name '*.go' -o -path '*/web/*' \) -newer "$service_bin" -print -quit 2>/dev/null)" ]]; then
+            return
+        fi
+        rebuild_reason="out of date"
     fi
 
-    log_info "Dashboard service binary is missing; building the local dashboard service only."
+    if [[ "$rebuild_reason" == "missing" ]]; then
+        log_info "Dashboard service binary is missing; building the local dashboard service only."
+    else
+        log_info "Dashboard service binary is out of date; rebuilding the local dashboard service only."
+    fi
     log_info "This does not build or publish the workflow container image."
+
     cads_ensure_go "$LOCAL_BASE_DIR" "$LOCAL_GO_DIR"
-    mkdir -p "$ROOT_DIR/bin"
+    mkdir -p "$ROOT_DIR/bin" "$LOCAL_GO_BUILD_CACHE" "$LOCAL_GO_MOD_CACHE"
     (
         cd "$ROOT_DIR/orchestrator/service"
-        log_stream_cmd "Building local dashboard service" env CGO_ENABLED=0 go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+        log_stream_cmd "Building local dashboard service" env \
+            GOCACHE="$LOCAL_GO_BUILD_CACHE" \
+            GOMODCACHE="$LOCAL_GO_MOD_CACHE" \
+            CGO_ENABLED=0 \
+            go build -o "$service_bin" ./cmd/cads-workflow-service
     )
 }
 

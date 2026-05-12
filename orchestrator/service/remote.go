@@ -172,12 +172,7 @@ func (c *ArgoRemoteClient) ListRuns(ctx context.Context, limit int) ([]RunSummar
 	}
 
 	output, err := c.runArgo(ctx,
-		"list",
-		"-n", c.config.Namespace,
-		"-s", c.config.ArgoServer,
-		"--token", c.config.Token,
-		"--argo-http1",
-		"-o", "json",
+		c.withArgoConnectionArgs("list", "-o", "json")...,
 	)
 	if err != nil {
 		return nil, err
@@ -202,12 +197,7 @@ func (c *ArgoRemoteClient) GetRun(ctx context.Context, name string) (*RunSummary
 	}
 
 	output, err := c.runArgo(ctx,
-		"get", name,
-		"-n", c.config.Namespace,
-		"-s", c.config.ArgoServer,
-		"--token", c.config.Token,
-		"--argo-http1",
-		"-o", "json",
+		c.withArgoConnectionArgs("get", name, "-o", "json")...,
 	)
 	if err != nil {
 		return nil, err
@@ -255,12 +245,7 @@ func (c *ArgoRemoteClient) SubmitWorkflow(ctx context.Context, workflowPath stri
 	}
 
 	output, err := c.runArgo(ctx,
-		"submit", tempPath,
-		"-n", c.config.Namespace,
-		"-s", c.config.ArgoServer,
-		"--token", c.config.Token,
-		"--argo-http1",
-		"-o", "json",
+		c.withArgoConnectionArgs("submit", tempPath, "-o", "json")...,
 	)
 	if err != nil {
 		return nil, err
@@ -290,12 +275,7 @@ func (c *ArgoRemoteClient) GetRunResults(ctx context.Context, name string) (*Run
 	}
 
 	output, err := c.runArgo(ctx,
-		"logs", name,
-		"-n", c.config.Namespace,
-		"-s", c.config.ArgoServer,
-		"--token", c.config.Token,
-		"--argo-http1",
-		"--tail", "2000",
+		c.withArgoConnectionArgs("logs", name, "--tail", "2000")...,
 	)
 	if err != nil {
 		return nil, err
@@ -321,10 +301,25 @@ func (c *ArgoRemoteClient) ensureReady() error {
 	return nil
 }
 
+func (c *ArgoRemoteClient) withArgoConnectionArgs(args ...string) []string {
+	out := make([]string, 0, len(args)+8)
+	out = append(out, args...)
+	out = append(out, "-n", c.config.Namespace, "-s", c.config.ArgoServer)
+	if strings.TrimSpace(c.config.Kubeconfig) != "" {
+		out = append(out, "--kubeconfig", c.config.Kubeconfig)
+	} else {
+		out = append(out, "--token", c.config.Token)
+	}
+	out = append(out, "--argo-http1")
+	return out
+}
+
 func (c *ArgoRemoteClient) runArgo(ctx context.Context, args ...string) ([]byte, error) {
 	output, err := c.exec(ctx, c.argoCmd, args...)
 	if err != nil {
-		return nil, fmt.Errorf("argo %s: %w", strings.Join(args, " "), err)
+		argText := redactSecrets(strings.Join(args, " "), c.config.Token)
+		errText := redactSecrets(err.Error(), c.config.Token)
+		return nil, fmt.Errorf("argo %s: %s", argText, errText)
 	}
 	return output, nil
 }
@@ -402,6 +397,20 @@ func normalizeBearerToken(token string) string {
 	trimmed = strings.TrimPrefix(trimmed, "Bearer ")
 	trimmed = strings.TrimPrefix(trimmed, "bearer ")
 	return strings.TrimSpace(trimmed)
+}
+
+func redactSecrets(text string, secrets ...string) string {
+	redacted := text
+	for _, secret := range secrets {
+		secret = strings.TrimSpace(secret)
+		if secret == "" {
+			continue
+		}
+		redacted = strings.ReplaceAll(redacted, secret, "<redacted>")
+		redacted = strings.ReplaceAll(redacted, "Bearer "+secret, "Bearer <redacted>")
+		redacted = strings.ReplaceAll(redacted, "bearer "+secret, "bearer <redacted>")
+	}
+	return redacted
 }
 
 func pickString(values ...string) string {

@@ -11,6 +11,8 @@ cads_setup_local_path "$ROOT_DIR"
 LOCAL_BASE_DIR="$ROOT_DIR/.local"
 LOCAL_BIN_DIR="$LOCAL_BASE_DIR/bin"
 LOCAL_GO_DIR="$LOCAL_BASE_DIR/go"
+LOCAL_GO_BUILD_CACHE="$ROOT_DIR/.local/go-build"
+LOCAL_GO_MOD_CACHE="$ROOT_DIR/.local/go-mod"
 STATE_DIR="$ROOT_DIR/.local/state"
 BUILD_STATE_FILE="$STATE_DIR/build-image.env"
 
@@ -105,13 +107,13 @@ stage_platform_resources() {
 
 build_go_binaries() {
     log_step "Building Go workflow binaries"
-    mkdir -p "$ROOT_DIR/bin"
+    mkdir -p "$ROOT_DIR/bin" "$LOCAL_GO_BUILD_CACHE" "$LOCAL_GO_MOD_CACHE"
     local -a go_env=(
         "GOOS="
         "GOARCH="
         "CGO_ENABLED=1"
-        "GOCACHE=${GOCACHE:-/tmp/go-build}"
-        "GOMODCACHE=${GOMODCACHE:-/tmp/go-mod}"
+        "GOCACHE=${GOCACHE:-$LOCAL_GO_BUILD_CACHE}"
+        "GOMODCACHE=${GOMODCACHE:-$LOCAL_GO_MOD_CACHE}"
     )
     (
         cd "$ROOT_DIR/orchestrator/service"
