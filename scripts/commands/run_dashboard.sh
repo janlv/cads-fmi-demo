@@ -213,6 +213,42 @@ stop_existing_dashboard_session() {
     log_ok "Stopped existing dashboard session(s) on $addr"
 }
 
+dashboard_url_for_addr() {
+    local addr="$1"
+    local host="localhost"
+    local port=""
+
+    if [[ "$addr" == :* ]]; then
+        port="${addr#:}"
+    elif [[ "$addr" == *:* ]]; then
+        host="${addr%:*}"
+        port="${addr##*:}"
+        if [[ "$host" == "0.0.0.0" || "$host" == "::" || "$host" == "[::]" || -z "$host" ]]; then
+            host="localhost"
+        fi
+        host="${host#[}"
+        host="${host%]}"
+    else
+        port="$addr"
+    fi
+
+    if [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+    printf 'http://%s:%s/\n' "$host" "$port"
+}
+
+print_dashboard_url() {
+    local addr="$1"
+    local url=""
+    url="$(dashboard_url_for_addr "$addr" || true)"
+    if [[ -z "$url" ]]; then
+        log_warn "Unable to derive dashboard URL from address '$addr'."
+        return 0
+    fi
+    log_info "Open the dashboard in your browser: $url"
+}
+
 usage() {
     cat <<'EOF'
 Usage: scripts/commands/run_dashboard.sh [--image ghcr.io/org/cads-demo:tag] [--prepare-remote|--no-prepare-remote]
@@ -410,6 +446,7 @@ if [[ -z "$listen_addr" ]]; then
 fi
 
 stop_existing_dashboard_session "$listen_addr"
+print_dashboard_url "$listen_addr"
 
 cmd=("$ROOT_DIR/bin/cads-workflow-service" --serve --workdir "$ROOT_DIR")
 if ((${#extra_args[@]} > 0)); then
