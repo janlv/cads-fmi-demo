@@ -73,18 +73,36 @@ cached_signature="$signature"
 EOF
 }
 
+dashboard_service_has_fmil_dependency() {
+    local service_bin="$1"
+    if [[ "$(uname -s)" == "Darwin" ]] && command -v otool >/dev/null 2>&1; then
+        otool -L "$service_bin" 2>/dev/null | grep -q 'libfmilib_shared'
+        return
+    fi
+    if command -v ldd >/dev/null 2>&1; then
+        ldd "$service_bin" 2>/dev/null | grep -q 'libfmilib_shared'
+        return
+    fi
+    return 1
+}
+
 ensure_dashboard_service_binary() {
     local service_bin="$ROOT_DIR/bin/cads-workflow-service"
     local rebuild_reason="missing"
     if [[ -x "$service_bin" ]]; then
-        if [[ -z "$(find "$ROOT_DIR/orchestrator/service" -type f \( -name '*.go' -o -path '*/web/*' \) -newer "$service_bin" -print -quit 2>/dev/null)" ]]; then
+        if dashboard_service_has_fmil_dependency "$service_bin"; then
+            rebuild_reason="linked to FMIL"
+        elif [[ -z "$(find "$ROOT_DIR/orchestrator/service" -type f \( -name '*.go' -o -path '*/web/*' \) -newer "$service_bin" -print -quit 2>/dev/null)" ]]; then
             return
+        else
+            rebuild_reason="out of date"
         fi
-        rebuild_reason="out of date"
     fi
 
     if [[ "$rebuild_reason" == "missing" ]]; then
         log_info "Dashboard service binary is missing; building the local dashboard service only."
+    elif [[ "$rebuild_reason" == "linked to FMIL" ]]; then
+        log_info "Dashboard service binary is linked to FMIL; rebuilding the local dashboard service without CGO."
     else
         log_info "Dashboard service binary is out of date; rebuilding the local dashboard service only."
     fi

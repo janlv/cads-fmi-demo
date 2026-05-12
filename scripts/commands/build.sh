@@ -108,17 +108,24 @@ stage_platform_resources() {
 build_go_binaries() {
     log_step "Building Go workflow binaries"
     mkdir -p "$ROOT_DIR/bin" "$LOCAL_GO_BUILD_CACHE" "$LOCAL_GO_MOD_CACHE"
-    local -a go_env=(
+    local -a runner_env=(
         "GOOS="
         "GOARCH="
         "CGO_ENABLED=1"
         "GOCACHE=${GOCACHE:-$LOCAL_GO_BUILD_CACHE}"
         "GOMODCACHE=${GOMODCACHE:-$LOCAL_GO_MOD_CACHE}"
     )
+    local -a service_env=(
+        "GOOS="
+        "GOARCH="
+        "CGO_ENABLED=0"
+        "GOCACHE=${GOCACHE:-$LOCAL_GO_BUILD_CACHE}"
+        "GOMODCACHE=${GOMODCACHE:-$LOCAL_GO_MOD_CACHE}"
+    )
     (
         cd "$ROOT_DIR/orchestrator/service"
-        run_with_logged_output env "${go_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
-        run_with_logged_output env "${go_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+        run_with_logged_output env "${runner_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
+        run_with_logged_output env "${service_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
     )
 }
 
