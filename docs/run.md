@@ -25,7 +25,7 @@ Use the local path when you want a self-contained Minikube loop and automatic
 artifact copy-back into the repo. This path does not start a dashboard.
 
 ```bash
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 ```
 
 The wrapper runs the same prepare/build/local submission sequence on Linux and
@@ -116,7 +116,7 @@ Kaizen auth defaults as the main remote flow.
 Common patterns:
 
 - `<workflow.yaml>` is always a repo-relative workflow path such as
-  `workflows/python_chain.yaml`
+  `workflows/tests/python_chain.yaml`
 - `--image` overrides the image tag for build or submission
 - `--kubeconfig` overrides the default Kaizen kubeconfig
 

@@ -44,7 +44,7 @@ Both Linux and macOS use the same host preparation path:
 Use the Local Dev path when you want the self-contained local loop:
 
 ```bash
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 ```
 
 On Debian/Ubuntu, `prepare.sh` can install Podman plus helper packages with

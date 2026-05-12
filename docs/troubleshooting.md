@@ -86,7 +86,7 @@ probable cause, and recommended fix.
 
 ### `Workflow file not found`
 - Run `./run_local_dev.sh` from the repo root and pass relative paths (e.g.,
-  `workflows/python_chain.yaml`).
+  `workflows/tests/python_chain.yaml`).
 
 ### `argo submit` fails because CRDs are missing
 - Re-run `./run_local_dev.sh`; it installs Argo via
@@ -97,7 +97,7 @@ probable cause, and recommended fix.
 - Delete the PVC and rebuild it with `./run_local_dev.sh`:
   ```bash
   kubectl delete pvc cads-data-pvc -n argo
-  ./run_local_dev.sh workflows/python_chain.yaml
+  ./run_local_dev.sh workflows/tests/python_chain.yaml
   ```
   Adjust storage class/size inside `scripts/generate_manifests.sh` if your cluster
   requires custom settings.

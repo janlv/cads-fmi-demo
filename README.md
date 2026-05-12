@@ -190,7 +190,7 @@ manager.
 ./run_publish.sh
 
 # User path 3: build/test one workflow locally with Minikube.
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 
 # Submit one workflow directly to the hosted playground.
 scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml

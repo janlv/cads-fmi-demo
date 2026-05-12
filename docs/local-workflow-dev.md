@@ -14,7 +14,7 @@ dashboard is only for the Kaizen Playground paths.
 ## Prepare Local Development
 
 ```bash
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 ```
 
 The expanded form is:
@@ -22,7 +22,7 @@ The expanded form is:
 ```bash
 ./prepare.sh --with-local-minikube
 scripts/commands/build.sh
-scripts/commands/run_local.sh workflows/python_chain.yaml
+scripts/commands/run_local.sh workflows/tests/python_chain.yaml
 ```
 
 Use this path when you need to test workflow YAML changes, model changes, Argo

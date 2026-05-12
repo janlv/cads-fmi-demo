@@ -82,7 +82,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		},
 		runs: []RunSummary{{
 			Name:            "cads-python-chain-20260416164333",
-			WorkflowPath:    "workflows/python_chain.yaml",
+			WorkflowPath:    "workflows/tests/python_chain.yaml",
 			Phase:           "Succeeded",
 			CreatedAt:       &createdAt,
 			StartedAt:       &startedAt,
@@ -98,7 +98,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 	remote.results = map[string]RunResults{
 		remote.runs[0].Name: {
 			RunName:      remote.runs[0].Name,
-			WorkflowPath: "workflows/python_chain.yaml",
+			WorkflowPath: "workflows/tests/python_chain.yaml",
 			StepResults: map[string]map[string]any{
 				"producer": {
 					"mean": 1.25,
@@ -148,10 +148,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&workflows); err != nil {
 			t.Fatalf("decode workflows: %v", err)
 		}
-		if len(workflows) != 1 {
-			t.Fatalf("len(workflows) = %d, want 1", len(workflows))
-		}
-		if workflows[0].Path != "workflows/python_chain.yaml" || workflows[0].StepCount != 2 {
+		if len(workflows) != 0 {
 			t.Fatalf("workflows = %+v, unexpected catalog", workflows)
 		}
 	})
@@ -185,7 +182,7 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&run); err != nil {
 			t.Fatalf("decode run: %v", err)
 		}
-		if run.WorkflowPath != "workflows/python_chain.yaml" {
+		if run.WorkflowPath != "workflows/tests/python_chain.yaml" {
 			t.Fatalf("run = %+v, want workflow path", run)
 		}
 	})
@@ -209,14 +206,14 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 	})
 
 	t.Run("submit run", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"workflow":"workflows/python_chain.yaml"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"workflow":"workflows/tests/python_chain.yaml"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		server.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("ServeHTTP() status = %d, want %d", rec.Code, http.StatusOK)
 		}
-		if len(remote.submitted) != 1 || remote.submitted[0] != "workflows/python_chain.yaml" {
+		if len(remote.submitted) != 1 || remote.submitted[0] != "workflows/tests/python_chain.yaml" {
 			t.Fatalf("submitted = %v, want workflow path", remote.submitted)
 		}
 	})
@@ -263,8 +260,8 @@ steps:
 	if err != nil {
 		t.Fatalf("ListWorkflows() error = %v", err)
 	}
-	if len(workflows) != 2 {
-		t.Fatalf("ListWorkflows() len = %d, want 2", len(workflows))
+	if len(workflows) != 1 {
+		t.Fatalf("ListWorkflows() len = %d, want 1", len(workflows))
 	}
 	if workflows[0].Name != "cascade_dispatch" ||
 		workflows[0].Path != "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml" ||
@@ -274,13 +271,13 @@ steps:
 		workflows[0].Metadata.ResultFamily != "storhy_mock" {
 		t.Fatalf("ListWorkflows() nested workflow = %+v, want metadata-rich nested workflow", workflows[0])
 	}
-	if workflows[1].Name != "python_chain" || workflows[1].StepCount != 2 {
-		t.Fatalf("ListWorkflows() workflows = %+v, want python_chain with 2 steps", workflows)
-	}
-
 	resolvedTestWorkflow, err := ResolveLaunchWorkflow(root, filepath.Join("workflows", "tests", "calculate_aecis.yaml"))
 	if err != nil || resolvedTestWorkflow != "workflows/tests/calculate_aecis.yaml" {
 		t.Fatalf("ResolveLaunchWorkflow() test workflow = %q, %v; want explicit test workflow path", resolvedTestWorkflow, err)
+	}
+	resolvedTestWorkflow, err = ResolveLaunchWorkflow(root, filepath.Join("workflows", "tests", "python_chain.yaml"))
+	if err != nil || resolvedTestWorkflow != "workflows/tests/python_chain.yaml" {
+		t.Fatalf("ResolveLaunchWorkflow() python test workflow = %q, %v; want explicit test workflow path", resolvedTestWorkflow, err)
 	}
 
 	if _, err := ResolveLaunchWorkflow(root, filepath.Join("..", "outside.yaml")); err == nil || !strings.Contains(err.Error(), "path escapes repository root") {
@@ -298,15 +295,15 @@ func writeDashboardRepoFixture(t *testing.T) string {
 	if err := os.Mkdir(filepath.Join(root, "fmu"), 0o755); err != nil {
 		t.Fatalf("create fmu dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "workflows", "python_chain.yaml"), []byte(`
+	if err := os.Mkdir(filepath.Join(root, "workflows", "tests"), 0o755); err != nil {
+		t.Fatalf("create test workflows dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "python_chain.yaml"), []byte(`
 steps:
   - name: producer
   - name: consumer
 `), 0o644); err != nil {
 		t.Fatalf("write python_chain workflow: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(root, "workflows", "tests"), 0o755); err != nil {
-		t.Fatalf("create test workflows dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "calculate_aecis.yaml"), []byte(`
 steps:

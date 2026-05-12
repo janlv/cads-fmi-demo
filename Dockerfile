@@ -153,4 +153,4 @@ RUN set -eux; \
     go build -o /app/bin/cads-workflow-service ./cmd/cads-workflow-service
 
 # Default command
-CMD ["/app/bin/cads-workflow-runner", "--workflow", "workflows/python_chain.yaml"]
+CMD ["/app/bin/cads-workflow-runner", "--workflow", "workflows/tests/python_chain.yaml"]

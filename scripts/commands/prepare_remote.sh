@@ -224,9 +224,9 @@ Remote environment preparation complete. Published image:
   $IMAGE
 
 Continue with:
-  scripts/commands/run_remote.sh workflows/python_chain.yaml
+  scripts/commands/run_remote.sh workflows/tests/python_chain.yaml
   scripts/commands/run_inspect_s3_object.sh artifacts/my-file
 
 To override this prepared image explicitly:
-  CADS_WORKFLOW_IMAGE=$IMAGE scripts/commands/run_remote.sh workflows/python_chain.yaml
+  CADS_WORKFLOW_IMAGE=$IMAGE scripts/commands/run_remote.sh workflows/tests/python_chain.yaml
 EOF

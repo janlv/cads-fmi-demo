@@ -224,7 +224,7 @@ Hosted dashboard:
   ./run_playground.sh
 
 Local Minikube demo:
-  ./run_local_dev.sh workflows/python_chain.yaml
+  ./run_local_dev.sh workflows/tests/python_chain.yaml
 EOF
 else
     cat <<'EOF'
@@ -234,6 +234,6 @@ Preparation complete. Continue with:
 
 Other user paths:
   ./run_publish.sh
-  ./run_local_dev.sh workflows/python_chain.yaml
+  ./run_local_dev.sh workflows/tests/python_chain.yaml
 EOF
 fi

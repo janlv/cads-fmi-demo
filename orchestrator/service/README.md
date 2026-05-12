@@ -39,8 +39,8 @@ Set `GOWORK=off` if you normally use a Go workspace.
 ## Run once
 
 ```bash
-./cads-workflow-runner --workflow workflows/python_chain.yaml
-./cads-workflow-service --workflow workflows/python_chain.yaml
+./cads-workflow-runner --workflow workflows/tests/python_chain.yaml
+./cads-workflow-service --workflow workflows/tests/python_chain.yaml
 ```
 
 ## Serve HTTP
@@ -49,7 +49,7 @@ Set `GOWORK=off` if you normally use a Go workspace.
 ./cads-workflow-service --serve --addr :8080
 curl -X POST localhost:8080/run \
      -H 'Content-Type: application/json' \
-     -d '{"workflow":"workflows/python_chain.yaml"}'
+     -d '{"workflow":"workflows/tests/python_chain.yaml"}'
 ```
 
 When serving, the same binary now also exposes a browser dashboard at `/` plus

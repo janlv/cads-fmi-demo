@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKFLOW="workflows/python_chain.yaml"
+WORKFLOW="workflows/tests/python_chain.yaml"
 SKIP_BUILD=0
 local_args=()
 

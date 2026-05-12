@@ -22,7 +22,7 @@ const state = {
 
 const SIMULINK_WORKFLOW_PATH = "workflows/tests/calculate_aecis.yaml";
 const AE_STATS_WORKFLOW_PATH = "workflows/tests/ae_event_statistics.yaml";
-const PYTHON_CHAIN_WORKFLOW_PATH = "workflows/python_chain.yaml";
+const PYTHON_CHAIN_WORKFLOW_PATH = "workflows/tests/python_chain.yaml";
 const VSMC_WORKFLOW_PATHS = [
   "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml",
   "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml",

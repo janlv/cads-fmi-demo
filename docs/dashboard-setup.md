@@ -228,7 +228,7 @@ Use this when you want quick CLI-only local workflow/model testing without
 Kaizen Playground, GHCR publishing, or a dashboard:
 
 ```bash
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 ```
 
 ## 4. Build Demo FMUs When Publishing Or Developing Locally
@@ -272,7 +272,7 @@ Useful variants:
 ./run_playground.sh --addr :8081
 
 # Local workflow/model development without Playground.
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 ```
 
 ## Credential Handling

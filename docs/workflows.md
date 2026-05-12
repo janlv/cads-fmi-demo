@@ -117,9 +117,10 @@ Site id: `vilarinho`
 
 ## Test Workflows
 
-The legacy AECIS and acoustic-emission statistics workflows live under
-`workflows/tests/`. They are kept for local checks and result parser tests, but
-they are not part of the dashboard's normal demonstrator workflow catalog.
+The legacy AECIS, acoustic-emission statistics, and Python chain smoke-test
+workflows live under `workflows/tests/`. They are kept for local checks and
+result parser tests, but they are not part of the dashboard's normal
+demonstrator workflow catalog.
 
 ## Dashboard Display Proposal
 

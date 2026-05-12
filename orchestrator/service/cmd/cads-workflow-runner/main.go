@@ -16,7 +16,7 @@ func main() {
 	var jsonOutput bool
 	var workdir string
 
-	flag.StringVar(&workflowPath, "workflow", "workflows/python_chain.yaml", "Workflow YAML to execute")
+	flag.StringVar(&workflowPath, "workflow", "workflows/tests/python_chain.yaml", "Workflow YAML to execute")
 	flag.BoolVar(&jsonOutput, "json-output", false, "Only emit the final JSON result")
 	flag.StringVar(&workdir, "workdir", "", "Explicit repository root (optional)")
 	flag.Parse()

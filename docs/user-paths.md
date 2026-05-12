@@ -72,7 +72,7 @@ Playground.**
 Build and run workflows against a local Minikube + Argo environment.
 
 ```bash
-./run_local_dev.sh workflows/python_chain.yaml
+./run_local_dev.sh workflows/tests/python_chain.yaml
 ```
 
 This path:

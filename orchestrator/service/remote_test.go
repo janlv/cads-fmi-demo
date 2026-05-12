@@ -27,7 +27,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	          "name": "run-workflow",
 	          "container": {
 	            "image": "ghcr.io/janlv/cads-fmi-demo:playground",
-	            "args": ["--workflow", "workflows/python_chain.yaml"]
+	            "args": ["--workflow", "workflows/tests/python_chain.yaml"]
 	          }
 	        }
 	      ]
@@ -100,7 +100,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	if runs[0].DurationSeconds != 115 {
 		t.Fatalf("running duration = %v, want 115", runs[0].DurationSeconds)
 	}
-	if runs[1].WorkflowPath != "workflows/python_chain.yaml" || runs[1].DurationSeconds != 30 {
+	if runs[1].WorkflowPath != "workflows/tests/python_chain.yaml" || runs[1].DurationSeconds != 30 {
 		t.Fatalf("runs[1] = %+v, want succeeded python_chain with 30s duration", runs[1])
 	}
 }
@@ -194,7 +194,10 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "fmu"), 0o755); err != nil {
 		t.Fatalf("create fmu dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "workflows", "python_chain.yaml"), []byte("steps:\n  - name: producer\n"), 0o644); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "workflows", "tests"), 0o755); err != nil {
+		t.Fatalf("create test workflows dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "python_chain.yaml"), []byte("steps:\n  - name: producer\n"), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
 
@@ -236,7 +239,7 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 			t.Fatalf("manifest = %+v, want configured namespace and service account", manifest)
 		}
 		container := manifest.Spec.Templates[0].Container
-		if container.Image != "ghcr.io/example/cads:test" || len(container.Args) != 3 || container.Args[0] != "--json-output" || container.Args[2] != "workflows/python_chain.yaml" {
+		if container.Image != "ghcr.io/example/cads:test" || len(container.Args) != 3 || container.Args[0] != "--json-output" || container.Args[2] != "workflows/tests/python_chain.yaml" {
 			t.Fatalf("container = %+v, want configured image and workflow path", container)
 		}
 		envByName := make(map[string]argoEnvVar, len(container.Env))
@@ -271,7 +274,7 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 		        "name": "run-workflow",
 		        "container": {
 		          "image": "ghcr.io/example/cads:test",
-		          "args": ["--workflow", "workflows/python_chain.yaml"]
+		          "args": ["--workflow", "workflows/tests/python_chain.yaml"]
 		        }
 		      }
 		    ]
@@ -284,11 +287,11 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 		}`), nil
 	}
 
-	run, err := client.SubmitWorkflow(context.Background(), "workflows/python_chain.yaml")
+	run, err := client.SubmitWorkflow(context.Background(), "workflows/tests/python_chain.yaml")
 	if err != nil {
 		t.Fatalf("SubmitWorkflow() error = %v", err)
 	}
-	if run.Name != "cads-python-chain-20260416170000" || run.WorkflowPath != "workflows/python_chain.yaml" {
+	if run.Name != "cads-python-chain-20260416170000" || run.WorkflowPath != "workflows/tests/python_chain.yaml" {
 		t.Fatalf("run = %+v, want normalized submitted run", run)
 	}
 }
