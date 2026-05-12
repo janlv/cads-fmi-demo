@@ -13,12 +13,13 @@ DEFAULT_IMAGE="${CADS_WORKFLOW_IMAGE:-ghcr.io/janlv/cads-fmi-demo:playground}"
 IMAGE="$DEFAULT_IMAGE"
 USERNAME="${GHCR_USERNAME:-}"
 INTERACTIVE=true
+SHOW_NEXT_STEPS=true
 
 cads_setup_local_path "$ROOT_DIR"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/commands/prepare_ghcr.sh [--image ghcr.io/org/repo:tag] [--username name] [--no-interactive]
+Usage: scripts/commands/prepare_ghcr.sh [--image ghcr.io/org/repo:tag] [--username name] [--no-interactive] [--quiet]
 
 Authenticates Podman or Docker to GitHub Container Registry (GHCR). GHCR is
 GitHub's container image storage; the hosted Kaizen playground pulls the demo
@@ -50,6 +51,9 @@ while (($#)); do
             ;;
         --no-interactive)
             INTERACTIVE=false
+            ;;
+        --quiet)
+            SHOW_NEXT_STEPS=false
             ;;
         *)
             log_error "Unknown argument: $1"
@@ -93,7 +97,8 @@ fi
 
 if [[ -n "$token" ]] && cads_ensure_ghcr_login "$IMAGE" "$container_tool"; then
     log_ok "GHCR login is ready for $container_tool"
-    cat <<EOF
+    if [[ "$SHOW_NEXT_STEPS" == true ]]; then
+        cat <<EOF
 
 You can now publish the current dashboard image with:
   ./run_publish.sh --skip-build
@@ -101,6 +106,7 @@ You can now publish the current dashboard image with:
 Or publish a specific local tag with:
   scripts/publish_image.sh --image $IMAGE
 EOF
+    fi
     exit 0
 fi
 

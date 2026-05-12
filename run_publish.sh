@@ -91,10 +91,26 @@ if [[ -z "$IMAGE" ]]; then
     exit 1
 fi
 
+run_prepare_remote() {
+    local -a cmd=(bash "$ROOT_DIR/scripts/commands/prepare_remote.sh" --image "$IMAGE")
+    if ((${#prepare_remote_args[@]} > 0)); then
+        cmd+=("${prepare_remote_args[@]}")
+    fi
+    "${cmd[@]}"
+}
+
+run_dashboard() {
+    local -a cmd=("$ROOT_DIR/scripts/commands/run_dashboard.sh" --connect-existing --image "$IMAGE")
+    if ((${#dashboard_args[@]} > 0)); then
+        cmd+=("${dashboard_args[@]}")
+    fi
+    exec "${cmd[@]}"
+}
+
 bash "$ROOT_DIR/prepare.sh" --require-container-runtime
 if (( !SKIP_BUILD )); then
     bash "$ROOT_DIR/scripts/commands/build.sh" --image "$IMAGE"
 fi
-bash "$ROOT_DIR/scripts/commands/prepare_ghcr.sh"
-bash "$ROOT_DIR/scripts/commands/prepare_remote.sh" --image "$IMAGE" "${prepare_remote_args[@]}"
-exec "$ROOT_DIR/scripts/commands/run_dashboard.sh" --connect-existing --image "$IMAGE" "${dashboard_args[@]}"
+bash "$ROOT_DIR/scripts/commands/prepare_ghcr.sh" --image "$IMAGE" --quiet
+run_prepare_remote
+run_dashboard
