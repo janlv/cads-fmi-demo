@@ -137,5 +137,8 @@ fi
 if (( FORCE_HTTP1 == 1 )) && ! has_passthrough_flag "--argo-http1" "--argo-http1" "${ARGO_ARGS[@]}"; then
     inject_args+=(--argo-http1)
 fi
+if [[ -n "$KUBECONFIG_PATH" ]] && ! has_passthrough_flag "--kubeconfig" "--kubeconfig" "${ARGO_ARGS[@]}"; then
+    inject_args+=(--kubeconfig "$KUBECONFIG_PATH")
+fi
 
 exec argo "${ARGO_ARGS[@]}" "${inject_args[@]}"

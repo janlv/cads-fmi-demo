@@ -489,6 +489,11 @@ type argoStatus struct {
 	FinishedAt string `json:"finishedAt"`
 	Progress   string `json:"progress"`
 	Message    string `json:"message"`
+	Nodes      map[string]struct {
+		DisplayName string `json:"displayName"`
+		Phase       string `json:"phase"`
+		Message     string `json:"message"`
+	} `json:"nodes"`
 }
 
 func parseArgoWorkflowList(root string, payload []byte, now time.Time) ([]RunSummary, error) {
@@ -565,10 +570,37 @@ func normalizeArgoWorkflow(root string, envelope argoWorkflowEnvelope, now time.
 		FinishedAt:      finishedAt,
 		DurationSeconds: computeDurationSeconds(startedAt, finishedAt, now),
 		Progress:        envelope.Status.Progress,
-		Message:         envelope.Status.Message,
+		Message:         summarizeArgoStatusMessage(envelope.Status),
 		Image:           image,
 		ServiceAccount:  envelope.Spec.ServiceAccountName,
 	}, nil
+}
+
+func summarizeArgoStatusMessage(status argoStatus) string {
+	message := strings.TrimSpace(status.Message)
+	if message != "" {
+		return message
+	}
+
+	nodeNames := make([]string, 0, len(status.Nodes))
+	for name := range status.Nodes {
+		nodeNames = append(nodeNames, name)
+	}
+	sort.Strings(nodeNames)
+	for _, name := range nodeNames {
+		node := status.Nodes[name]
+		nodeMessage := strings.TrimSpace(node.Message)
+		if nodeMessage == "" {
+			continue
+		}
+		nodePhase := strings.TrimSpace(node.Phase)
+		if nodePhase != "" {
+			return nodePhase + ": " + nodeMessage
+		}
+		return nodeMessage
+	}
+
+	return ""
 }
 
 func extractWorkflowInvocation(templates []argoTemplate) (string, string) {

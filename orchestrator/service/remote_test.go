@@ -59,7 +59,13 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	    "status": {
 	      "phase": "Running",
 	      "startedAt": "2026-04-16T16:48:05Z",
-	      "progress": "0/1"
+	      "progress": "0/1",
+	      "nodes": {
+	        "cads-calculate-aecis-20260416164800": {
+	          "phase": "Pending",
+	          "message": "ImagePullBackOff: failed to pull image"
+	        }
+	      }
 	    }
 	  },
 	  {
@@ -99,6 +105,9 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	}
 	if runs[0].DurationSeconds != 115 {
 		t.Fatalf("running duration = %v, want 115", runs[0].DurationSeconds)
+	}
+	if runs[0].Message != "Pending: ImagePullBackOff: failed to pull image" {
+		t.Fatalf("runs[0].Message = %q, want node status message", runs[0].Message)
 	}
 	if runs[1].WorkflowPath != "workflows/tests/python_chain.yaml" || runs[1].DurationSeconds != 30 {
 		t.Fatalf("runs[1] = %+v, want succeeded python_chain with 30s duration", runs[1])
