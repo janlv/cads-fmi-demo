@@ -20,10 +20,11 @@ DEFAULT_FMIL_HOME="$ROOT_DIR/.local"
 FMIL_HOME_OVERRIDE=""
 IMAGE="cads-fmi-demo:latest"
 CONTAINER_TOOL=""
+CONTAINER_PLATFORM="${CADS_CONTAINER_PLATFORM:-}"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/commands/build.sh [--image image:tag] [--fmil-home path]
+Usage: scripts/commands/build.sh [--image image:tag] [--fmil-home path] [--platform linux/amd64]
 
 Builds the CADS FMI demo container image and the Go workflow binaries.
 EOF
@@ -56,6 +57,23 @@ while (($#)); do
             FMIL_HOME_OVERRIDE="${1:-}"
             if [[ -z "$FMIL_HOME_OVERRIDE" ]]; then
                 log_error "--fmil-home expects a path"
+                exit 1
+            fi
+            shift || true
+            ;;
+        --platform)
+            shift
+            CONTAINER_PLATFORM="${1:-}"
+            if [[ -z "$CONTAINER_PLATFORM" ]]; then
+                log_error "--platform expects a value"
+                exit 1
+            fi
+            shift || true
+            ;;
+        --platform=*)
+            CONTAINER_PLATFORM="${1#*=}"
+            if [[ -z "$CONTAINER_PLATFORM" ]]; then
+                log_error "--platform expects a value"
                 exit 1
             fi
             shift || true
@@ -140,10 +158,16 @@ build_container_image() {
     if cads_has_cert_files "$ROOT_DIR/scripts/certs"; then
         certs_sha="$(find "$ROOT_DIR/scripts/certs" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -exec cksum {} \; | sort | cksum | awk '{print $1 "-" $2}')"
     fi
-    log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL})" "$CONTAINER_TOOL" build \
+    local -a build_args=(build)
+    if [[ -n "$CONTAINER_PLATFORM" ]]; then
+        build_args+=(--platform "$CONTAINER_PLATFORM")
+    fi
+    build_args+=(
         --build-arg "CADS_CERTS_SHA=$certs_sha" \
         --build-arg "GOLANG_VERSION=$CADS_GO_VERSION" \
         -t "$IMAGE" "$ROOT_DIR"
+    )
+    log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL}${CONTAINER_PLATFORM:+, $CONTAINER_PLATFORM})" "$CONTAINER_TOOL" "${build_args[@]}"
 }
 
 ensure_fmil

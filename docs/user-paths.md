@@ -44,7 +44,7 @@ Kaizen Playground to use that image, and start the dashboard against it.
 This path:
 
 - builds the local Go/FMIL workflow binaries
-- builds the workflow container image
+- builds the workflow container image for `linux/amd64` by default
 - publishes the image to GHCR
 - replaces the configured Playground image tag with the full current repo image
 - validates access to the Kaizen Playground
@@ -54,6 +54,10 @@ This path:
 - requires Podman or Docker
 - requires GHCR package-write access
 - requires Kaizen Playground credentials
+
+The default platform can be overridden with `./run_publish.sh --platform ...`
+or `CADS_PLAYGROUND_IMAGE_PLATFORM`, but ordinary Playground publishes should
+keep the default.
 
 Use this only when you intentionally want to update what the Playground runs.
 `./run_publish.sh` does not publish one workflow file in isolation. It builds

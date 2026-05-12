@@ -1,0 +1,7 @@
+.git
+.local
+bin
+certs
+scripts/__pycache__
+**/__pycache__
+*.pyc

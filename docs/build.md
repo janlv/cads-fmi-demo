@@ -61,6 +61,7 @@ image publication is wrapped by `run_publish.sh`.
 |------|-------------|
 | `--image <name:tag>` | Override the image tag used for the build. |
 | `--fmil-home <path>` | Reuse an existing fmilib installation instead of writing to `./.local`. |
+| `--platform <os/arch>` | Build the container image for a specific platform, for example `linux/amd64`. |
 | `-h`, `--help` | Display usage. |
 
 ## Outputs

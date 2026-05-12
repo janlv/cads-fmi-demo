@@ -187,6 +187,7 @@ manager.
 ./run_playground.sh
 
 # User path 2: build/publish to Playground, then start the dashboard.
+# Builds linux/amd64 by default for the hosted Playground.
 ./run_publish.sh
 
 # User path 3: build/test one workflow locally with Minikube.
@@ -218,8 +219,10 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 
 - `run_playground.sh` starts the local dashboard against the configured
   Playground image.
-- `run_publish.sh` builds/publishes the bundled image, then starts the
-  dashboard.
+- `run_publish.sh` builds/publishes the bundled Playground image, then starts
+  the dashboard. It builds `linux/amd64` by default because the hosted
+  Playground runs Linux nodes; override with `--platform` only when the
+  target cluster architecture changes.
 - `run_local_dev.sh` runs one workflow in local Minikube without a dashboard.
 - `scripts/commands/` contains lower-level build, local, remote, dashboard, and
   inspection commands for expert use.

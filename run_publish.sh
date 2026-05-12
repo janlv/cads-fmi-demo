@@ -8,12 +8,13 @@ if [[ -z "${CADS_WORKFLOW_IMAGE:-}" && -f "$ROOT_DIR/config/playground.env" ]]; 
 fi
 IMAGE="${CADS_WORKFLOW_IMAGE:-}"
 SKIP_BUILD=0
+PLAYGROUND_PLATFORM="${CADS_PLAYGROUND_IMAGE_PLATFORM:-linux/amd64}"
 dashboard_args=()
 prepare_remote_args=()
 
 usage() {
     cat <<'EOF'
-Usage: ./run_publish.sh [--image ghcr.io/org/cads-fmi-demo:tag] [--skip-build] [dashboard args...]
+Usage: ./run_publish.sh [--image ghcr.io/org/cads-fmi-demo:tag] [--platform linux/amd64] [--skip-build] [dashboard args...]
 
 User path: Publish to Playground
 Build locally, publish the workflow image to GHCR, prepare the Kaizen
@@ -21,6 +22,8 @@ Playground, and start the local dashboard against that published image.
 
 If --image is omitted, config/playground.env or CADS_WORKFLOW_IMAGE is used.
 This publishes the full current repo image, not one workflow file in isolation.
+The Playground image is built for linux/amd64 unless --platform or
+CADS_PLAYGROUND_IMAGE_PLATFORM overrides it.
 EOF
 }
 
@@ -47,6 +50,21 @@ while (($#)); do
             ;;
         --skip-build)
             SKIP_BUILD=1
+            ;;
+        --platform)
+            shift
+            PLAYGROUND_PLATFORM="${1:-}"
+            if [[ -z "$PLAYGROUND_PLATFORM" ]]; then
+                echo "[error] --platform expects a value" >&2
+                exit 1
+            fi
+            ;;
+        --platform=*)
+            PLAYGROUND_PLATFORM="${1#*=}"
+            if [[ -z "$PLAYGROUND_PLATFORM" ]]; then
+                echo "[error] --platform expects a value" >&2
+                exit 1
+            fi
             ;;
         --kubeconfig|--argo-server)
             flag="$1"
@@ -109,7 +127,7 @@ run_dashboard() {
 
 bash "$ROOT_DIR/prepare.sh" --require-container-runtime
 if (( !SKIP_BUILD )); then
-    bash "$ROOT_DIR/scripts/commands/build.sh" --image "$IMAGE"
+    bash "$ROOT_DIR/scripts/commands/build.sh" --image "$IMAGE" --platform "$PLAYGROUND_PLATFORM"
 fi
 bash "$ROOT_DIR/scripts/commands/prepare_ghcr.sh" --image "$IMAGE" --quiet
 run_prepare_remote
