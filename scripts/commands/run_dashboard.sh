@@ -132,10 +132,15 @@ dashboard_listen_port() {
 dashboard_process_matches() {
     local pid="$1"
     local cmdline=""
-    if [[ ! -r "/proc/$pid/cmdline" ]]; then
+
+    if [[ -r "/proc/$pid/cmdline" ]]; then
+        cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    elif command -v ps >/dev/null 2>&1; then
+        cmdline="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+    else
         return 1
     fi
-    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+
     [[ "$cmdline" == *"cads-workflow-service"* ]] &&
         [[ "$cmdline" == *"--serve"* ]] &&
         [[ "$cmdline" == *"--workdir $ROOT_DIR"* ]]
