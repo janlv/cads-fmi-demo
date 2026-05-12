@@ -18,6 +18,7 @@ SKIP_RUNTIME_START=0
 SKIP_CA=0
 WITH_LOCAL_MINIKUBE=0
 REQUIRE_CONTAINER_RUNTIME=0
+QUIET=0
 CERTS_DIR="$(cads_select_host_cert_dir "$ROOT_DIR")"
 
 usage() {
@@ -41,6 +42,7 @@ Options:
   --skip-runtime-start      Do not try to start a stopped Podman machine.
   --skip-podman-start       Alias for --skip-runtime-start.
   --skip-ca                 Do not sync company CA files into Podman/Minikube.
+  --quiet                   Suppress explanatory progress text and next steps.
   -h, --help                Show this help.
 
 The default path is intentionally lean: it prepares the hosted dashboard client
@@ -77,7 +79,9 @@ EOF
 
 ensure_age() {
     if command -v age >/dev/null 2>&1 && command -v age-keygen >/dev/null 2>&1; then
-        log_ok "age is installed"
+        if [[ "$QUIET" != "1" ]]; then
+            log_ok "age is installed"
+        fi
         return
     fi
     fail_age_missing
@@ -159,6 +163,9 @@ while (($#)); do
         --skip-ca)
             SKIP_CA=1
             ;;
+        --quiet)
+            QUIET=1
+            ;;
         *)
             log_error "Unknown argument: $1"
             usage
@@ -172,10 +179,13 @@ mkdir -p "$LOCAL_BIN_DIR"
 cads_setup_local_path "$ROOT_DIR"
 
 os_name="$(cads_detect_os)"
+export CADS_PREPARE_QUIET="$QUIET"
 
-log_step "CADS FMI dashboard preparation"
-log_info "Preparing shared tooling for hosted dashboard and workflow runs."
-log_info "The same prepare path is used on Linux and macOS; optional build/local-cluster checks are explicit."
+if [[ "$QUIET" != "1" ]]; then
+    log_step "CADS FMI dashboard preparation"
+    log_info "Preparing shared tooling for hosted dashboard and workflow runs."
+    log_info "The same prepare path is used on Linux and macOS; optional build/local-cluster checks are explicit."
+fi
 
 install_linux_system_packages
 ensure_age
@@ -185,7 +195,9 @@ if ((REQUIRE_CONTAINER_RUNTIME)); then
 elif command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
     sync_podman_ca_if_needed
 else
-    log_info "Skipping container runtime checks; they are only needed for build/publish or local Minikube."
+    if [[ "$QUIET" != "1" ]]; then
+        log_info "Skipping container runtime checks; they are only needed for build/publish or local Minikube."
+    fi
 fi
 
 cads_ensure_go "$LOCAL_BASE_DIR" "$LOCAL_GO_DIR"
@@ -201,7 +213,9 @@ if ((WITH_LOCAL_MINIKUBE)); then
     fi
 fi
 
-if ((WITH_LOCAL_MINIKUBE)); then
+if [[ "$QUIET" == "1" ]]; then
+    exit 0
+elif ((WITH_LOCAL_MINIKUBE)); then
     cat <<'EOF'
 
 Preparation complete.

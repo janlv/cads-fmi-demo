@@ -142,21 +142,26 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
     cads_ensure_go() {
         local local_base_dir="$1"
         local local_go_dir="$2"
-        log_step "Ensuring Go ${CADS_GO_VERSION}"
+        local quiet="${CADS_PREPARE_QUIET:-0}"
         if command -v go >/dev/null 2>&1; then
             local current raw_current
             raw_current="$(go version 2>/dev/null || true)"
             current="$(printf '%s\n' "$raw_current" | awk '{print $3}' | sed 's/^go//')"
             if [[ "$current" == "$CADS_GO_VERSION" ]]; then
-                log_subok "Go ${current} already installed"
+                if [[ "$quiet" != "1" ]]; then
+                    log_step "Ensuring Go ${CADS_GO_VERSION}"
+                    log_subok "Go ${current} already installed"
+                fi
                 return
             fi
+            log_step "Ensuring Go ${CADS_GO_VERSION}"
             if [[ -n "$current" ]]; then
                 log_subwarn "Go version ${current} found but ${CADS_GO_VERSION} required; reinstalling locally."
             else
                 log_subwarn "Existing Go binary is not usable on this host; reinstalling locally."
             fi
         else
+            log_step "Ensuring Go ${CADS_GO_VERSION}"
             log_subinfo "Go not found; installing locally."
         fi
         cads_install_go "$local_base_dir" "$local_go_dir"
@@ -180,17 +185,22 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
 
     cads_ensure_argo_cli() {
         local local_bin_dir="$1"
-        log_step "Ensuring Argo CLI ${CADS_ARGO_VERSION}"
+        local quiet="${CADS_PREPARE_QUIET:-0}"
         if command -v argo >/dev/null 2>&1; then
             local current raw_current
             raw_current="$(argo version --short 2>/dev/null | tr -d '\r' || true)"
             current="$(cads_extract_version_token "$raw_current")"
             if [[ "$current" == "$CADS_ARGO_VERSION" ]]; then
-                log_subok "Argo CLI ${current} already installed"
+                if [[ "$quiet" != "1" ]]; then
+                    log_step "Ensuring Argo CLI ${CADS_ARGO_VERSION}"
+                    log_subok "Argo CLI ${current} already installed"
+                fi
                 return
             fi
+            log_step "Ensuring Argo CLI ${CADS_ARGO_VERSION}"
             log_subwarn "Argo CLI ${raw_current} found but ${CADS_ARGO_VERSION} required; reinstalling."
         else
+            log_step "Ensuring Argo CLI ${CADS_ARGO_VERSION}"
             log_subinfo "Argo CLI not found; installing."
         fi
         cads_install_argo_cli "$local_bin_dir"
@@ -209,17 +219,22 @@ if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
 
     cads_ensure_kubectl_cli() {
         local local_bin_dir="$1"
-        log_step "Ensuring kubectl ${CADS_KUBECTL_VERSION}"
+        local quiet="${CADS_PREPARE_QUIET:-0}"
         if command -v kubectl >/dev/null 2>&1; then
             local current raw_current
             raw_current="$(kubectl version --client=true --short 2>/dev/null || kubectl version --client=true 2>/dev/null || true)"
             current="$(cads_extract_version_token "$raw_current")"
             if [[ "$current" == "$CADS_KUBECTL_VERSION" ]]; then
-                log_subok "kubectl ${CADS_KUBECTL_VERSION} already installed"
+                if [[ "$quiet" != "1" ]]; then
+                    log_step "Ensuring kubectl ${CADS_KUBECTL_VERSION}"
+                    log_subok "kubectl ${CADS_KUBECTL_VERSION} already installed"
+                fi
                 return
             fi
+            log_step "Ensuring kubectl ${CADS_KUBECTL_VERSION}"
             log_subwarn "kubectl ${raw_current} found but ${CADS_KUBECTL_VERSION} required; reinstalling."
         else
+            log_step "Ensuring kubectl ${CADS_KUBECTL_VERSION}"
             log_subinfo "kubectl not found; installing."
         fi
         cads_install_kubectl_cli "$local_bin_dir"

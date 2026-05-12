@@ -30,5 +30,5 @@ while (($#)); do
     shift || true
 done
 
-bash "$ROOT_DIR/prepare.sh"
+bash "$ROOT_DIR/prepare.sh" --quiet
 exec "$ROOT_DIR/scripts/commands/run_dashboard.sh" "${args[@]}"
