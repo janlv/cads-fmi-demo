@@ -148,10 +148,10 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&workflows); err != nil {
 			t.Fatalf("decode workflows: %v", err)
 		}
-		if len(workflows) != 3 {
-			t.Fatalf("len(workflows) = %d, want 3", len(workflows))
+		if len(workflows) != 1 {
+			t.Fatalf("len(workflows) = %d, want 1", len(workflows))
 		}
-		if workflows[0].Path != "workflows/ae_event_statistics.yaml" || workflows[2].StepCount != 2 {
+		if workflows[0].Path != "workflows/python_chain.yaml" || workflows[0].StepCount != 2 {
 			t.Fatalf("workflows = %+v, unexpected catalog", workflows)
 		}
 	})
@@ -263,19 +263,24 @@ steps:
 	if err != nil {
 		t.Fatalf("ListWorkflows() error = %v", err)
 	}
-	if len(workflows) != 4 {
-		t.Fatalf("ListWorkflows() len = %d, want 4", len(workflows))
+	if len(workflows) != 2 {
+		t.Fatalf("ListWorkflows() len = %d, want 2", len(workflows))
 	}
-	if workflows[2].Name != "cascade_dispatch" ||
-		workflows[2].Path != "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml" ||
-		workflows[2].StepCount != 1 ||
-		workflows[2].Metadata.DisplayName != "Cascade dispatch" ||
-		workflows[2].Metadata.SiteID != "vsmc" ||
-		workflows[2].Metadata.ResultFamily != "storhy_mock" {
-		t.Fatalf("ListWorkflows() nested workflow = %+v, want metadata-rich nested workflow", workflows[2])
+	if workflows[0].Name != "cascade_dispatch" ||
+		workflows[0].Path != "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml" ||
+		workflows[0].StepCount != 1 ||
+		workflows[0].Metadata.DisplayName != "Cascade dispatch" ||
+		workflows[0].Metadata.SiteID != "vsmc" ||
+		workflows[0].Metadata.ResultFamily != "storhy_mock" {
+		t.Fatalf("ListWorkflows() nested workflow = %+v, want metadata-rich nested workflow", workflows[0])
 	}
-	if workflows[3].Name != "python_chain" || workflows[3].StepCount != 2 {
+	if workflows[1].Name != "python_chain" || workflows[1].StepCount != 2 {
 		t.Fatalf("ListWorkflows() workflows = %+v, want python_chain with 2 steps", workflows)
+	}
+
+	resolvedTestWorkflow, err := ResolveLaunchWorkflow(root, filepath.Join("workflows", "tests", "calculate_aecis.yaml"))
+	if err != nil || resolvedTestWorkflow != "workflows/tests/calculate_aecis.yaml" {
+		t.Fatalf("ResolveLaunchWorkflow() test workflow = %q, %v; want explicit test workflow path", resolvedTestWorkflow, err)
 	}
 
 	if _, err := ResolveLaunchWorkflow(root, filepath.Join("..", "outside.yaml")); err == nil || !strings.Contains(err.Error(), "path escapes repository root") {
@@ -300,13 +305,16 @@ steps:
 `), 0o644); err != nil {
 		t.Fatalf("write python_chain workflow: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "workflows", "calculate_aecis.yaml"), []byte(`
+	if err := os.Mkdir(filepath.Join(root, "workflows", "tests"), 0o755); err != nil {
+		t.Fatalf("create test workflows dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "calculate_aecis.yaml"), []byte(`
 steps:
   - name: calculate_aecis
 `), 0o644); err != nil {
 		t.Fatalf("write calculate_aecis workflow: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "workflows", "ae_event_statistics.yaml"), []byte(`
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "ae_event_statistics.yaml"), []byte(`
 steps:
   - name: ae_ch2
   - name: ae_ch6

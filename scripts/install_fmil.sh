@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -f "$ROOT_DIR/config/tool-versions.env" ]]; then
+    printf '[error] Missing tool version config: %s\n' "$ROOT_DIR/config/tool-versions.env" >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+source "$ROOT_DIR/config/tool-versions.env"
+
 DEFAULT_PREFIX="${FMIL_HOME:-$HOME/fmil}"
 REPO_URL=${FMIL_REPO_URL:-"https://github.com/modelon-community/fmi-library.git"}
-REPO_REF=${FMIL_REPO_REF:-"master"}
+REPO_REF=${FMIL_REPO_REF:?Missing FMIL_REPO_REF in config/tool-versions.env}
 
 usage() {
     cat <<'EOF'
@@ -13,7 +21,7 @@ Downloads, builds, and installs FMIL (fmilib) if it is not already available
 under the requested prefix. Defaults:
 
   --prefix    $HOME/fmil  (or the current FMIL_HOME if set)
-  --ref       master      (override via FMIL_REPO_REF env var)
+  --ref       value from config/tool-versions.env (override via FMIL_REPO_REF)
 
 Examples:
   scripts/install_fmil.sh

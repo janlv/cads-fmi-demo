@@ -49,6 +49,9 @@ func ListWorkflows(root string) ([]WorkflowSummary, error) {
 			return err
 		}
 		if entry.IsDir() {
+			if entry.Name() == "tests" && file != workflowsRoot {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(file))

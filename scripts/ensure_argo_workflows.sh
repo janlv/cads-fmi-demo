@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -f "$ROOT_DIR/config/tool-versions.env" ]]; then
+    printf '[error] Missing tool version config: %s\n' "$ROOT_DIR/config/tool-versions.env" >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+source "$ROOT_DIR/config/tool-versions.env"
+
 NAMESPACE="argo"
-ARGO_VERSION="v3.5.6"
+ARGO_VERSION="${CADS_ARGO_VERSION:?Missing CADS_ARGO_VERSION in config/tool-versions.env}"
 MANIFEST_URL="https://github.com/argoproj/argo-workflows/releases/download/${ARGO_VERSION}/install.yaml"
 ROLL_OUT_TIMEOUT="180s"
 

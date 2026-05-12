@@ -20,9 +20,34 @@ const state = {
   loadingRuns: false,
 };
 
-const SIMULINK_WORKFLOW_PATH = "workflows/calculate_aecis.yaml";
-const AE_STATS_WORKFLOW_PATH = "workflows/ae_event_statistics.yaml";
+const SIMULINK_WORKFLOW_PATH = "workflows/tests/calculate_aecis.yaml";
+const AE_STATS_WORKFLOW_PATH = "workflows/tests/ae_event_statistics.yaml";
 const PYTHON_CHAIN_WORKFLOW_PATH = "workflows/python_chain.yaml";
+const VSMC_WORKFLOW_PATHS = [
+  "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml",
+  "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml",
+  "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml",
+];
+const CHEYLAS_WORKFLOW_PATHS = [
+  "workflows/demonstrators/cheylas/control/fast_dewatering.yaml",
+  "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml",
+  "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml",
+];
+const LA_RANCE_WORKFLOW_PATHS = [
+  "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml",
+  "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml",
+  "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml",
+];
+const ALQUEVA_WORKFLOW_PATHS = [
+  "workflows/demonstrators/alqueva/control/fast_service_controller.yaml",
+  "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml",
+  "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml",
+];
+const VILARINHO_WORKFLOW_PATHS = [
+  "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml",
+  "workflows/demonstrators/vilarinho/control/miv_regulation.yaml",
+  "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml",
+];
 const CIVECTOR_LABELS = ["Mean", "RMS", "Peak-to-Peak", "Skewness", "Kurtosis"];
 const SIMULINK_RESULT_RETRY_MS = 15_000;
 const AECIS_TREND_WINDOW_SECONDS = 2.5;
@@ -307,7 +332,7 @@ const DEMONSTRATORS = [
     country: "Europe",
     focus: "Portfolio view for CADS workflow templates across the STOR-HY demonstrator set.",
     capacity: "Five current pilot sites",
-    workflowPaths: [AE_STATS_WORKFLOW_PATH, SIMULINK_WORKFLOW_PATH, PYTHON_CHAIN_WORKFLOW_PATH],
+    workflowPaths: [],
     facts: [
       "Pumped-storage hydropower and tidal-storage use cases",
       "Condition monitoring, co-simulation, and decision support",
@@ -328,7 +353,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Vouglans - Saut Mortier - Coiselet",
     focus: "Cascade optimisation and variable-speed tandem pumping.",
     capacity: "362 MW generation + 72 MW storage",
-    workflowPaths: [SIMULINK_WORKFLOW_PATH, PYTHON_CHAIN_WORKFLOW_PATH],
+    workflowPaths: VSMC_WORKFLOW_PATHS,
     facts: [
       "Three reservoirs in cascade",
       "Three Francis turbines and one pump turbine",
@@ -349,11 +374,11 @@ const DEMONSTRATORS = [
     mapSubtitle: "Pumped-storage power station",
     focus: "Wear assessment and sensor-driven monitoring under high pump-turbine cycling.",
     capacity: "500 MW generation and storage",
-    workflowPaths: [AE_STATS_WORKFLOW_PATH, SIMULINK_WORKFLOW_PATH],
+    workflowPaths: CHEYLAS_WORKFLOW_PATHS,
     facts: [
       "Two reservoirs and two pump turbines",
       "Sediment-laden fluid and frequent cycling",
-      "Mapped to AE event statistics and AECIS trend workflows",
+      "Mapped to sediment wear, maintenance, and control workflows",
     ],
   },
   {
@@ -371,7 +396,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Tidal power station",
     focus: "Saltwater operation, corrosion, anti-fouling, and low tidal-head cycling.",
     capacity: "240 MW generation",
-    workflowPaths: [AE_STATS_WORKFLOW_PATH],
+    workflowPaths: LA_RANCE_WORKFLOW_PATHS,
     facts: [
       "Large-scale tidal power station",
       "24 bulb turbines",
@@ -392,7 +417,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Hybrid PSP / BESS / FPV",
     focus: "Operational management for a hybrid pumped-storage, battery, and floating PV plant.",
     capacity: "520 MW generation and storage",
-    workflowPaths: [PYTHON_CHAIN_WORKFLOW_PATH],
+    workflowPaths: ALQUEVA_WORKFLOW_PATHS,
     facts: [
       "Largest dam and artificial lake in Western Europe",
       "Four pump turbines",
@@ -414,7 +439,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Dam and hydropower plant",
     focus: "Main inlet valve control, hydraulic short-circuit operation, and multistage pumping.",
     capacity: "146 MW generation + 70 MW storage",
-    workflowPaths: [SIMULINK_WORKFLOW_PATH],
+    workflowPaths: VILARINHO_WORKFLOW_PATHS,
     facts: [
       "Two reservoirs",
       "One multistage pump and one Francis turbine",
@@ -554,8 +579,7 @@ function ensureSelectedWorkflow() {
 
   const preferredPath =
     candidates.find((workflow) => demo.id !== "portfolio" && workflowSiteId(workflow) === demo.id)?.path ||
-    candidates.find((workflow) => workflow.path === AE_STATS_WORKFLOW_PATH)?.path ||
-    candidates.find((workflow) => workflow.path === SIMULINK_WORKFLOW_PATH)?.path ||
+    candidates.find((workflow) => workflow.path === PYTHON_CHAIN_WORKFLOW_PATH)?.path ||
     candidates[0]?.path ||
     "";
   state.selectedWorkflowPath = preferredPath;

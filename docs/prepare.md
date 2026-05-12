@@ -36,13 +36,17 @@ On macOS, install small host tools such as `age`, Git, and Podman/Docker with
 Homebrew, MacPorts, or your normal desktop installer.
 
 1. Installs/checks small host prerequisites where the OS supports it.
-2. Downloads Go `1.22.2` and extracts it to `./.local/go`. All repo scripts
+2. Downloads the configured Go version and extracts it to `./.local/go`. All repo scripts
    prepend `./.local/go/bin` to `PATH`, so no shell config changes are required.
-3. Fetches the Argo CLI (`v3.5.6`) and `kubectl` (`v1.30.0`) directly from
+3. Fetches the configured Argo CLI and `kubectl` versions directly from
    their upstream release URLs and installs them to `./.local/bin`.
 4. Verifies Podman/Docker only when you pass `--require-container-runtime` or
    `--with-local-minikube`.
 5. Installs and starts Minikube only when `--with-local-minikube` is supplied.
+
+The default tool versions are defined in `config/tool-versions.env`. Update that
+file when the project intentionally moves to a newer Go, Argo, kubectl,
+Minikube, or FMIL reference.
 
 For the normal **Playground** path, continue with
 `./run_playground.sh`. Build/publish work is the separate

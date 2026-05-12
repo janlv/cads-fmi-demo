@@ -3,10 +3,19 @@
 
 _cads_tooling_shell_pid="${BASHPID:-$$}"
 if [[ "${CADS_TOOLING_SH_LOADED:-}" != "$_cads_tooling_shell_pid" ]]; then
-    CADS_GO_VERSION="${CADS_GO_VERSION:-1.22.2}"
-    CADS_ARGO_VERSION="${CADS_ARGO_VERSION:-v3.5.6}"
-    CADS_KUBECTL_VERSION="${CADS_KUBECTL_VERSION:-v1.30.0}"
-    CADS_MINIKUBE_VERSION="${CADS_MINIKUBE_VERSION:-v1.33.1}"
+    _cads_tool_versions_file="${CADS_TOOL_VERSIONS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/config/tool-versions.env}"
+    if [[ ! -f "$_cads_tool_versions_file" ]]; then
+        log_error "Missing tool version config: $_cads_tool_versions_file"
+        exit 1
+    fi
+    # shellcheck disable=SC1090
+    source "$_cads_tool_versions_file"
+    for _cads_required_tool_version in CADS_GO_VERSION CADS_ARGO_VERSION CADS_KUBECTL_VERSION CADS_MINIKUBE_VERSION; do
+        if [[ -z "${!_cads_required_tool_version:-}" ]]; then
+            log_error "Missing $_cads_required_tool_version in $_cads_tool_versions_file"
+            exit 1
+        fi
+    done
 
     cads_extract_version_token() {
         local raw="$1"

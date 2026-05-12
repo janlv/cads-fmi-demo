@@ -51,7 +51,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	          "name": "run-workflow",
 	          "container": {
 	            "image": "ghcr.io/janlv/cads-fmi-demo:playground",
-	            "args": ["--workflow=workflows/calculate_aecis.yaml"]
+	            "args": ["--workflow=workflows/tests/calculate_aecis.yaml"]
 	          }
 	        }
 	      ]
@@ -94,7 +94,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 	if len(runs) != 2 {
 		t.Fatalf("len(runs) = %d, want 2 repo runs", len(runs))
 	}
-	if runs[0].WorkflowPath != "workflows/calculate_aecis.yaml" || runs[0].Phase != "Running" {
+	if runs[0].WorkflowPath != "workflows/tests/calculate_aecis.yaml" || runs[0].Phase != "Running" {
 		t.Fatalf("runs[0] = %+v, want running calculate_aecis", runs[0])
 	}
 	if runs[0].DurationSeconds != 115 {
@@ -106,7 +106,7 @@ func TestParseArgoWorkflowListFiltersAndNormalizesRepoRuns(t *testing.T) {
 }
 
 func TestExtractRunResultsFromLogsParsesMixedRunnerOutput(t *testing.T) {
-	logs := []byte(`[workflow] Running workflows/calculate_aecis.yaml
+	logs := []byte(`[workflow] Running workflows/tests/calculate_aecis.yaml
 [workflow] Completed all steps.
 {
   "calculate_aecis": {

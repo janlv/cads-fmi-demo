@@ -133,7 +133,10 @@ build_container_image() {
     if cads_has_cert_files "$ROOT_DIR/scripts/certs"; then
         certs_sha="$(find "$ROOT_DIR/scripts/certs" -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -exec cksum {} \; | sort | cksum | awk '{print $1 "-" $2}')"
     fi
-    log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL})" "$CONTAINER_TOOL" build --build-arg "CADS_CERTS_SHA=$certs_sha" -t "$IMAGE" "$ROOT_DIR"
+    log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL})" "$CONTAINER_TOOL" build \
+        --build-arg "CADS_CERTS_SHA=$certs_sha" \
+        --build-arg "GOLANG_VERSION=$CADS_GO_VERSION" \
+        -t "$IMAGE" "$ROOT_DIR"
 }
 
 ensure_fmil

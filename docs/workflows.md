@@ -86,9 +86,6 @@ Site id: `la-rance`
 | Cleaning Interval | `workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml` | `CorrosionBiofoulingReplica` -> `CleaningIntervalReplica` -> `KPIAssessmentReplica` |
 | Tidal BESS Sizing | `workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml` | `BESSSizingReplica` -> `SustainabilityCBAReplica` -> `KPIAssessmentReplica` |
 
-The existing `workflows/ae_event_statistics.yaml` demo is also mapped to La
-Rance in the dashboard as an edge-computed acoustic-emission statistics view.
-
 ### Alqueva Hydroelectric Power Station
 
 Site id: `alqueva`
@@ -109,9 +106,6 @@ Site id: `vilarinho`
 | MIV Fatigue Monitoring | `workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml` | `ConditionMonitoringReplica` -> `MIVFatigueReplica` -> `PredictiveMaintenanceReplica` -> `KPIAssessmentReplica` |
 | HSC MIV Comparison | `workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml` | `MIVRegulationReplica` -> `HSCFlexibilityReplica` -> `SustainabilityCBAReplica` -> `KPIAssessmentReplica` |
 
-The existing `workflows/calculate_aecis.yaml` demo remains available in the
-dashboard as the current AECIS trend plot workflow.
-
 ## Common Workflow Templates
 
 | Workflow | YAML | Model chain |
@@ -120,6 +114,12 @@ dashboard as the current AECIS trend plot workflow.
 | Degradation Cost Benefit | `workflows/common/decision_support/degradation_cost_benefit.yaml` | `ConditionMonitoringReplica` -> `PredictiveMaintenanceReplica` -> `SustainabilityCBAReplica` |
 | Demo KPI Assessment | `workflows/common/kpi/demo_kpi_assessment.yaml` | `KPIAssessmentReplica` |
 | Sustainability CBA | `workflows/common/sustainability/sustainability_cba.yaml` | `KPIAssessmentReplica` -> `SustainabilityCBAReplica` |
+
+## Test Workflows
+
+The legacy AECIS and acoustic-emission statistics workflows live under
+`workflows/tests/`. They are kept for local checks and result parser tests, but
+they are not part of the dashboard's normal demonstrator workflow catalog.
 
 ## Dashboard Display Proposal
 
