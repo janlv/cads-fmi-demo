@@ -1,18 +1,118 @@
+ARG BUILDPLATFORM
+ARG TARGETARCH
+ARG GOLANG_VERSION=1.22.2
+
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS go-builder
+
+ARG TARGETARCH
+ARG GOLANG_VERSION
+
+RUN echo "[go-builder] Installing build dependencies for ${TARGETARCH}" \
+    && apt-get update \
+    && build_arch="$(dpkg --print-architecture)" \
+    && case "${TARGETARCH}" in \
+        amd64) target_deb_arch=amd64; cross_pkgs="gcc-x86-64-linux-gnu g++-x86-64-linux-gnu"; target_cc=x86_64-linux-gnu-gcc ;; \
+        arm64) target_deb_arch=arm64; cross_pkgs="gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"; target_cc=aarch64-linux-gnu-gcc ;; \
+        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && if [ "$target_deb_arch" != "$build_arch" ]; then dpkg --add-architecture "$target_deb_arch"; apt-get update; else cross_pkgs=""; fi \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        curl \
+        git \
+        file \
+        make \
+        pkg-config \
+        ${cross_pkgs} \
+        "libpugixml-dev:${target_deb_arch}" \
+        "libxml2-dev:${target_deb_arch}" \
+        "libzip-dev:${target_deb_arch}" \
+        "zlib1g-dev:${target_deb_arch}" \
+    && if [ "$target_deb_arch" = "$build_arch" ]; then DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential; fi \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG CADS_CERTS_SHA=none
+COPY scripts/certs/ /tmp/certs/
+RUN set -eux; \
+    echo "[go-builder] Certificate bundle digest: ${CADS_CERTS_SHA}"; \
+    FOUND_CERT=$(find /tmp/certs -maxdepth 1 -type f \( -name '*.crt' -o -name '*.pem' \) -print -quit || true); \
+    if [ -n "$FOUND_CERT" ]; then \
+        cp -a /tmp/certs/. /usr/local/share/ca-certificates/; \
+        update-ca-certificates; \
+    fi
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+RUN set -eux; \
+    build_arch="$(uname -m)"; \
+    case "$build_arch" in \
+        x86_64) go_arch=amd64 ;; \
+        aarch64) go_arch=arm64 ;; \
+        *) echo "Unsupported build architecture: $build_arch" >&2; exit 1 ;; \
+    esac; \
+    echo "[go-builder] Installing Go ${GOLANG_VERSION} for linux-${go_arch}"; \
+    curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-${go_arch}.tar.gz" | tar -C /usr/local -xz
+
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) target_processor=x86_64; target_cc=x86_64-linux-gnu-gcc; target_cxx=x86_64-linux-gnu-g++ ;; \
+        arm64) target_processor=aarch64; target_cc=aarch64-linux-gnu-gcc; target_cxx=aarch64-linux-gnu-g++ ;; \
+    esac; \
+    if ! command -v "$target_cc" >/dev/null 2>&1; then target_cc=gcc; target_cxx=g++; fi; \
+    export CC="$target_cc" CXX="$target_cxx"; \
+    echo "[go-builder] Cross-building FMIL for linux/${TARGETARCH}"; \
+    git clone --depth 1 --branch master https://github.com/modelon-community/fmi-library.git /tmp/fmi-library; \
+    cmake -S /tmp/fmi-library -B /tmp/fmi-library/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_SYSTEM_NAME=Linux \
+        -DCMAKE_SYSTEM_PROCESSOR="${target_processor}" \
+        -DCMAKE_C_COMPILER="${target_cc}" \
+        -DCMAKE_CXX_COMPILER="${target_cxx}" \
+        -DFMILIB_BUILD_TESTS=OFF \
+        -DFMILIB_GENERATE_DOXYGEN_DOC=OFF \
+        -DFMILIB_BUILD_STATIC_LIB=OFF \
+        -DFMILIB_BUILD_SHARED_LIB=ON \
+        -DCMAKE_INSTALL_PREFIX=/opt/fmil-target; \
+    cmake --build /tmp/fmi-library/build -j"$(nproc)"; \
+    cmake --install /tmp/fmi-library/build; \
+    rm -rf /tmp/fmi-library
+
+WORKDIR /src/orchestrator/service
+COPY orchestrator/service/go.mod orchestrator/service/go.sum ./
+RUN go mod download
+COPY orchestrator/service/ ./
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) target_cc=x86_64-linux-gnu-gcc; target_cxx=x86_64-linux-gnu-g++ ;; \
+        arm64) target_cc=aarch64-linux-gnu-gcc; target_cxx=aarch64-linux-gnu-g++ ;; \
+    esac; \
+    if ! command -v "$target_cc" >/dev/null 2>&1; then target_cc=gcc; target_cxx=g++; fi; \
+    mkdir -p /out; \
+    export GOWORK=off GOOS=linux GOARCH="${TARGETARCH}" CC="${target_cc}" CXX="${target_cxx}" CGO_ENABLED=1; \
+    export CGO_CFLAGS="-I/opt/fmil-target/include"; \
+    export CGO_CXXFLAGS="-I/opt/fmil-target/include"; \
+    export CGO_LDFLAGS="-L/opt/fmil-target/lib"; \
+    echo "[go-builder] Compiling Go workflow runner for linux/${TARGETARCH}"; \
+    go build -trimpath -o /out/cads-workflow-runner ./cmd/cads-workflow-runner; \
+    echo "[go-builder] Compiling dashboard service for linux/${TARGETARCH}"; \
+    CGO_ENABLED=0 go build -trimpath -o /out/cads-workflow-service ./cmd/cads-workflow-service; \
+    file /out/cads-workflow-runner /out/cads-workflow-service
+
 FROM python:3.11-slim
 
 ARG TARGETARCH
-ARG GOLANG_VERSION=1.22.2
 ARG CADS_CERTS_SHA=none
 
-# System dependencies for FMIL, Go build, and pythonfmu
+# System dependencies for FMIL runtime, pythonfmu, and FMU generation
 RUN echo "[image] Installing base system dependencies" \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         cmake \
-        curl \
-        git \
         libpugixml-dev \
         libxml2-dev \
         libzip-dev \
@@ -36,20 +136,7 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 
-# Install Go toolchain
-ENV PATH="/usr/local/go/bin:${PATH}"
-RUN echo "[image] Installing Go ${GOLANG_VERSION}" \
-    && curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz
-
-# Build and install FMIL (fmilib)
-RUN echo "[image] Cloning and building FMIL" \
-    && git clone https://github.com/modelon-community/fmi-library.git /tmp/fmi-library \
-    && cmake -S /tmp/fmi-library -B /tmp/fmi-library/build \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/opt/fmil \
-    && cmake --build /tmp/fmi-library/build -j"$(nproc)" \
-    && cmake --install /tmp/fmi-library/build \
-    && rm -rf /tmp/fmi-library
+COPY --from=go-builder /opt/fmil-target /opt/fmil
 
 ENV FMIL_HOME=/opt/fmil
 ENV LD_LIBRARY_PATH="${FMIL_HOME}/lib:${LD_LIBRARY_PATH}"
@@ -144,13 +231,11 @@ RUN echo "[image] Building bundled demo FMUs" && \
     done && \
     echo 'Built FMUs to /app/fmu/models'
 
-# Build Go workflow binaries (FMIL via cgo). The Go module lives under orchestrator/service.
+# Install Go workflow binaries built for the target architecture.
+COPY --from=go-builder /out/cads-workflow-runner /app/bin/cads-workflow-runner
+COPY --from=go-builder /out/cads-workflow-service /app/bin/cads-workflow-service
 RUN set -eux; \
-    echo "[image] Compiling Go workflow binaries"; \
-    mkdir -p /app/bin; \
-    cd /app/orchestrator/service; \
-    go build -o /app/bin/cads-workflow-runner ./cmd/cads-workflow-runner; \
-    go build -o /app/bin/cads-workflow-service ./cmd/cads-workflow-service
+    chmod +x /app/bin/cads-workflow-runner /app/bin/cads-workflow-service
 
 # Default command
 CMD ["/app/bin/cads-workflow-runner", "--workflow", "workflows/tests/python_chain.yaml"]

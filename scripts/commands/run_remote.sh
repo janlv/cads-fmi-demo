@@ -139,6 +139,15 @@ if [[ -z "$TOKEN" ]]; then
     log_error "Unable to resolve an Argo token. Set ARGO_TOKEN or pass --kubeconfig."
     exit 1
 fi
+argo_connection_args=(
+    -n "$ARGO_NAMESPACE"
+    -s "$ARGO_SERVER"
+    --token "$TOKEN"
+    --argo-http1
+)
+if [[ -n "$KUBECONFIG_PATH" ]]; then
+    argo_connection_args+=(--kubeconfig "$KUBECONFIG_PATH")
+fi
 
 local_name="$(basename "$WORKFLOW")"
 local_name="${local_name%.*}"
@@ -165,10 +174,7 @@ fi
 log_step "Submitting remote workflow '$resource_name' to ${ARGO_SERVER}/${ARGO_NAMESPACE}"
 set +e
 argo submit "$manifest_path" \
-    -n "$ARGO_NAMESPACE" \
-    -s "$ARGO_SERVER" \
-    --token "$TOKEN" \
-    --argo-http1 \
+    "${argo_connection_args[@]}" \
     --name "$resource_name" \
     --watch
 status=$?
@@ -177,14 +183,8 @@ set -e
 if ((status != 0)); then
     log_warn "Remote workflow submission failed; fetching status and logs for ${resource_name}"
     argo get "$resource_name" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 || true
+        "${argo_connection_args[@]}" || true
     argo logs "$resource_name" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 || true
+        "${argo_connection_args[@]}" || true
     exit "$status"
 fi

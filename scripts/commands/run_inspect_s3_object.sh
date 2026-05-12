@@ -17,6 +17,7 @@ ARGO_SERVER="${ARGO_SERVER:-argoworkflows.cads.kzslab.dev}"
 ARGO_NAMESPACE="${ARGO_NAMESPACE:-playground}"
 SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-playground-storhy-playground-pg-admin}"
 KUBECONFIG_PATH=""
+ARGO_CONNECTION_ARGS=()
 IMAGE="${CADS_WORKFLOW_IMAGE:-$default_remote_image}"
 SECRET_NAME="storhy-argo-artifacts-s3-credentials"
 SECRET_NAMESPACE="playground"
@@ -54,11 +55,7 @@ load_dashboard_state() {
 
 workflow_phase() {
     local name="$1"
-    argo get "$name" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 \
+    argo get "$name" "${ARGO_CONNECTION_ARGS[@]}" \
         -o json | python3 -c 'import json, sys; print((json.load(sys.stdin).get("status") or {}).get("phase", ""))'
 }
 
@@ -66,11 +63,7 @@ workflow_has_output() {
     local name="$1"
     local output=""
     output="$(
-        argo logs "$name" \
-            -n "$ARGO_NAMESPACE" \
-            -s "$ARGO_SERVER" \
-            --token "$TOKEN" \
-            --argo-http1 \
+        argo logs "$name" "${ARGO_CONNECTION_ARGS[@]}" \
             --tail 1 2>/dev/null | sed '/^[[:space:]]*$/d' | tail -n 1 || true
     )"
     [[ -n "$output" ]]
@@ -223,6 +216,15 @@ if [[ -z "$TOKEN" ]]; then
     log_error "Unable to resolve an Argo token. Set ARGO_TOKEN or pass --kubeconfig."
     exit 1
 fi
+ARGO_CONNECTION_ARGS=(
+    -n "$ARGO_NAMESPACE"
+    -s "$ARGO_SERVER"
+    --token "$TOKEN"
+    --argo-http1
+)
+if [[ -n "$KUBECONFIG_PATH" ]]; then
+    ARGO_CONNECTION_ARGS+=(--kubeconfig "$KUBECONFIG_PATH")
+fi
 
 RESOURCE_NAME="cads-inspect-s3-object-$(date +%Y%m%d%H%M%S)"
 MANIFEST_PATH="$OUTPUT"
@@ -306,10 +308,7 @@ monitor_workflow_startup "$RESOURCE_NAME" &
 monitor_pid=$!
 set +e
 argo submit "$MANIFEST_PATH" \
-    -n "$ARGO_NAMESPACE" \
-    -s "$ARGO_SERVER" \
-    --token "$TOKEN" \
-    --argo-http1 \
+    "${ARGO_CONNECTION_ARGS[@]}" \
     --name "$RESOURCE_NAME" \
     --watch
 status=$?
@@ -319,40 +318,20 @@ wait "$monitor_pid" 2>/dev/null || true
 
 if ((status != 0)); then
     log_warn "Remote S3 inspection submission failed; fetching status and logs for ${RESOURCE_NAME}"
-    argo get "$RESOURCE_NAME" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 || true
-    argo logs "$RESOURCE_NAME" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 || true
+    argo get "$RESOURCE_NAME" "${ARGO_CONNECTION_ARGS[@]}" || true
+    argo logs "$RESOURCE_NAME" "${ARGO_CONNECTION_ARGS[@]}" || true
     exit "$status"
 fi
 
 phase="$(workflow_phase "$RESOURCE_NAME" || true)"
 if [[ "$phase" != "Succeeded" ]]; then
     log_warn "S3 inspection workflow finished with phase '${phase:-unknown}'; fetching status and logs for ${RESOURCE_NAME}"
-    argo get "$RESOURCE_NAME" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 || true
-    argo logs "$RESOURCE_NAME" \
-        -n "$ARGO_NAMESPACE" \
-        -s "$ARGO_SERVER" \
-        --token "$TOKEN" \
-        --argo-http1 || true
+    argo get "$RESOURCE_NAME" "${ARGO_CONNECTION_ARGS[@]}" || true
+    argo logs "$RESOURCE_NAME" "${ARGO_CONNECTION_ARGS[@]}" || true
     exit 1
 fi
 
 log_step "Fetching S3 inspection logs for ${RESOURCE_NAME}"
-argo logs "$RESOURCE_NAME" \
-    -n "$ARGO_NAMESPACE" \
-    -s "$ARGO_SERVER" \
-    --token "$TOKEN" \
-    --argo-http1
+argo logs "$RESOURCE_NAME" "${ARGO_CONNECTION_ARGS[@]}"
 
 log_ok "S3 inspection workflow completed."
