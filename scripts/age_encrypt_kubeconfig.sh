@@ -170,20 +170,24 @@ fi
 mkdir -p "$(dirname "$output")"
 
 age_args=(--armor)
-for recipient in "${recipients[@]}"; do
-    if [[ -z "$recipient" ]]; then
-        echo "error: empty recipient" >&2
-        exit 1
-    fi
-    age_args+=(-r "$recipient")
-done
-for recipient_file in "${recipient_files[@]}"; do
-    if [[ -z "$recipient_file" || ! -f "$recipient_file" ]]; then
-        echo "error: recipient file not found: $recipient_file" >&2
-        exit 1
-    fi
-    age_args+=(-R "$recipient_file")
-done
+if ((${#recipients[@]} > 0)); then
+    for recipient in "${recipients[@]}"; do
+        if [[ -z "$recipient" ]]; then
+            echo "error: empty recipient" >&2
+            exit 1
+        fi
+        age_args+=(-r "$recipient")
+    done
+fi
+if ((${#recipient_files[@]} > 0)); then
+    for recipient_file in "${recipient_files[@]}"; do
+        if [[ -z "$recipient_file" || ! -f "$recipient_file" ]]; then
+            echo "error: recipient file not found: $recipient_file" >&2
+            exit 1
+        fi
+        age_args+=(-R "$recipient_file")
+    done
+fi
 
 age "${age_args[@]}" -o "$output" "$input"
 chmod 600 "$output"
