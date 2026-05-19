@@ -404,6 +404,14 @@ if [[ -z "${ARGO_TOKEN:-}" && -z "$resolved_kubeconfig" && -f "$default_kubeconf
     resolved_kubeconfig="$default_kubeconfig"
 fi
 
+if [[ -z "${ARGO_TOKEN:-}" && -z "${KUBECONFIG:-}" && -z "$resolved_kubeconfig" ]]; then
+    log_warn "No Kaizen Argo credentials found; remote run history and launches will be disabled."
+    log_warn "Set ARGO_TOKEN, pass --kubeconfig, or decrypt the Kaizen kubeconfig into $default_kubeconfig."
+    if [[ -f "$HOME/.kube/config" ]]; then
+        log_warn "Found ~/.kube/config, but it is not used unless KUBECONFIG is set or --kubeconfig is passed."
+    fi
+fi
+
 if (( connect_existing )) && [[ -z "$remote_image" ]]; then
     load_dashboard_state
     if [[ -n "${cached_image:-}" ]]; then

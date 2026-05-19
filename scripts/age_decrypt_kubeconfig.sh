@@ -8,8 +8,9 @@ output="$ROOT_DIR/.local/kaizen/kubeconfig"
 input=""
 force=0
 remote_source=""
-remote_path=".local/kaizen/kubeconfig"
+remote_path="${CADS_REMOTE_KUBECONFIG_PATH:-auto}"
 downloaded_input=""
+repo_name="$(basename "$ROOT_DIR")"
 
 usage() {
     cat <<'EOF'
@@ -29,7 +30,10 @@ Options:
                        recipient key, fetch it, and decrypt it locally. The
                        remote SSH password is requested by ssh when needed.
   --remote-path PATH   Remote plaintext kubeconfig path for --get-from.
-                       Default: .local/kaizen/kubeconfig on the remote host
+                       Default: auto-detect github/<repo>/.local/kaizen/kubeconfig,
+                       <repo>/.local/kaizen/kubeconfig, or .local/kaizen/kubeconfig
+                       on the remote host
+                       (override default with CADS_REMOTE_KUBECONFIG_PATH)
   --force              Overwrite an existing output file.
 
 After decrypting, run:
@@ -63,6 +67,7 @@ ensure_recipient_file() {
 fetch_remote_input() {
     local source="$1"
     local path="$2"
+    local repo="$3"
     local recipient=""
 
     if ! command -v ssh >/dev/null 2>&1; then
@@ -75,7 +80,7 @@ fetch_remote_input() {
         return 1
     fi
 
-    if [[ -z "$path" || "$path" == *[[:space:]]* ]]; then
+    if [[ -n "$path" && "$path" == *[[:space:]]* ]]; then
         echo "error: --remote-path must be a non-empty path without whitespace" >&2
         return 1
     fi
@@ -89,27 +94,41 @@ fetch_remote_input() {
     fi
 
     downloaded_input="$(mktemp "${TMPDIR:-/tmp}/cads-kubeconfig.XXXXXX.age")"
-    ssh -o BatchMode=no "$source" sh -s -- "$path" "$recipient" > "$downloaded_input" <<'REMOTE_SCRIPT'
+    ssh -o BatchMode=no "$source" sh -s -- "$path" "$recipient" "$repo" > "$downloaded_input" <<'REMOTE_SCRIPT'
 set -eu
 
 input="$1"
 recipient="$2"
-
-case "$input" in
-    "~/"*) input="$HOME/${input#~/}" ;;
-esac
+repo="$3"
+selected=""
 
 if ! command -v age >/dev/null 2>&1; then
     echo "error: age is not installed on the remote host" >&2
     exit 1
 fi
 
-if [ ! -f "$input" ]; then
-    echo "error: remote kubeconfig not found: $input" >&2
+if [ -n "$input" ] && [ "$input" != "auto" ]; then
+    candidates="$input"
+else
+    candidates="github/$repo/.local/kaizen/kubeconfig $repo/.local/kaizen/kubeconfig .local/kaizen/kubeconfig"
+fi
+
+for candidate in $candidates; do
+    case "$candidate" in
+        "~/"*) candidate="$HOME/${candidate#~/}" ;;
+    esac
+    if [ -f "$candidate" ]; then
+        selected="$candidate"
+        break
+    fi
+done
+
+if [ -z "$selected" ]; then
+    echo "error: remote kubeconfig not found. Tried: $candidates" >&2
     exit 1
 fi
 
-age --armor -r "$recipient" "$input"
+age --armor -r "$recipient" "$selected"
 REMOTE_SCRIPT
     chmod 600 "$downloaded_input"
     input="$downloaded_input"
@@ -233,7 +252,7 @@ if [[ -e "$output" && "$force" -ne 1 ]]; then
 fi
 
 if [[ -n "$remote_source" ]]; then
-    fetch_remote_input "$remote_source" "$remote_path"
+    fetch_remote_input "$remote_source" "$remote_path" "$repo_name"
 fi
 
 if [[ -z "$input" || ! -f "$input" ]]; then

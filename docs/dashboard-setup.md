@@ -157,14 +157,39 @@ SSH access, they can encrypt it remotely and decrypt it locally:
 ```
 
 This uses the stored public key, asks `ssh` for the remote password if needed,
-and runs `age` on the sender host. The remote kubeconfig path defaults to
-`.local/kaizen/kubeconfig` relative to the sender's login directory. Use
+and runs `age` on the sender host. By default, the helper auto-detects the
+remote kubeconfig under `github/cads-fmi-demo/.local/kaizen/kubeconfig`,
+`cads-fmi-demo/.local/kaizen/kubeconfig`, or `.local/kaizen/kubeconfig`
+relative to the sender's login directory. Use
 `--remote-path /path/to/kubeconfig` if the sender stores it somewhere else.
 
 They can then run:
 
 ```bash
 ./run_playground.sh
+```
+
+If the receiver cannot SSH to the sender, but the sender can SSH to the
+receiver, run this on the receiver:
+
+```bash
+./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host
+```
+
+It creates the age identity if needed, prints the exact command to run on the
+sender, waits for the encrypted file, and decrypts it into
+`.local/kaizen/kubeconfig`. The printed sender command uses the standard
+receiver locations: `~/.config/cads/age-recipient.txt` for the public age key
+and `~/cads-kubeconfig.age` for the encrypted inbox. It looks like:
+
+```bash
+./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
+```
+
+The receiver decrypts that file from the default remote path:
+
+```bash
+./scripts/age_decrypt_kubeconfig.sh ~/cads-kubeconfig.age
 ```
 
 The scripts are thin wrappers around `age`; they do not store keys in the repo.

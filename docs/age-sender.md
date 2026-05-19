@@ -55,12 +55,30 @@ Send that encrypted `.age` file to the receiver. Do not commit the encrypted
 file or the plaintext kubeconfig to git.
 
 If the receiver will fetch from your machine with `--get-from`, you do not need
-to pre-create `kubeconfig.age`. Keep the plaintext kubeconfig at the default
-path and make sure `age` is installed on your machine:
+to pre-create `kubeconfig.age`. Keep the plaintext kubeconfig at one of the
+auto-detected default paths and make sure `age` is installed on your machine:
 
 ```text
+github/cads-fmi-demo/.local/kaizen/kubeconfig
+cads-fmi-demo/.local/kaizen/kubeconfig
 .local/kaizen/kubeconfig
 ```
+
+If you can SSH to the receiver but they cannot SSH to you, ask them to run:
+
+```bash
+./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host
+```
+
+Then run the sender command it prints. It uses the receiver's standard public
+key and inbox paths, and usually looks like:
+
+```bash
+./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
+```
+
+That command encrypts your kubeconfig for their public age key and sends only
+the encrypted file to their machine.
 
 If your kubeconfig is somewhere else, pass its path with `--input`:
 
@@ -78,6 +96,20 @@ machine:
 ./scripts/age_encrypt_kubeconfig.sh \
     --recipient-file ~/.config/cads/age-recipient.txt \
     --input .local/kaizen/kubeconfig
+```
+
+If the receiver cannot SSH to your machine, but your machine can SSH to the
+receiver, encrypt and push the encrypted file to them with the standard helper:
+
+```bash
+./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
+```
+
+This sends only the encrypted `.age` file. The receiver can decrypt it from the
+default remote path:
+
+```bash
+./scripts/age_decrypt_kubeconfig.sh ~/cads-kubeconfig.age
 ```
 
 The receiver can then decrypt it with:

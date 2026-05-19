@@ -129,12 +129,37 @@ access, encrypt it remotely and decrypt it locally:
 ```
 
 This uses the stored public key, asks `ssh` for the remote password if needed,
-and runs `age` on the sender host. The remote kubeconfig path defaults to
-`.local/kaizen/kubeconfig` relative to the sender's login directory. Use
+and runs `age` on the sender host. By default, the helper auto-detects the
+remote kubeconfig under `github/cads-fmi-demo/.local/kaizen/kubeconfig`,
+`cads-fmi-demo/.local/kaizen/kubeconfig`, or `.local/kaizen/kubeconfig`
+relative to the sender's login directory. Use
 `--remote-path /path/to/kubeconfig` if the sender stores it somewhere else.
 
 This writes the dashboard kubeconfig to `.local/kaizen/kubeconfig` in this
 checkout.
+
+If this machine cannot SSH to the sender but the sender can SSH here, create
+the age identity here, print the exact sender command, wait for the encrypted
+file, and decrypt it automatically:
+
+```bash
+./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host
+```
+
+Run the printed command on the sender machine. It pushes back only the encrypted
+file. The printed sender command uses the standard receiver locations:
+`~/.config/cads/age-recipient.txt` for the public age key and
+`~/cads-kubeconfig.age` for the encrypted inbox. It looks like:
+
+```bash
+./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
+```
+
+Then decrypt it here:
+
+```bash
+./scripts/age_decrypt_kubeconfig.sh ~/cads-kubeconfig.age
+```
 
 Start the dashboard against the configured Playground image:
 

@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="$ROOT_DIR/.local/state"
 STATE_FILE="$STATE_DIR/podman-ca.env"
 FORCE=0
+PODMAN_MACHINE_OVERRIDE="${CADS_PODMAN_MACHINE:-}"
 
 default_certs_dir() {
     if [[ -n "${CADS_HOST_CA_CERT_DIR:-}" ]]; then
@@ -53,15 +54,19 @@ save_cache() {
 
 usage() {
     cat <<'EOF'
-Usage: scripts/install_podman_ca.sh [--cert-dir path] [--force]
+Usage: scripts/install_podman_ca.sh [--cert-dir path] [--machine name] [--force]
 
 Copies .crt/.pem files into the active Podman machine trust store.
+Native Linux Podman uses the host trust store, so this command is a no-op when
+no managed Podman machine exists.
 Skips the copy when the selected cert directory and cert checksum match the
 last successful sync cached under .local/state/podman-ca.env.
 
 Defaults:
   --cert-dir  scripts/certs, or certs/ when scripts/certs has no certs
               (override with CADS_HOST_CA_CERT_DIR)
+  --machine   Podman machine name for macOS/Podman Desktop
+              (override with CADS_PODMAN_MACHINE)
   --force     Refresh Podman CA trust even when the cached checksum matches
 EOF
 }
@@ -77,6 +82,21 @@ while (($#)); do
             CERTS_DIR="${1:-}"
             if [[ -z "$CERTS_DIR" ]]; then
                 printf '[error] --cert-dir expects a path\n' >&2
+                exit 1
+            fi
+            ;;
+        --machine)
+            shift
+            PODMAN_MACHINE_OVERRIDE="${1:-}"
+            if [[ -z "$PODMAN_MACHINE_OVERRIDE" ]]; then
+                printf '[error] --machine expects a name\n' >&2
+                exit 1
+            fi
+            ;;
+        --machine=*)
+            PODMAN_MACHINE_OVERRIDE="${1#*=}"
+            if [[ -z "$PODMAN_MACHINE_OVERRIDE" ]]; then
+                printf '[error] --machine expects a name\n' >&2
                 exit 1
             fi
             ;;
@@ -98,7 +118,11 @@ if ! command -v podman >/dev/null 2>&1; then
 fi
 
 if ! podman info >/dev/null 2>&1; then
-    printf '[error] Podman is not reachable. Run podman machine start and verify podman info.\n' >&2
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        printf '[error] Podman is not reachable. Run podman machine start and verify podman info.\n' >&2
+    else
+        printf '[error] Podman is not reachable. Start Podman or pass --skip-ca to prepare.sh.\n' >&2
+    fi
     exit 1
 fi
 
@@ -118,6 +142,43 @@ if ((${#cert_files[@]} == 0)); then
     exit 0
 fi
 
+podman_machine_list=""
+podman_machines=()
+if ! podman_machine_list="$(podman machine list -q 2>/dev/null)"; then
+    printf '[info] Podman machine support is unavailable; native Podman uses the host trust store. Skipping Podman machine CA sync.\n'
+    exit 0
+fi
+while IFS= read -r machine_name; do
+    if [[ -n "$machine_name" ]]; then
+        podman_machines+=("$machine_name")
+    fi
+done <<<"$podman_machine_list"
+
+if [[ -n "$PODMAN_MACHINE_OVERRIDE" ]]; then
+    podman_machine="$PODMAN_MACHINE_OVERRIDE"
+    machine_found=0
+    for machine_name in "${podman_machines[@]}"; do
+        if [[ "$machine_name" == "$podman_machine" ]]; then
+            machine_found=1
+            break
+        fi
+    done
+    if ((machine_found == 0)); then
+        printf '[error] Podman machine not found: %s\n' "$podman_machine" >&2
+        if ((${#podman_machines[@]} > 0)); then
+            printf '[error] Available Podman machines: %s\n' "${podman_machines[*]}" >&2
+        else
+            printf '[error] No Podman machines are configured on this host.\n' >&2
+        fi
+        exit 1
+    fi
+elif ((${#podman_machines[@]} == 0)); then
+    printf '[info] No Podman machine found; native Podman uses the host trust store. Skipping Podman machine CA sync.\n'
+    exit 0
+else
+    podman_machine="${podman_machines[0]}"
+fi
+
 current_signature="$(certs_signature "$resolved_cert_dir")"
 load_cache
 if ((FORCE == 0)) &&
@@ -133,10 +194,10 @@ for cert in "${cert_files[@]}"; do
         *.pem) remote="/etc/pki/ca-trust/source/anchors/${base%.pem}.crt" ;;
         *) remote="/etc/pki/ca-trust/source/anchors/$base" ;;
     esac
-    printf '[info] Installing %s into Podman machine\n' "$base"
-    podman machine ssh -- "sudo tee '$remote' >/dev/null" <"$cert"
+    printf '[info] Installing %s into Podman machine %s\n' "$base" "$podman_machine"
+    podman machine ssh "$podman_machine" "sudo tee '$remote' >/dev/null" <"$cert"
 done
 
-podman machine ssh -- 'sudo update-ca-trust extract && (sudo systemctl restart podman.socket podman.service 2>/dev/null || true)'
+podman machine ssh "$podman_machine" 'sudo update-ca-trust extract && (sudo systemctl restart podman.socket podman.service 2>/dev/null || true)'
 save_cache "$resolved_cert_dir" "$current_signature"
 printf '[ok] Podman machine CA trust updated.\n'
