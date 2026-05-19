@@ -252,6 +252,15 @@ metadata:
   tags: [cascade, dispatch]
 steps:
   - name: dispatch
+    fmu: fmu/models/HydroCascadeDispatchReplica.fmu
+    start_values: {site_id: 1, scenario_id: 2}
+    outputs: [score, risk_index]
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_from:
+      input_score: dispatch.score
+      input_risk_index: dispatch.risk_index
+    outputs: [kpi_score, risk_index]
 `), 0o644); err != nil {
 		t.Fatalf("write nested workflow: %v", err)
 	}
@@ -265,11 +274,20 @@ steps:
 	}
 	if workflows[0].Name != "cascade_dispatch" ||
 		workflows[0].Path != "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml" ||
-		workflows[0].StepCount != 1 ||
+		workflows[0].StepCount != 2 ||
 		workflows[0].Metadata.DisplayName != "Cascade dispatch" ||
 		workflows[0].Metadata.SiteID != "vsmc" ||
 		workflows[0].Metadata.ResultFamily != "storhy_mock" {
 		t.Fatalf("ListWorkflows() nested workflow = %+v, want metadata-rich nested workflow", workflows[0])
+	}
+	if len(workflows[0].Models) != 2 ||
+		workflows[0].Models[0].Label != "Hydro Cascade Dispatch" ||
+		workflows[0].Models[1].Label != "KPI Assessment" ||
+		len(workflows[0].Models[1].Inputs) != 2 ||
+		workflows[0].Models[1].Inputs[0].Source != "dispatch.risk_index" ||
+		workflows[0].Models[1].Inputs[0].SourceStep != "dispatch" ||
+		workflows[0].Models[1].Inputs[0].SourceOutput != "risk_index" {
+		t.Fatalf("ListWorkflows() models = %+v, want parsed model chain", workflows[0].Models)
 	}
 	resolvedTestWorkflow, err := ResolveLaunchWorkflow(root, filepath.Join("workflows", "tests", "calculate_aecis.yaml"))
 	if err != nil || resolvedTestWorkflow != "workflows/tests/calculate_aecis.yaml" {

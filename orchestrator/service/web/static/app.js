@@ -645,6 +645,122 @@ function workflowDescription(workflow) {
   return workflow.path || "";
 }
 
+function renderWorkflowModelOverview(workflow) {
+  const models = Array.isArray(workflow?.models)
+    ? workflow.models.filter((model) => model && (model.name || model.label || model.fmu))
+    : [];
+  if (models.length === 0) {
+    return "";
+  }
+
+  const flowEdges = workflowModelFlowEdges(models);
+  return `
+    <div class="workflow-model-overview">
+      <div class="workflow-model-section-title">Models</div>
+      <div class="workflow-model-chain" aria-label="Workflow model sequence">
+        ${models.map((model, index) => `
+          <span class="workflow-model-node">
+            <span class="workflow-model-index">${index + 1}</span>
+            <span>${escapeHTML(workflowModelLabel(model))}</span>
+          </span>
+          ${index < models.length - 1 ? '<span class="workflow-model-arrow" aria-hidden="true">&rarr;</span>' : ""}
+        `).join("")}
+      </div>
+      <div class="workflow-model-details">
+        ${models.map((model, index) => renderWorkflowModelCard(model, index)).join("")}
+      </div>
+      ${flowEdges.length > 0 ? `
+        <div class="workflow-model-section-title">Flow</div>
+        <div class="workflow-flow-list">
+          ${flowEdges.map(renderWorkflowFlowEdge).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderWorkflowModelCard(model, index) {
+  const fmuName = model.fmu ? model.fmu.split("/").pop() : "";
+  const startInputs = workflowStartInputLabels(model, index);
+  return `
+    <article class="workflow-model-card">
+      <h4>
+        <span>${index + 1}. ${escapeHTML(workflowModelLabel(model))}</span>
+        ${fmuName ? `<code>${escapeHTML(fmuName)}</code>` : ""}
+      </h4>
+      ${startInputs.length > 0 ? `
+        <div class="workflow-model-row">
+          <span>Inputs</span>
+          <div class="workflow-model-chip-row">${renderWorkflowChips(startInputs, 4)}</div>
+        </div>
+      ` : ""}
+      <div class="workflow-model-row">
+        <span>Outputs</span>
+        <div class="workflow-model-chip-row">${renderWorkflowChips(model.outputs, 6)}</div>
+      </div>
+    </article>
+  `;
+}
+
+function renderWorkflowFlowEdge(edge) {
+  return `
+    <div class="workflow-flow-edge">
+      <code>${escapeHTML(edge.sourceLabel)}</code>
+      <span aria-hidden="true">&rarr;</span>
+      <code>${escapeHTML(edge.targetLabel)}</code>
+    </div>
+  `;
+}
+
+function workflowModelFlowEdges(models) {
+  return models.flatMap((model) => {
+    const modelName = model.name || workflowModelLabel(model);
+    const inputs = Array.isArray(model.inputs) ? model.inputs : [];
+    return inputs
+      .filter((input) => input?.source)
+      .map((input) => ({
+        sourceLabel: input.source,
+        targetLabel: `${modelName}.${input.name || "input"}`,
+      }));
+  });
+}
+
+function workflowStartInputLabels(model, index) {
+  const inputs = Array.isArray(model.inputs) ? model.inputs : [];
+  if (inputs.length > 0) {
+    return inputs.map((input) => input.name || input.source).filter(Boolean);
+  }
+
+  const labels = [];
+  if (model.inputSeries) {
+    labels.push(model.inputSeries);
+  }
+  if (Array.isArray(model.parameters) && model.parameters.length > 0) {
+    labels.push(...model.parameters);
+  }
+  if (labels.length === 0 && index === 0) {
+    labels.push("workflow start");
+  }
+  return labels;
+}
+
+function renderWorkflowChips(values, limit) {
+  const items = Array.isArray(values) ? values.filter(Boolean) : [];
+  if (items.length === 0) {
+    return '<span class="workflow-model-muted">n/a</span>';
+  }
+  const shown = items.slice(0, limit);
+  const hiddenCount = items.length - shown.length;
+  return `
+    ${shown.map((item) => `<code class="workflow-model-chip">${escapeHTML(item)}</code>`).join("")}
+    ${hiddenCount > 0 ? `<span class="workflow-model-more">+${hiddenCount} more</span>` : ""}
+  `;
+}
+
+function workflowModelLabel(model) {
+  return String(model?.label || model?.name || model?.fmu || "model").replaceAll("_", " ");
+}
+
 function formatWorkflowCategory(category) {
   return String(category || "")
     .replaceAll("_", " ")
@@ -931,12 +1047,13 @@ function renderWorkflows() {
     context.innerHTML = `
       <span class="workflow-context-site">${escapeHTML(demo.shortLabel || demo.label)}</span>
       <span>${escapeHTML(demo.id === "portfolio" ? "Showing every repo workflow." : `Showing workflows mapped to ${demo.label}.`)}</span>
-      ${selected && description ? `
-        <span class="workflow-selected-description">
+      ${selected ? `
+        <div class="workflow-selected-description">
           <strong>${escapeHTML(workflowLabel(selected))}</strong>
           ${selectedMeta ? `<em>${escapeHTML(selectedMeta)}</em>` : ""}
-          ${escapeHTML(description)}
-        </span>
+          ${description ? `<span>${escapeHTML(description)}</span>` : ""}
+          ${renderWorkflowModelOverview(selected)}
+        </div>
       ` : ""}
     `;
   }

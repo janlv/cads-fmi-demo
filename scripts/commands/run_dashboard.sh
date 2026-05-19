@@ -229,7 +229,10 @@ stop_existing_dashboard_session() {
                 next_remaining+=("$pid")
             fi
         done
-        remaining=("${next_remaining[@]}")
+        remaining=()
+        if ((${#next_remaining[@]} > 0)); then
+            remaining=("${next_remaining[@]}")
+        fi
     done
 
     if ((${#remaining[@]} > 0)); then
