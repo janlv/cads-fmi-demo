@@ -52,19 +52,23 @@ send_encrypted_output() {
         echo "error: --send-path must be a non-empty path without whitespace" >&2
         return 1
     fi
+    if [[ "$remote_path" == *"'"* ]]; then
+        echo "error: --send-path must not contain single quotes" >&2
+        return 1
+    fi
 
-    ssh -o BatchMode=no "$target" sh -c '
-set -eu
-path="$1"
-case "$path" in
-    "~/"*) path="$HOME/${path#~/}" ;;
+    ssh -o BatchMode=no "$target" "set -eu
+path='$remote_path'
+case \"\$path\" in
+    '~/'*) path=\"\$HOME/\${path#~/}\" ;;
 esac
-dir="$(dirname "$path")"
-mkdir -p "$dir"
+dir=\$(dirname \"\$path\")
+mkdir -p \"\$dir\"
 umask 077
-cat > "$path"
-printf "Saved encrypted kubeconfig to %s\n" "$path" >&2
-' sh "$remote_path" <"$source_file"
+cat > \"\$path\"
+chmod 600 \"\$path\"
+printf 'Saved encrypted kubeconfig to %s\n' \"\$path\" >&2
+" <"$source_file"
 
     echo "Sent encrypted kubeconfig to ${target}:${remote_path}"
 }
