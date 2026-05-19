@@ -55,8 +55,7 @@ if [ ! -f "$recipient_path" ]; then
     echo "hint: run scripts/age_receive_kubeconfig.sh on the receiver first" >&2
     exit 1
 fi
-cat "$recipient_path"
-printf '\n'
+sed -n '1p' "$recipient_path"
 if [ -f "$inbox_path" ]; then
     sed -n '1p' "$inbox_path"
 fi
