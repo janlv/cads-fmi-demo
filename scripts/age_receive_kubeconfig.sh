@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 identity="${AGE_KEY_FILE:-$HOME/.config/age/key.txt}"
 recipient_file="${AGE_RECIPIENT_FILE:-$HOME/.config/cads/age-recipient.txt}"
-inbox="${CADS_KUBECONFIG_INBOX:-$HOME/cads-kubeconfig.age}"
+inbox="${CADS_KUBECONFIG_INBOX:-$ROOT_DIR/.local/kaizen/kubeconfig.age}"
+inbox_file="${CADS_KUBECONFIG_INBOX_FILE:-$HOME/.config/cads/kubeconfig-inbox-path}"
 output="$ROOT_DIR/.local/kaizen/kubeconfig"
 timeout_seconds=600
 wait_for_file=1
@@ -24,7 +25,7 @@ Options:
                            Default: $USER@$(hostname -f), falling back to hostname.
                            Can also be set with CADS_SEND_TO.
   --inbox PATH             Where the sender writes the encrypted file.
-                           Default: ~/cads-kubeconfig.age
+                           Default: .local/kaizen/kubeconfig.age in this checkout
   -o, --out PATH           Decrypted kubeconfig path.
                            Default: .local/kaizen/kubeconfig in this checkout
   --timeout SECONDS        How long to wait for the encrypted file.
@@ -59,7 +60,7 @@ EOF
         exit 1
     fi
 
-    mkdir -p "$(dirname "$identity")" "$(dirname "$recipient_file")"
+    mkdir -p "$(dirname "$identity")" "$(dirname "$recipient_file")" "$(dirname "$inbox_file")"
     if [[ ! -f "$identity" ]]; then
         umask 077
         age-keygen -o "$identity" >/dev/null 2>&1
@@ -67,6 +68,8 @@ EOF
     chmod 600 "$identity"
     age-keygen -y "$identity" >"$recipient_file"
     chmod 600 "$recipient_file"
+    printf '%s\n' "$inbox" >"$inbox_file"
+    chmod 600 "$inbox_file"
 }
 
 shell_quote() {
@@ -74,16 +77,11 @@ shell_quote() {
 }
 
 print_sender_command() {
-    local default_inbox="$HOME/cads-kubeconfig.age"
-
     cat <<'EOF'
 Run this on the machine that already has the Kaizen kubeconfig:
 
 EOF
     printf './scripts/age_send_kubeconfig.sh %s' "$(shell_quote "$send_target")"
-    if [[ "$inbox" != "$default_inbox" ]]; then
-        printf ' \\\n  --send-path %s' "$(shell_quote "$inbox")"
-    fi
     printf '\n'
 }
 
@@ -192,6 +190,11 @@ if [[ "$inbox" == *[[:space:]]* ]]; then
     echo "error: --inbox must not contain whitespace" >&2
     exit 1
 fi
+case "$inbox" in
+    /*) ;;
+    "~/"*) inbox="$HOME/${inbox#~/}" ;;
+    *) inbox="$ROOT_DIR/$inbox" ;;
+esac
 
 ensure_identity
 print_sender_command

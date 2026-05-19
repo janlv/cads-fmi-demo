@@ -5,7 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target=""
 input="${KUBECONFIG:-$ROOT_DIR/.local/kaizen/kubeconfig}"
 recipient_path="${CADS_REMOTE_RECIPIENT_PATH:-~/.config/cads/age-recipient.txt}"
-send_path="${CADS_SEND_KUBECONFIG_PATH:-~/cads-kubeconfig.age}"
+receiver_inbox_path="${CADS_REMOTE_INBOX_PATH:-~/.config/cads/kubeconfig-inbox-path}"
+send_path="${CADS_SEND_KUBECONFIG_PATH:-}"
+explicit_send_path=0
 
 usage() {
     cat <<'EOF'
@@ -16,35 +18,48 @@ scripts/age_receive_kubeconfig.sh.
 
 Standard locations:
   receiver public key:  ~/.config/cads/age-recipient.txt
-  receiver inbox:       ~/cads-kubeconfig.age
+  receiver inbox:       discovered from ~/.config/cads/kubeconfig-inbox-path
+                         and defaults to the receiver checkout's
+                         .local/kaizen/kubeconfig.age
   sender kubeconfig:    $KUBECONFIG or .local/kaizen/kubeconfig in this checkout
 
 Options:
   -i, --input PATH           Kubeconfig to encrypt.
   --recipient-path PATH      Receiver-side public age key path.
                              Default: ~/.config/cads/age-recipient.txt
+  --receiver-inbox-path PATH Receiver-side file containing the repo-local inbox.
+                             Default: ~/.config/cads/kubeconfig-inbox-path
   --send-path PATH           Receiver-side encrypted output path.
-                             Default: ~/cads-kubeconfig.age
+                             Default: discovered from receiver
   -h, --help                 Show this help.
 EOF
 }
 
-fetch_recipient() {
+fetch_receiver_config() {
     local ssh_target="$1"
-    local path="$2"
+    local recipient_file_path="$2"
+    local inbox_file_path="$3"
 
-    ssh -o BatchMode=no "$ssh_target" sh -s -- "$path" <<'REMOTE_SCRIPT'
+    ssh -o BatchMode=no "$ssh_target" sh -s -- "$recipient_file_path" "$inbox_file_path" <<'REMOTE_SCRIPT'
 set -eu
-path="$1"
-case "$path" in
-    "~/"*) path="$HOME/${path#~/}" ;;
+recipient_path="$1"
+inbox_path="$2"
+case "$recipient_path" in
+    "~/"*) recipient_path="$HOME/${recipient_path#~/}" ;;
 esac
-if [ ! -f "$path" ]; then
-    echo "error: receiver public age key not found: $path" >&2
+case "$inbox_path" in
+    "~/"*) inbox_path="$HOME/${inbox_path#~/}" ;;
+esac
+if [ ! -f "$recipient_path" ]; then
+    echo "error: receiver public age key not found: $recipient_path" >&2
     echo "hint: run scripts/age_receive_kubeconfig.sh on the receiver first" >&2
     exit 1
 fi
-cat "$path"
+cat "$recipient_path"
+printf '\n'
+if [ -f "$inbox_path" ]; then
+    sed -n '1p' "$inbox_path"
+fi
 REMOTE_SCRIPT
 }
 
@@ -84,9 +99,25 @@ while (($#)); do
                 exit 1
             fi
             ;;
+        --receiver-inbox-path)
+            shift
+            receiver_inbox_path="${1:-}"
+            if [[ -z "$receiver_inbox_path" ]]; then
+                echo "error: --receiver-inbox-path expects a path" >&2
+                exit 1
+            fi
+            ;;
+        --receiver-inbox-path=*)
+            receiver_inbox_path="${1#*=}"
+            if [[ -z "$receiver_inbox_path" ]]; then
+                echo "error: --receiver-inbox-path expects a path" >&2
+                exit 1
+            fi
+            ;;
         --send-path)
             shift
             send_path="${1:-}"
+            explicit_send_path=1
             if [[ -z "$send_path" ]]; then
                 echo "error: --send-path expects a path" >&2
                 exit 1
@@ -94,6 +125,7 @@ while (($#)); do
             ;;
         --send-path=*)
             send_path="${1#*=}"
+            explicit_send_path=1
             if [[ -z "$send_path" ]]; then
                 echo "error: --send-path expects a path" >&2
                 exit 1
@@ -127,10 +159,23 @@ if [[ ! -f "$input" ]]; then
     exit 1
 fi
 
-recipient="$(fetch_recipient "$target" "$recipient_path")"
+receiver_config="$(fetch_receiver_config "$target" "$recipient_path" "$receiver_inbox_path")"
+recipient="$(printf '%s\n' "$receiver_config" | sed -n '1p')"
+discovered_send_path="$(printf '%s\n' "$receiver_config" | sed -n '2p')"
 if [[ -z "$recipient" || "$recipient" != age1* || "$recipient" == *[[:space:]]* ]]; then
     echo "error: invalid receiver public age key from ${target}:${recipient_path}" >&2
     exit 1
+fi
+if [[ -z "$send_path" && -n "$discovered_send_path" ]]; then
+    send_path="$discovered_send_path"
+fi
+if [[ -z "$send_path" ]]; then
+    echo "error: receiver inbox path was not advertised by ${target}" >&2
+    echo "hint: rerun scripts/age_receive_kubeconfig.sh on the receiver, or pass --send-path" >&2
+    exit 1
+fi
+if ((explicit_send_path == 0)); then
+    echo "Using receiver inbox: $send_path"
 fi
 
 "$ROOT_DIR/scripts/age_encrypt_kubeconfig.sh" \

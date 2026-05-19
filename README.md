@@ -149,17 +149,15 @@ file, and decrypt it automatically:
 Run the printed command on the sender machine. It pushes back only the encrypted
 file. The printed sender command uses the standard receiver locations:
 `~/.config/cads/age-recipient.txt` for the public age key and
-`~/cads-kubeconfig.age` for the encrypted inbox. It looks like:
+`.local/kaizen/kubeconfig.age` in this checkout for the encrypted inbox. It
+looks like:
 
 ```bash
 ./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
 ```
 
-Then decrypt it here:
-
-```bash
-./scripts/age_decrypt_kubeconfig.sh ~/cads-kubeconfig.age
-```
+The receiver command decrypts it automatically after the sender command
+finishes.
 
 Start the dashboard against the configured Playground image:
 

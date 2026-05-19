@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 input="${KUBECONFIG:-$ROOT_DIR/.local/kaizen/kubeconfig}"
 output=""
 send_target=""
-send_path="${CADS_SEND_KUBECONFIG_PATH:-~/cads-kubeconfig.age}"
+send_path="${CADS_SEND_KUBECONFIG_PATH:-}"
 recipients=()
 recipient_files=()
 
@@ -26,7 +26,7 @@ Options:
   --send-to USER@HOST       Send the encrypted output to a remote SSH account.
                             The remote SSH password is requested by ssh when needed.
   --send-path PATH          Remote encrypted output path for --send-to.
-                            Default: ~/cads-kubeconfig.age
+                            Required with --send-to unless CADS_SEND_KUBECONFIG_PATH is set.
 
 The output file is encrypted and suitable for transfer, but still should not be
 committed to git.
@@ -202,6 +202,11 @@ Encrypted kubeconfig written to:
 EOF
 
 if [[ -n "$send_target" ]]; then
+    if [[ -z "$send_path" ]]; then
+        echo "error: --send-path is required with --send-to" >&2
+        echo "hint: use scripts/age_send_kubeconfig.sh for the standard repo-local handoff" >&2
+        exit 1
+    fi
     send_encrypted_output "$send_target" "$output" "$send_path"
 else
     echo

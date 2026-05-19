@@ -106,11 +106,9 @@ receiver, encrypt and push the encrypted file to them with the standard helper:
 ```
 
 This sends only the encrypted `.age` file. The receiver can decrypt it from the
-default remote path:
-
-```bash
-./scripts/age_decrypt_kubeconfig.sh ~/cads-kubeconfig.age
-```
+repo-local inbox path, `.local/kaizen/kubeconfig.age`. When they use
+`age_receive_kubeconfig.sh`, it decrypts automatically after the sender command
+finishes.
 
 The receiver can then decrypt it with:
 

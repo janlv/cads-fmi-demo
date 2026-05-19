@@ -180,21 +180,20 @@ It creates the age identity if needed, prints the exact command to run on the
 sender, waits for the encrypted file, and decrypts it into
 `.local/kaizen/kubeconfig`. The printed sender command uses the standard
 receiver locations: `~/.config/cads/age-recipient.txt` for the public age key
-and `~/cads-kubeconfig.age` for the encrypted inbox. It looks like:
+and `.local/kaizen/kubeconfig.age` in this checkout for the encrypted inbox. It
+looks like:
 
 ```bash
 ./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
 ```
 
-The receiver decrypts that file from the default remote path:
-
-```bash
-./scripts/age_decrypt_kubeconfig.sh ~/cads-kubeconfig.age
-```
+The receiver command decrypts it automatically after the sender command
+finishes.
 
 The scripts are thin wrappers around `age`; they do not store keys in the repo.
-The generated private key, decrypted kubeconfig, and encrypted handoff file stay
-under the user's home directory by default.
+The generated private key stays under the user's home directory by default. The
+decrypted kubeconfig and encrypted transfer file stay under `.local/kaizen/` in
+the receiver checkout.
 
 ## 3. Choose A User Path
 
