@@ -653,7 +653,6 @@ function renderWorkflowModelOverview(workflow) {
     return "";
   }
 
-  const flowEdges = workflowModelFlowEdges(models);
   return `
     <div class="workflow-model-overview">
       <div class="workflow-model-section-title">Models</div>
@@ -669,12 +668,6 @@ function renderWorkflowModelOverview(workflow) {
       <div class="workflow-model-details">
         ${models.map((model, index) => renderWorkflowModelCard(model, index)).join("")}
       </div>
-      ${flowEdges.length > 0 ? `
-        <div class="workflow-model-section-title">Flow</div>
-        <div class="workflow-flow-list">
-          ${flowEdges.map(renderWorkflowFlowEdge).join("")}
-        </div>
-      ` : ""}
     </div>
   `;
 }
@@ -702,28 +695,6 @@ function renderWorkflowModelCard(model, index) {
   `;
 }
 
-function renderWorkflowFlowEdge(edge) {
-  return `
-    <div class="workflow-flow-edge">
-      <code>${escapeHTML(edge.sourceLabel)}</code>
-      <span aria-hidden="true">&rarr;</span>
-      <code>${escapeHTML(edge.targetLabel)}</code>
-    </div>
-  `;
-}
-
-function workflowModelFlowEdges(models) {
-  return models.flatMap((model) => {
-    const modelName = model.name || workflowModelLabel(model);
-    const inputs = Array.isArray(model.inputs) ? model.inputs : [];
-    return inputs
-      .filter((input) => input?.source)
-      .map((input) => ({
-        sourceLabel: input.source,
-        targetLabel: `${modelName}.${input.name || "input"}`,
-      }));
-  });
-}
 
 function workflowStartInputLabels(model, index) {
   const inputs = Array.isArray(model.inputs) ? model.inputs : [];

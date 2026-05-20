@@ -655,8 +655,7 @@ h2 {
   text-transform: uppercase;
 }
 
-.workflow-model-chain,
-.workflow-flow-list {
+.workflow-model-chain {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -746,8 +745,7 @@ h2 {
   min-width: 0;
 }
 
-.workflow-model-chip,
-.workflow-flow-edge code {
+.workflow-model-chip {
   padding: 3px 5px;
   border-radius: 6px;
   background: rgba(0, 28, 99, 0.06);
@@ -765,21 +763,6 @@ h2 {
   font-weight: 700;
 }
 
-.workflow-flow-edge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  padding: 4px 6px;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 28, 99, 0.08);
-  background: rgba(255, 255, 255, 0.64);
-}
-
-.workflow-flow-edge span {
-  color: rgba(0, 28, 99, 0.52);
-  font-weight: 800;
-}
 
 .run-card {
   border-radius: 16px;
