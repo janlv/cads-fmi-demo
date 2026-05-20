@@ -18,6 +18,119 @@ The repo is organized around three OS-independent user paths:
 
 See [`docs/user-paths.md`](docs/user-paths.md) for the support matrix.
 
+## Bring Up The Dashboard
+
+Run these commands in order on the checkout that should host the dashboard.
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/janlv/cads-fmi-demo.git
+   cd cads-fmi-demo
+   ```
+
+2. Prepare the host:
+
+   ```bash
+   ./prepare.sh
+   ```
+
+   Podman or Docker is only needed for the **Publish to Playground** and
+   **Local Dev** paths. It is not needed for the default
+   **Playground Dashboard** path.
+
+3. Set up Kaizen credentials using the default handoff. First, on the checkout
+   that should host the dashboard, run:
+
+   ```bash
+   ./scripts/age_receive_kubeconfig.sh --send-target javi@osl-1012 --force
+   ```
+
+   Leave that command running. Then, on the checkout that already has the
+   Kaizen credentials, run:
+
+   ```bash
+   ./scripts/age_send_kubeconfig.sh javi@osl-1012
+   ```
+
+4. Start the dashboard against the configured Playground image:
+
+   ```bash
+   ./run_playground.sh
+   ```
+
+5. Open:
+
+   ```text
+   http://localhost:8080/
+   ```
+
+The default image tag lives in `config/playground.env`. If you need to test a
+different published image, pass it explicitly:
+
+```bash
+./run_playground.sh --image ghcr.io/org/cads-fmi-demo:tag
+```
+
+## Kaizen Credentials
+
+The dashboard needs access to the hosted Kaizen Argo playground. The default
+handoff securely transfers the Kaizen kubeconfig from a checkout that already
+has it to the checkout that should run the dashboard.
+
+If `prepare.sh` says `age` is missing, install it with your system package
+manager and run `./prepare.sh` again.
+
+### Default: Sender Pushes To Receiver
+
+Use this when one machine already has the Kaizen kubeconfig and can SSH to the
+machine that needs it. Replace `javi@osl-1012` with the SSH target for the
+machine that will run the dashboard when needed.
+
+Run the receiver first on the machine that needs the credential:
+
+```bash
+./scripts/age_receive_kubeconfig.sh --send-target javi@osl-1012 --force
+```
+
+Leave it running. It prepares the receiver and waits for the encrypted
+kubeconfig.
+
+Run the sender on the checkout that already has the Kaizen kubeconfig:
+
+```bash
+./scripts/age_send_kubeconfig.sh javi@osl-1012
+```
+
+When the receiver prints that the kubeconfig is ready, start the dashboard with
+`./run_playground.sh`.
+
+For most users, the commands above are enough. Use the detailed documents when
+you need to troubleshoot, use a different credential source, or customize the
+flow:
+
+- [`docs/user-paths.md`](docs/user-paths.md) for the three supported user paths.
+- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) for the default
+  Playground Dashboard path.
+- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) for the full dashboard setup.
+- [`docs/local-workflow-dev.md`](docs/local-workflow-dev.md) for local Minikube workflow
+  development.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) for common failures.
+- [`docs/prepare.md`](docs/prepare.md) for setup details and optional local Minikube.
+- [`docs/run.md`](docs/run.md) for direct workflow submission without the dashboard.
+- [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md) for
+  workflow/model publishing architecture options.
+- [`docs/age-sender.md`](docs/age-sender.md) if you are sending the kubeconfig to someone
+  else.
+
+## Credential Policy
+
+Do not commit playground credentials, kubeconfigs, S3 keys, bearer tokens, or
+registry tokens. This repository currently reports as public on GitHub, and
+even private repositories are not safe storage for shared playground
+credentials. Use local credential files, environment variables, or a secret
+manager.
+
 ## Simple Architecture
 
 The system has four main pieces:
@@ -40,169 +153,6 @@ place where those workflow images are stored so the Playground can pull them.
 For the current demo, the GHCR image is a bundled artifact: it contains the
 runner, dependencies, mock models/FMUs, and workflow YAML files.
 
-## Start The Dashboard
-
-These steps are for a non-expert user who wants to bring up the dashboard on
-their own machine.
-
-Clone the repository:
-
-```bash
-git clone https://github.com/janlv/cads-fmi-demo.git
-cd cads-fmi-demo
-```
-
-Prepare the host:
-
-```bash
-./prepare.sh
-```
-
-If `prepare.sh` says `age` is missing, install it and run `./prepare.sh` again:
-
-```bash
-# macOS with Homebrew
-brew install age
-
-# Debian/Ubuntu
-sudo apt-get update
-sudo apt-get install -y age
-```
-
-`age` is used only to exchange the Kaizen kubeconfig safely. The kubeconfig is
-the credential that lets the dashboard talk to the hosted playground.
-
-Podman or Docker is only needed for the **Publish to Playground** and
-**Local Dev** paths. It is not needed for the default
-**Playground Dashboard** path.
-
-Create your local age identity and send the printed public key to the person
-who has the Kaizen kubeconfig:
-
-```bash
-./scripts/age_create_identity.sh
-```
-
-Then send the public key to the credential sender using one of these options.
-
-Open a prefilled email draft:
-
-```bash
-./scripts/age_create_identity.sh --mailto sender@example.com
-```
-
-Copy the key to your clipboard and paste it into your preferred message channel:
-
-```bash
-./scripts/age_create_identity.sh --copy
-```
-
-Send the key directly to the sender's machine over SSH:
-
-```bash
-./scripts/age_create_identity.sh --send-to sender_user@sender_host
-```
-
-The SSH command sends only the public key. It uses the normal `ssh` password
-prompt when needed and saves the key on the remote host as
-`~/.config/cads/age-recipient.txt`, which the sender can pass to
-`age_encrypt_kubeconfig.sh --recipient-file`.
-
-The public key starts with `age1...` and is safe to share. The private key stays
-on the dashboard machine in `~/.config/age/key.txt` by default and must not be
-shared. The script also stores the public key at
-`~/.config/cads/age-recipient.txt`; the decrypt helper uses that file when
-fetching credentials from a remote host. If that public key file is missing but
-the private key exists, the decrypt helper recreates it locally.
-
-When you receive the encrypted kubeconfig file, decrypt it:
-
-```bash
-./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
-```
-
-If the sender has the plaintext kubeconfig on their machine and you have SSH
-access, encrypt it remotely and decrypt it locally:
-
-```bash
-./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
-```
-
-This uses the stored public key, asks `ssh` for the remote password if needed,
-and runs `age` on the sender host. By default, the helper auto-detects the
-remote kubeconfig under `github/cads-fmi-demo/.local/kaizen/kubeconfig`,
-`cads-fmi-demo/.local/kaizen/kubeconfig`, or `.local/kaizen/kubeconfig`
-relative to the sender's login directory. Use
-`--remote-path /path/to/kubeconfig` if the sender stores it somewhere else.
-
-This writes the dashboard kubeconfig to `.local/kaizen/kubeconfig` in this
-checkout.
-
-If this machine cannot SSH to the sender but the sender can SSH here, create
-the age identity here, print the exact sender command, wait for the encrypted
-file, and decrypt it automatically:
-
-```bash
-./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host
-```
-
-Run the printed command on the sender machine. It pushes back only the encrypted
-file. The printed sender command uses the standard receiver locations:
-`~/.config/cads/age-recipient.txt` for the public age key and
-`.local/kaizen/kubeconfig.age` in this checkout for the encrypted inbox. It
-looks like:
-
-```bash
-./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
-```
-
-The receiver command decrypts it automatically after the sender command
-finishes.
-
-Start the dashboard against the configured Playground image:
-
-```bash
-./run_playground.sh
-```
-
-Open:
-
-```text
-http://localhost:8080/
-```
-
-The default image tag lives in `config/playground.env`. If you need to test a
-different published image, pass it explicitly:
-
-```bash
-./run_playground.sh --image ghcr.io/org/cads-fmi-demo:tag
-```
-
-For most users, the commands above are enough. Use the detailed documents when
-you need to troubleshoot or customize the flow:
-
-- [`docs/user-paths.md`](docs/user-paths.md) for the three supported user paths.
-- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) for the default
-  Playground Dashboard path.
-- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) for the full dashboard setup.
-- [`docs/local-workflow-dev.md`](docs/local-workflow-dev.md) for local Minikube workflow
-  development.
-- [`docs/troubleshooting.md`](docs/troubleshooting.md) for common failures.
-- [`docs/prepare.md`](docs/prepare.md) for setup details and optional local Minikube.
-- [`docs/run.md`](docs/run.md) for direct workflow submission without the dashboard.
-- [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md) for
-  workflow/model publishing architecture options.
-- [`docs/age-sender.md`](docs/age-sender.md) if you are sending the kubeconfig to someone
-  else.
-
-## Credential Policy
-
-Do not commit playground credentials, kubeconfigs, S3 keys, bearer tokens, or
-registry tokens. This repository currently reports as public on GitHub, and
-even private repositories are not safe storage for shared playground
-credentials. Use environment variables, `.local/kaizen/kubeconfig`, or a secret
-manager.
-
 ## Useful Commands
 
 ```bash
@@ -210,7 +160,7 @@ manager.
 ./run_playground.sh
 
 # User path 2: build/publish to Playground, then start the dashboard.
-# Builds linux/amd64 by default for the hosted Playground.
+# Builds the hosted Playground platform by default.
 ./run_publish.sh
 
 # User path 3: build/test one workflow locally with Minikube.
@@ -222,19 +172,13 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 # Build demo FMUs.
 ./create_fmu/build_python_fmus.sh
 
-# Receiver: create an age identity and print the public recipient key.
-./scripts/age_create_identity.sh
+# Default credential handoff: run this first on the receiver.
+./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host
 
-# Receiver: open a prefilled email draft for sending the public key.
-./scripts/age_create_identity.sh --mailto sender@example.com
+# Default credential handoff: run this second on the sender.
+./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
 
-# Receiver: send the public key to a remote SSH account.
-./scripts/age_create_identity.sh --send-to sender_user@sender_host
-
-# Receiver: decrypt the encrypted kubeconfig into .local/kaizen/kubeconfig.
-./scripts/age_decrypt_kubeconfig.sh ~/Downloads/kubeconfig.age
-
-# Receiver: encrypt the remote kubeconfig over SSH and decrypt it locally.
+# Alternate credential handoff: receiver fetches from sender over SSH.
 ./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
 ```
 
@@ -243,9 +187,8 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 - `run_playground.sh` starts the local dashboard against the configured
   Playground image.
 - `run_publish.sh` builds/publishes the bundled Playground image, then starts
-  the dashboard. It builds `linux/amd64` by default because the hosted
-  Playground runs Linux nodes; override with `--platform` only when the
-  target cluster architecture changes.
+  the dashboard. It builds the hosted Playground target platform by default;
+  override with `--platform` only when the target cluster architecture changes.
 - `run_local_dev.sh` runs one workflow in local Minikube without a dashboard.
 - `scripts/commands/` contains lower-level build, local, remote, dashboard, and
   inspection commands for expert use.
