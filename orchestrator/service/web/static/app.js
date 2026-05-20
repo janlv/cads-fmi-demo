@@ -3,6 +3,7 @@ const state = {
   workflows: [],
   runs: [],
   selectedWorkflowPath: "",
+  selectedWorkflowModelIndex: null,
   selectedRunName: "",
   selectedDemonstratorId: "portfolio",
   runsRailCollapsed: false,
@@ -564,6 +565,7 @@ function ensureSelectedWorkflow() {
   const demo = selectedDemonstrator();
   if (candidates.length === 0) {
     state.selectedWorkflowPath = "";
+    state.selectedWorkflowModelIndex = null;
     return;
   }
 
@@ -574,6 +576,7 @@ function ensureSelectedWorkflow() {
   const savedPath = readPersistedWorkflowPath();
   if (savedPath && candidates.some((workflow) => workflow.path === savedPath)) {
     state.selectedWorkflowPath = savedPath;
+    state.selectedWorkflowModelIndex = null;
     return;
   }
 
@@ -583,6 +586,7 @@ function ensureSelectedWorkflow() {
     candidates[0]?.path ||
     "";
   state.selectedWorkflowPath = preferredPath;
+  state.selectedWorkflowModelIndex = null;
 }
 
 function selectedWorkflow() {
@@ -645,31 +649,58 @@ function workflowDescription(workflow) {
   return workflow.path || "";
 }
 
-function renderWorkflowModelOverview(workflow) {
-  const models = Array.isArray(workflow?.models)
+function workflowModels(workflow) {
+  return Array.isArray(workflow?.models)
     ? workflow.models.filter((model) => model && (model.name || model.label || model.fmu))
     : [];
+}
+
+function renderWorkflowModelOverview(workflow) {
+  const models = workflowModels(workflow);
   if (models.length === 0) {
     return "";
   }
+
+  const selectedIndex = Number.isInteger(state.selectedWorkflowModelIndex) &&
+    state.selectedWorkflowModelIndex >= 0 &&
+    state.selectedWorkflowModelIndex < models.length
+      ? state.selectedWorkflowModelIndex
+      : null;
 
   return `
     <div class="workflow-model-overview">
       <div class="workflow-model-section-title">Models</div>
       <div class="workflow-model-chain" aria-label="Workflow model sequence">
         ${models.map((model, index) => `
-          <span class="workflow-model-node">
+          <button
+            class="workflow-model-node${selectedIndex === index ? " selected" : ""}"
+            type="button"
+            aria-expanded="${selectedIndex === index ? "true" : "false"}"
+            aria-label="Show ${escapeHTML(workflowModelLabel(model))} details"
+            data-select-workflow-model="${index}"
+          >
             <span class="workflow-model-index">${index + 1}</span>
             <span>${escapeHTML(workflowModelLabel(model))}</span>
-          </span>
+          </button>
           ${index < models.length - 1 ? '<span class="workflow-model-arrow" aria-hidden="true">&rarr;</span>' : ""}
         `).join("")}
       </div>
-      <div class="workflow-model-details">
-        ${models.map((model, index) => renderWorkflowModelCard(model, index)).join("")}
-      </div>
+      ${selectedIndex === null ? "" : `
+        <div class="workflow-model-details" id="workflow-model-details-${selectedIndex}">
+          ${renderWorkflowModelCard(models[selectedIndex], selectedIndex)}
+        </div>
+      `}
     </div>
   `;
+}
+
+function toggleWorkflowModel(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= workflowModels(selectedWorkflow()).length) {
+    return;
+  }
+
+  state.selectedWorkflowModelIndex = state.selectedWorkflowModelIndex === index ? null : index;
+  renderWorkflows();
 }
 
 function renderWorkflowModelCard(model, index) {
@@ -799,7 +830,11 @@ function selectDemonstrator(demonstratorId, options = {}) {
     return;
   }
 
+  const changed = state.selectedDemonstratorId !== demonstratorId;
   state.selectedDemonstratorId = demonstratorId;
+  if (changed) {
+    state.selectedWorkflowModelIndex = null;
+  }
   persistSelectedDemonstratorId(demonstratorId);
   ensureSelectedWorkflow();
   renderDemonstrators();
@@ -824,6 +859,7 @@ function selectWorkflow(workflowPath, options = {}) {
   state.selectedWorkflowPath = workflowPath;
   if (changed) {
     state.selectedRunName = "";
+    state.selectedWorkflowModelIndex = null;
   }
   persistSelectedWorkflowPath(workflowPath);
   renderDemonstrators();
@@ -1027,6 +1063,12 @@ function renderWorkflows() {
         </div>
       ` : ""}
     `;
+
+    for (const button of context.querySelectorAll("[data-select-workflow-model]")) {
+      button.addEventListener("click", () => {
+        toggleWorkflowModel(Number(button.dataset.selectWorkflowModel));
+      });
+    }
   }
 
   if (workflows.length === 0) {
