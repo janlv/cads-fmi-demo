@@ -39,18 +39,27 @@ Run these commands in order on the checkout that should host the dashboard.
    **Local Dev** paths. It is not needed for the default
    **Playground Dashboard** path.
 
-3. Set up Kaizen credentials using the default handoff. First, on the checkout
-   that should host the dashboard, run:
+3. Set up Kaizen credentials using the default non-SSH handoff. First,
+   on the checkout that should host the dashboard, run:
 
    ```bash
-   ./scripts/age_receive_kubeconfig.sh --send-target javi@osl-1012 --force
+   ./scripts/age_create_identity.sh --copy
    ```
 
-   Leave that command running. Then, on the checkout that already has the
-   Kaizen credentials, run:
+   Send the copied public key, which starts with `age1...`, to the person who
+   already has the Kaizen credentials. They encrypt their kubeconfig for that
+   key:
 
    ```bash
-   ./scripts/age_send_kubeconfig.sh javi@osl-1012
+   ./scripts/age_encrypt_kubeconfig.sh \
+       --recipient age1_receiver_public_key_here \
+       --input .local/kaizen/kubeconfig
+   ```
+
+   They send back the encrypted `.age` file. Save it locally and decrypt it:
+
+   ```bash
+   ./scripts/age_decrypt_kubeconfig.sh /path/to/kubeconfig.age
    ```
 
 4. Start the dashboard against the configured Playground image:
@@ -75,39 +84,74 @@ different published image, pass it explicitly:
 ## Kaizen Credentials
 
 The dashboard needs access to the hosted Kaizen Argo playground. The default
-handoff securely transfers the Kaizen kubeconfig from a checkout that already
-has it to the checkout that should run the dashboard.
+handoff uses `age` public-key encryption so two users can exchange the
+kubeconfig remotely without sharing SSH passwords or the plaintext credential.
 
 If `prepare.sh` says `age` is missing, install it with your system package
 manager and run `./prepare.sh` again.
 
-### Default: Sender Pushes To Receiver
+### Default: Exchange Public Key And Encrypted File
 
-Use this when one machine already has the Kaizen kubeconfig and can SSH to the
-machine that needs it. Replace `javi@osl-1012` with the SSH target for the
-machine that will run the dashboard when needed.
+Use this when one person already has the Kaizen kubeconfig and another person
+needs it for their dashboard. This flow does not require either user to SSH into
+the other user's account.
 
-Run the receiver first on the machine that needs the credential:
+Run this on the receiving dashboard machine:
 
 ```bash
-./scripts/age_receive_kubeconfig.sh --send-target javi@osl-1012 --force
+./scripts/age_create_identity.sh --copy
 ```
 
-Leave it running. It prepares the receiver and waits for the encrypted
+If clipboard copy is not available, run `./scripts/age_create_identity.sh` and
+copy the printed public recipient key manually. Send only the public key that
+starts with `age1...` to the person who has the kubeconfig. The private key
+stays on the receiving dashboard machine and must not be shared.
+
+Run this on the checkout that already has the Kaizen kubeconfig, replacing the
+recipient value with the receiver's public key:
+
+```bash
+./scripts/age_encrypt_kubeconfig.sh \
+    --recipient age1_receiver_public_key_here \
+    --input .local/kaizen/kubeconfig
+```
+
+This writes `.local/kaizen/kubeconfig.age`. Send that encrypted file back to the
+receiver through your normal file-transfer channel. Do not send the plaintext
 kubeconfig.
 
-Run the sender on the checkout that already has the Kaizen kubeconfig:
+Run this on the receiving dashboard machine:
 
 ```bash
-./scripts/age_send_kubeconfig.sh javi@osl-1012
+./scripts/age_decrypt_kubeconfig.sh /path/to/kubeconfig.age
 ```
 
-When the receiver prints that the kubeconfig is ready, start the dashboard with
-`./run_playground.sh`.
+When the decrypt command prints that the kubeconfig is ready, start the
+dashboard with `./run_playground.sh`.
 
-For most users, the commands above are enough. Use the detailed documents when
-you need to troubleshoot, use a different credential source, or customize the
-flow:
+### Optional: Sender Pushes Over SSH
+
+Use this only when the sender already has SSH access to the receiver's account.
+For example, `./scripts/age_send_kubeconfig.sh ella@osl-1013` requires the
+sender to authenticate as `ella` on `osl-1013`; the sender should not ask for
+Ella's password.
+
+Run the receiver first on the machine that needs the credential, replacing
+`USER@HOST` with the receiver's SSH target:
+
+```bash
+./scripts/age_receive_kubeconfig.sh --send-target USER@HOST --force
+```
+
+Leave it running. Then run this on the checkout that already has the Kaizen
+kubeconfig:
+
+```bash
+./scripts/age_send_kubeconfig.sh USER@HOST
+```
+
+Use the detailed documents when you need to troubleshoot, use a different
+credential source, or customize the flow:
 
 - [`docs/user-paths.md`](docs/user-paths.md) for the three supported user paths.
 - [`docs/playground-dashboard.md`](docs/playground-dashboard.md) for the default
@@ -172,14 +216,25 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
 # Build demo FMUs.
 ./create_fmu/build_python_fmus.sh
 
-# Default credential handoff: run this first on the receiver.
-./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host
+# Default credential handoff: receiver creates a public age key.
+./scripts/age_create_identity.sh --copy
 
-# Default credential handoff: run this second on the sender.
-./scripts/age_send_kubeconfig.sh receiver_user@receiver_host
+# Default credential handoff: sender encrypts for that public key.
+./scripts/age_encrypt_kubeconfig.sh \
+    --recipient age1_receiver_public_key_here \
+    --input .local/kaizen/kubeconfig
 
-# Alternate credential handoff: receiver fetches from sender over SSH.
-./scripts/age_decrypt_kubeconfig.sh --get-from sender_user@sender_host
+# Default credential handoff: receiver decrypts the encrypted file.
+./scripts/age_decrypt_kubeconfig.sh /path/to/kubeconfig.age
+
+# Optional SSH credential handoff: receiver waits for sender push.
+./scripts/age_receive_kubeconfig.sh --send-target USER@HOST --force
+
+# Optional SSH credential handoff: sender pushes to a receiver they can SSH into.
+./scripts/age_send_kubeconfig.sh USER@HOST
+
+# Optional SSH credential handoff: receiver fetches from sender over SSH.
+./scripts/age_decrypt_kubeconfig.sh --get-from USER@HOST
 ```
 
 ## Main Files
