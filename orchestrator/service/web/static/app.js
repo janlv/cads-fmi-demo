@@ -996,7 +996,7 @@ function renderCosimGroup(model, index, isSelected) {
           <span class="workflow-model-index">${index + 1}</span>
           <span>${escapeHTML(label)}</span>
         </button>
-        <span class="cosim-scheme-badge">${escapeHTML(cosimSchemeLabel(cosim.scheme))}</span>
+        <span class="cosim-scheme-badge ${couplingPatternClass(cosimSchemeBadge(cosim.scheme))}">${escapeHTML(cosimSchemeLabel(cosim.scheme))}</span>
       </div>
       ${members.length > 0 ? `
         <div class="cosim-member-row">
@@ -1713,20 +1713,64 @@ function renderMatrixCell(model, site, status, isSelectedSite) {
   `;
 }
 
+// Model ids left of the first arrow in a candidate chain ("M1 M6 M7 → M8" gives
+// M1, M6, M7). A chain with none there (W7) falls back to every model family
+// that lists the candidate in its workflows.
+function candidateInputModels(candidate) {
+  const left = String(candidate?.chain || "").split("→")[0];
+  const ids = left.match(/M\d+/g) || [];
+  if (ids.length > 0) {
+    return [...new Set(ids)];
+  }
+  return matrixModels()
+    .filter((model) => Array.isArray(model.workflows) && model.workflows.includes(candidate?.id))
+    .map((model) => model.id);
+}
+
+// Pure relevance rule for the candidate strip. A candidate is relevant at a site
+// when (a) one of its input models has an identified or candidate mark there,
+// or (b) a repo workflow of that site maps to it. "identified" tells whether any
+// (a) mark is identified; "demoCount" counts the (b) workflows.
+function candidateRelevantAtSite(candidate, siteId) {
+  const demoCount = state.workflows.filter((workflow) =>
+    workflowSiteId(workflow) === siteId && workflowMatrixMapping(workflow)?.candidate === candidate?.id).length;
+  const marks = candidateInputModels(candidate)
+    .map((modelId) => matrixModelById(modelId)?.sites?.[siteId])
+    .filter(Boolean);
+  return {
+    relevant: marks.length > 0 || demoCount > 0,
+    identified: marks.includes("identified"),
+    demoCount,
+  };
+}
+
 function renderCandidateWorkflowStrip() {
   const candidates = matrixCandidateWorkflows();
   if (candidates.length === 0) {
     return "";
   }
+  const demo = selectedDemonstrator();
+  const isPortfolio = demo.id === "portfolio";
   const visible = visibleWorkflows();
+  const shown = candidates
+    .map((candidate) => ({ candidate, relevance: isPortfolio ? null : candidateRelevantAtSite(candidate, demo.id) }))
+    .filter((item) => isPortfolio || item.relevance.relevant);
+  const siteName = demo.shortLabel || demo.label;
   return `
     <div class="mm-candidates">
-      <div class="mm-candidates-title">Candidate workflows <span>click to highlight the demo workflows mapped to one</span></div>
+      <div class="mm-candidates-title">
+        Candidate workflows
+        <span>${escapeHTML(isPortfolio
+          ? "all seven; click one to highlight the demo workflows mapped to it"
+          : `showing ${shown.length} of ${candidates.length}: those whose chain models are identified or candidate at ${siteName}, or that have demo workflows here`)}</span>
+      </div>
       <div class="mm-candidate-row">
-        ${candidates.map((candidate) => {
-          const count = visible.filter((workflow) => workflowMatrixMapping(workflow)?.candidate === candidate.id).length;
-          const badges = candidateCouplingBadges(candidate.id);
+        ${shown.map(({ candidate, relevance }) => {
+          const mapped = visible.filter((workflow) => workflowMatrixMapping(workflow)?.candidate === candidate.id);
+          const count = mapped.length;
+          const badges = couplingBadgesFor(mapped);
           const isSelected = state.candidateFocus === candidate.id;
+          const candidateOnly = relevance && !relevance.identified && relevance.demoCount === 0;
           return `
             <button
               class="mm-candidate${isSelected ? " selected" : ""}${count === 0 ? " empty" : ""}"
@@ -1740,7 +1784,12 @@ function renderCandidateWorkflowStrip() {
               </span>
               <span class="mm-candidate-title">${escapeHTML(candidate.title || "")}</span>
               ${candidate.chain ? `<code>${escapeHTML(candidate.chain)}</code>` : ""}
-              ${badges.length > 0 ? `<span class="coupling-badge-row">${renderCouplingBadges(badges)}</span>` : ""}
+              ${badges.length > 0 || candidateOnly ? `
+                <span class="coupling-badge-row">
+                  ${renderCouplingBadges(badges)}
+                  ${candidateOnly ? `<em class="mm-candidate-marker" title="${escapeHTML(`Only candidate model marks at ${siteName} and no demo workflow yet`)}">candidate</em>` : ""}
+                </span>
+              ` : ""}
             </button>
           `;
         }).join("")}
@@ -1752,13 +1801,11 @@ function renderCandidateWorkflowStrip() {
 
 const COUPLING_BADGE_ORDER = ["ping-pong", "lock-step", "event-driven", "one-way", "single step"];
 
-// Coupling badges of every repo workflow mapped to a candidate workflow.
-function candidateCouplingBadges(candidateId) {
+// Combined coupling badges of a set of workflows, in legend order.
+function couplingBadgesFor(workflows) {
   const badges = new Set();
-  for (const workflow of state.workflows) {
-    if (workflowMatrixMapping(workflow)?.candidate === candidateId) {
-      workflowCouplingInfo(workflow).badges.forEach((badge) => badges.add(badge));
-    }
+  for (const workflow of workflows) {
+    workflowCouplingInfo(workflow).badges.forEach((badge) => badges.add(badge));
   }
   return COUPLING_BADGE_ORDER.filter((badge) => badges.has(badge));
 }
@@ -1901,9 +1948,36 @@ function workflowCouplingInfo(workflow) {
   return { label: parts.join(" + "), badges };
 }
 
+// One CSS class per coupling pattern so each badge has the same colour everywhere.
+function couplingPatternClass(badge) {
+  switch (String(badge || "").toLowerCase()) {
+    case "ping-pong":
+      return "pattern-pingpong";
+    case "lock-step":
+      return "pattern-lockstep";
+    case "event-driven":
+      return "pattern-eventdriven";
+    case "one-way":
+      return "pattern-oneway";
+    default:
+      return "pattern-other";
+  }
+}
+
+function cosimSchemeBadge(scheme) {
+  switch (String(scheme || "").toLowerCase()) {
+    case "gauss_seidel":
+      return "ping-pong";
+    case "jacobi":
+      return "lock-step";
+    default:
+      return "co-sim";
+  }
+}
+
 function renderCouplingBadges(badges) {
   return badges
-    .map((badge) => `<span class="coupling-badge coupling-${escapeHTML(badge.replace(/[^a-z-]/gi, "-").toLowerCase())}">${escapeHTML(badge)}</span>`)
+    .map((badge) => `<span class="coupling-badge ${couplingPatternClass(badge)}">${escapeHTML(badge)}</span>`)
     .join("");
 }
 
@@ -2264,7 +2338,7 @@ function renderDetailsModelCard() {
             >
               <span class="details-model-index">${entry.kind === "member" ? "&middot;" : entry.stepIndex + 1}</span>
               <span class="details-model-name">${escapeHTML(entry.label)}</span>
-              ${entry.kind === "cosim" ? `<span class="cosim-scheme-badge">${escapeHTML(cosimSchemeLabel(entry.model.cosim.scheme))}</span>` : ""}
+              ${entry.kind === "cosim" ? `<span class="cosim-scheme-badge ${couplingPatternClass(cosimSchemeBadge(entry.model.cosim.scheme))}">${escapeHTML(cosimSchemeLabel(entry.model.cosim.scheme))}</span>` : ""}
               ${family ? `<span class="mm-badge ${matrixCategoryClass(family.category)}">${escapeHTML(family.id)}</span>` : ""}
             </button>
           `;
@@ -5471,7 +5545,11 @@ function renderRunInfoDetails(run, payload) {
         <ul class="run-step-list">
           ${steps.map((step) => `
             <li class="run-step-${escapeHTML(traceSlug(step?.status, "unknown"))}">
-              <code>${escapeHTML(step?.name || "step")}</code>
+              <span class="run-step-name">
+                <code>${escapeHTML(step?.name || "step")}</code>
+                ${renderCouplingBadges([step?.kind === "cosim" ? cosimSchemeBadge(step.scheme) : steps.length > 1 ? "one-way" : "single step"])}
+                ${step?.kind === "cosim" && Array.isArray(step?.events) && step.events.length > 0 ? renderCouplingBadges(["event-driven"]) : ""}
+              </span>
               <em>${escapeHTML([
                 step?.kind === "cosim" ? cosimSchemeLabel(step.scheme) : step?.kind,
                 step?.status,

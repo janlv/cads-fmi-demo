@@ -14,6 +14,15 @@
   --danger: #a53f2b;
   --ok: #2f7652;
   --shadow: 0 20px 60px rgba(0, 28, 99, 0.15);
+  --teal: #0b7285;
+  --pattern-pingpong-bg: var(--accent-lime);
+  --pattern-pingpong-ink: var(--accent-deep);
+  --pattern-lockstep-bg: rgba(11, 114, 133, 0.16);
+  --pattern-lockstep-ink: var(--teal);
+  --pattern-eventdriven-bg: rgba(191, 95, 47, 0.16);
+  --pattern-eventdriven-ink: var(--warning);
+  --pattern-oneway-bg: rgba(233, 236, 242, 0.9);
+  --pattern-oneway-ink: var(--muted);
   --cat-physical: var(--accent);
   --cat-virtual-sensors: var(--ok);
   --cat-degradation: var(--warning);
@@ -2470,17 +2479,51 @@ button.cosim-model-pill.selected {
   white-space: nowrap;
 }
 
-.coupling-ping-pong,
-.coupling-lock-step {
+/* Coupling pattern colours, shared by coupling badges and co-sim scheme badges. */
+.pattern-pingpong {
   border-color: transparent;
-  background: var(--accent-lime);
-  color: var(--accent-deep);
+  background: var(--pattern-pingpong-bg);
+  color: var(--pattern-pingpong-ink);
 }
 
-.coupling-event-driven {
+.pattern-lockstep {
   border-color: transparent;
-  background: rgba(191, 95, 47, 0.16);
-  color: var(--warning);
+  background: var(--pattern-lockstep-bg);
+  color: var(--pattern-lockstep-ink);
+}
+
+.pattern-eventdriven {
+  border-color: transparent;
+  background: var(--pattern-eventdriven-bg);
+  color: var(--pattern-eventdriven-ink);
+}
+
+.pattern-oneway,
+.pattern-other {
+  background: var(--pattern-oneway-bg);
+  color: var(--pattern-oneway-ink);
+}
+
+.mm-candidate-marker {
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.run-step-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.run-step-name .coupling-badge {
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .matrix-map-chip {
