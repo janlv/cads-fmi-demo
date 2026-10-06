@@ -14,6 +14,7 @@ const state = {
   modelMatrixError: "",
   modelFocus: "",
   candidateFocus: "",
+  consortiumFamilyCount: 0,
   simulinkResult: null,
   simulinkResultsCache: new Map(),
   aeStatsResult: null,
@@ -204,21 +205,23 @@ const STORHY_DASHBOARD_CONFIG = {
     valueBlocks: [DEGRADATION_COST_VALUES],
   },
 };
+// Full site data; applyDemoScope() trims it to matrix.demo_scope.sites at load,
+// so re-enabling a site is a change to the matrix JSON only.
 const DEMONSTRATORS = [
   {
     id: "portfolio",
-    label: "All demonstrators",
+    label: "Both demo sites",
     shortLabel: "All sites",
-    location: "France and Portugal",
+    location: "Cheylas (France) and Alqueva (Portugal)",
     operator: "STOR-HY consortium",
     country: "Europe",
-    focus: "Two demonstrators in the demo scope: Cheylas and Alqueva. The other CADS sites are shown for the consortium picture.",
-    capacity: "Five CADS sites, two in the demo scope",
+    focus: "Cheylas and Alqueva: the two CADS demonstrator sites in the demo.",
+    capacity: "Two CADS demonstrator sites in the demo",
     workflowPaths: [],
     facts: [
-      "Two demonstrators in the demo scope: Cheylas and Alqueva",
-      "One FMI 3.0 placeholder FMU per model family",
-      "Lock-step, event-driven and ping-pong co-simulation, each followed by a degradation-cost step",
+      "Le Cheylas: 500 MW pumped storage with sediment-laden fluid and frequent cycling",
+      "Alqueva: 520 MW hybrid pumped storage with battery storage and floating PV",
+      "One FMI 3.0 placeholder FMU per model family; lock-step, event-driven and ping-pong co-simulation",
     ],
   },
   {
@@ -345,6 +348,7 @@ async function initializeDashboard() {
     renderNavChrome();
     const [config] = await Promise.all([fetchJSON("/api/config"), loadModelMatrix()]);
     state.config = config;
+    applyDemoScope();
     renderConfigMeta();
     renderBanner();
     renderDemonstrators();
@@ -365,6 +369,30 @@ async function initializeDashboard() {
     renderRuns();
     renderWorkflowOutput();
   }
+}
+
+// matrix.demo_scope.sites is the authoritative site list for the whole UI: the
+// demonstrator list, matrix columns and rows are trimmed to it (portfolio stays).
+function applyDemoScope() {
+  const scope = Array.isArray(state.modelMatrix?.demo_scope?.sites) ? state.modelMatrix.demo_scope.sites : [];
+  if (scope.length === 0) {
+    return;
+  }
+  for (let index = DEMONSTRATORS.length - 1; index >= 0; index -= 1) {
+    if (DEMONSTRATORS[index].id !== "portfolio" && !scope.includes(DEMONSTRATORS[index].id)) {
+      DEMONSTRATORS.splice(index, 1);
+    }
+  }
+  const matrix = state.modelMatrix;
+  state.consortiumFamilyCount = matrix.models.length;
+  matrix.sites = (matrix.sites || []).filter((site) => scope.includes(site.id));
+  matrix.models = matrix.models.filter((model) =>
+    scope.some((siteId) => model.sites && model.sites[siteId]));
+  ensureSelectedDemonstrator();
+}
+
+function scopedSiteIds() {
+  return DEMONSTRATORS.filter((demo) => demo.id !== "portfolio").map((demo) => demo.id);
 }
 
 // The model-by-demonstrator matrix is optional: when it fails to load the
@@ -514,7 +542,12 @@ function workflowResultFamily(workflow) {
 
 function workflowsForDemonstrator(demo) {
   if (!demo || demo.id === "portfolio") {
-    return state.workflows;
+    // Shared workflows (no site or "portfolio") plus those of the scoped sites.
+    const sites = new Set(scopedSiteIds());
+    return state.workflows.filter((workflow) => {
+      const siteId = workflowSiteId(workflow);
+      return !siteId || siteId === "portfolio" || sites.has(siteId);
+    });
   }
 
   const allowed = new Set(demo.workflowPaths || []);
@@ -1140,7 +1173,7 @@ function renderDemoMapLabel(demo, isSelected) {
   const subtitle = demo.mapSubtitle ? `<span class="demo-map-label-subtitle">${escapeHTML(demo.mapSubtitle)}</span>` : "";
   return `
     <button
-      class="demo-map-label${alignClass}${isSelected ? " selected" : ""}${siteInDemoScope(demo.id) ? "" : " out-of-scope"}"
+      class="demo-map-label${alignClass}${isSelected ? " selected" : ""}"
       type="button"
       style="--x:${position.x}%; --y:${position.y}%"
       data-demo-id="${escapeHTML(demo.id)}"
@@ -1156,7 +1189,7 @@ function renderDemoMarker(demo, isSelected) {
   const position = demonstratorMapPosition(demo);
   return `
     <button
-      class="demo-marker${isSelected ? " selected" : ""}${siteInDemoScope(demo.id) ? "" : " out-of-scope"}"
+      class="demo-marker${isSelected ? " selected" : ""}"
       type="button"
       style="--x:${position.x}%; --y:${position.y}%"
       data-demo-id="${escapeHTML(demo.id)}"
@@ -1312,7 +1345,7 @@ function renderModelMatrix() {
   const categories = Array.isArray(state.modelMatrix.categories) ? state.modelMatrix.categories : [];
 
   container.innerHTML = `
-    ${state.modelMatrix.demo_scope?.note ? `<p class="demo-scope-note">${escapeHTML(state.modelMatrix.demo_scope.note)}</p>` : ""}
+    ${renderDemoScopeNote()}
     <div class="model-matrix-legend" aria-label="Matrix legend">
       <span><b class="mm-mark identified" aria-hidden="true">&#9679;</b> ${escapeHTML(legend.identified || "identified")}</span>
       <span><b class="mm-mark candidate" aria-hidden="true">&#9675;</b> ${escapeHTML(legend.candidate || "candidate or to be decided")}</span>
@@ -1359,23 +1392,20 @@ function renderModelMatrix() {
   }
 }
 
-// Sites outside matrix.demo_scope.sites stay clickable but are drawn dimmed.
-function demoScopeSites() {
-  const sites = state.modelMatrix?.demo_scope?.sites;
-  return Array.isArray(sites) && sites.length > 0 ? sites : null;
-}
-
-function siteInDemoScope(siteId) {
-  const sites = demoScopeSites();
-  return !sites || sites.includes(siteId);
+function renderDemoScopeNote() {
+  if (!Array.isArray(state.modelMatrix?.demo_scope?.sites)) {
+    return "";
+  }
+  const names = matrixSites().map((site) => site.label || site.id);
+  const total = state.consortiumFamilyCount || matrixModels().length;
+  return `<p class="demo-scope-note">${escapeHTML(`Demo scope: ${names.join(" and ")}, one FMU per model family. The full consortium matrix lists ${total} families across six demonstrators.`)}</p>`;
 }
 
 function renderMatrixSiteHeader(site, isSelected) {
   const demo = DEMONSTRATORS.find((entry) => entry.id === site.id);
   const count = demo ? workflowsForDemonstrator(demo).length : 0;
-  const inScope = siteInDemoScope(site.id);
   return `
-    <th scope="col" class="mm-site-col${isSelected ? " selected" : ""}${inScope ? "" : " out-of-scope"}">
+    <th scope="col" class="mm-site-col${isSelected ? " selected" : ""}">
       <button
         class="mm-site-button${isSelected ? " selected" : ""}"
         type="button"
@@ -1384,7 +1414,7 @@ function renderMatrixSiteHeader(site, isSelected) {
         title="Show ${escapeHTML(demo?.label || site.label)} workflows"
       >
         <span>${escapeHTML(site.label || site.id)}</span>
-        <small>${inScope ? `${count} workflow${count === 1 ? "" : "s"}` : "not in this demo"}</small>
+        <small>${count} workflow${count === 1 ? "" : "s"}</small>
       </button>
     </th>
   `;
@@ -1442,7 +1472,7 @@ function renderMatrixCell(model, site, status, isSelectedSite) {
   const statusText = status === "identified" ? "identified" : status === "candidate" ? "candidate or to be decided" : "not planned";
   const isFocused = isSelectedSite && state.modelFocus === model.id;
   return `
-    <td class="mm-cell${isSelectedSite ? " selected" : ""}${status ? ` ${escapeHTML(status)}` : ""}${siteInDemoScope(site.id) ? "" : " out-of-scope"}">
+    <td class="mm-cell${isSelectedSite ? " selected" : ""}${status ? ` ${escapeHTML(status)}` : ""}">
       <button
         class="mm-cell-button${isFocused ? " focused" : ""}"
         type="button"
@@ -1496,15 +1526,20 @@ function renderCandidateWorkflowStrip() {
   const isPortfolio = demo.id === "portfolio";
   const visible = visibleWorkflows();
   const shown = candidates
-    .map((candidate) => ({ candidate, relevance: isPortfolio ? null : candidateRelevantAtSite(candidate, demo.id) }))
-    .filter((item) => isPortfolio || item.relevance.relevant);
+    .map((candidate) => ({
+      candidate,
+      relevance: isPortfolio ? null : candidateRelevantAtSite(candidate, demo.id),
+      // All sites: relevant at any scoped site.
+      anywhere: isPortfolio && scopedSiteIds().some((siteId) => candidateRelevantAtSite(candidate, siteId).relevant),
+    }))
+    .filter((item) => (isPortfolio ? item.anywhere : item.relevance.relevant));
   const siteName = demo.shortLabel || demo.label;
   return `
     <div class="mm-candidates">
       <div class="mm-candidates-title">
         Candidate workflows
         <span>${escapeHTML(isPortfolio
-          ? "all seven; click one to highlight the demo workflows mapped to it"
+          ? `showing ${shown.length} of ${candidates.length}: those relevant at a demo site; click one to highlight its demo workflows`
           : `showing ${shown.length} of ${candidates.length}: those whose chain models are identified or candidate at ${siteName}, or that have demo workflows here`)}</span>
       </div>
       <div class="mm-candidate-row">
@@ -1953,15 +1988,15 @@ function renderDetailsDemoCard() {
   const latestRun = latestRunFor(workflows.map((workflow) => workflow.path));
   card.innerHTML = `
     <header class="details-card-head">
-      <p class="panel-kicker">Demonstrator ${!isPortfolio && !siteInDemoScope(demo.id) ? '<span class="out-of-scope-chip">not in this demo</span>' : ""}</p>
+      <p class="panel-kicker">Demonstrator</p>
       <h3>${escapeHTML(demo.label)}</h3>
     </header>
     <p class="details-sub">${escapeHTML([demo.operator, demo.location].filter(Boolean).join(" | "))}</p>
     <p class="details-text">${escapeHTML(demo.focus || "")}</p>
     <dl class="details-facts">
       <div><dt>Capacity</dt><dd>${escapeHTML(demo.capacity || "n/a")}</dd></div>
-      <div><dt>Mapped workflows</dt><dd>${escapeHTML(isPortfolio && demoScopeSites()
-        ? `${workflows.length} workflow${workflows.length === 1 ? "" : "s"} across ${demoScopeSites().length} demo sites`
+      <div><dt>Mapped workflows</dt><dd>${escapeHTML(isPortfolio
+        ? `${workflows.length} workflow${workflows.length === 1 ? "" : "s"} across ${scopedSiteIds().length} demo sites`
         : String(workflows.length))}</dd></div>
       ${isPortfolio ? `<div><dt>Model families</dt><dd>${matrixModels().length}</dd></div>` : ""}
     </dl>
