@@ -1355,6 +1355,7 @@ function renderModelMatrix() {
       `).join("")}
       ${selectedMapping ? '<span class="mm-used-legend"><i aria-hidden="true"></i>used by selected workflow</span>' : ""}
     </div>
+    <div class="mm-layout">
     <div class="model-matrix-scroll">
       <table class="model-matrix">
         <thead>
@@ -1370,6 +1371,8 @@ function renderModelMatrix() {
       </table>
     </div>
     ${renderCandidateWorkflowStrip()}
+    </div>
+    ${renderCouplingLegend()}
     ${state.modelMatrix.source ? `<p class="model-matrix-source">Source: ${escapeHTML(state.modelMatrix.source)}</p>` : ""}
   `;
 
@@ -1572,7 +1575,6 @@ function renderCandidateWorkflowStrip() {
           `;
         }).join("")}
       </div>
-      ${renderCouplingLegend()}
     </div>
   `;
 }

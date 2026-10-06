@@ -1961,18 +1961,35 @@ h2 {
   background: rgba(232, 254, 116, 0.7);
 }
 
+/* Table on the left, candidate cards stacked on the right (stacked below 1040px). */
+.mm-layout {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(300px, 400px);
+  gap: 16px;
+  align-items: start;
+}
+
+.mm-layout .mm-candidate-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .model-matrix-scroll {
+  justify-self: start;
+  max-width: 100%;
   min-width: 0;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.6);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .model-matrix {
-  width: 100%;
+  width: auto;
+  table-layout: auto;
   border-collapse: collapse;
   font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .model-matrix th,
@@ -2129,7 +2146,6 @@ h2 {
 
 .mm-fmu-pill {
   flex: 0 0 auto;
-  margin-left: auto;
   padding: 0 7px;
   border-radius: 999px;
   background: rgba(5, 66, 235, 0.08);
@@ -3001,8 +3017,12 @@ button.cosim-model-pill.selected {
     align-items: stretch;
   }
 
-  .model-matrix {
-    min-width: 900px;
+  .mm-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mm-layout .mm-candidate-row {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 
   .hero-project,
