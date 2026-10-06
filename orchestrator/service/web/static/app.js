@@ -1269,11 +1269,6 @@ function setNavTab(tab, options = {}) {
   }
 }
 
-// Site selection from the matrix or the map moves on to the workflow picker.
-function showDetailsTab() {
-  setNavTab("details");
-}
-
 // Nav tabs live in #navTabs and use data-nav-tab hooks; the workflow picker
 // tabs in #workflowGrid keep their own [role='tab'] buttons.
 function bindNavTabs() {
@@ -1405,7 +1400,6 @@ function renderDemonstrators() {
 
   for (const button of map.querySelectorAll("[data-demo-id]")) {
     button.addEventListener("click", () => {
-      showDetailsTab();
       selectDemonstrator(button.dataset.demoId || "portfolio");
     });
   }
@@ -1696,7 +1690,6 @@ function renderModelMatrix() {
     button.addEventListener("click", () => {
       const siteId = button.dataset.matrixSite || "portfolio";
       const modelId = button.dataset.matrixModel || "";
-      showDetailsTab();
       if (modelId) {
         selectMatrixCell(siteId, modelId);
       } else {
