@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+<title id="title">One execution contract, different model roles</title><desc id="desc">A module view for §6.2 — workflows choose the connections; module categories do not impose an execution order.</desc>
+<defs>
+<marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2563A6"/></marker>
+<marker id="teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#087F8C"/></marker>
+<marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#A96B11"/></marker>
+</defs>
+<rect width="1600" height="100%" fill="white"/>
+<text x="60" y="48.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" text-anchor="start">CADS  /  SECTION 6</text>
+<text x="1540" y="48.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="end">TARGET MODULE VIEW</text>
+<text x="60" y="102.0" fill="#172B46" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="700" text-anchor="start">One execution contract, different model roles</text>
+<text x="60" y="141.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start">A module view for §6.2 — workflows choose the connections; module categories do not impose an execution order.</text>
+<path d="M60 168 H1540" stroke="#B9C9D8"/>
+<rect x="60" y="215" width="1480" height="115" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="800.0" y="251" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Declarative workflow (YAML)</text>
+<text x="800.0" y="286" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Select FMUs • map inputs and outputs • declare data requirements • configure supported timing</text>
+<path d="M800,330 L800,365" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="800,365 795.0,353.0 805.0,353.0" fill="#2563A6"/>
+<path d="M230 365 H1370" stroke="#2563A6" stroke-width="2.5" fill="none"/>
+<path d="M230,365 L230,415" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="230,415 225.0,403.0 235.0,403.0" fill="#2563A6"/>
+<rect x="60" y="415" width="340" height="175" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="230.0" y="451" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Physical modeling</text>
+<text x="230.0" y="486" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Reduced-order models</text>
+<text x="230.0" y="513" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">or lookup tables</text>
+<path d="M230,590 L230,710" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="230,710 225.0,698.0 235.0,698.0" fill="#087F8C"/>
+<polygon points="230,590 235.0,602.0 225.0,602.0" fill="#087F8C"/>
+<path d="M610,365 L610,415" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="610,415 605.0,403.0 615.0,403.0" fill="#2563A6"/>
+<rect x="440" y="415" width="340" height="175" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="610.0" y="451" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Condition monitoring</text>
+<text x="610.0" y="479" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">and maintenance</text>
+<text x="610.0" y="514" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Indicators, degradation</text>
+<text x="610.0" y="541" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">and remaining useful life</text>
+<path d="M610,590 L610,710" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="610,710 605.0,698.0 615.0,698.0" fill="#087F8C"/>
+<polygon points="610,590 615.0,602.0 605.0,602.0" fill="#087F8C"/>
+<path d="M990,365 L990,415" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="990,415 985.0,403.0 995.0,403.0" fill="#2563A6"/>
+<rect x="820" y="415" width="340" height="175" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="990.0" y="451" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Optimization</text>
+<text x="990.0" y="486" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Operational or economic</text>
+<text x="990.0" y="513" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">decision variables</text>
+<path d="M990,590 L990,710" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="990,710 985.0,698.0 995.0,698.0" fill="#087F8C"/>
+<polygon points="990,590 995.0,602.0 985.0,602.0" fill="#087F8C"/>
+<path d="M1370,365 L1370,415" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1370,415 1365.0,403.0 1375.0,403.0" fill="#2563A6"/>
+<rect x="1200" y="415" width="340" height="175" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="1370.0" y="451" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Decision support</text>
+<text x="1370.0" y="486" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Combine results into</text>
+<text x="1370.0" y="513" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">assessments and choices</text>
+<path d="M1370,590 L1370,710" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1370,710 1365.0,698.0 1375.0,698.0" fill="#087F8C"/>
+<polygon points="1370,590 1375.0,602.0 1365.0,602.0" fill="#087F8C"/>
+<text x="800" y="650.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">Standard FMI inputs, outputs and lifecycle calls</text>
+<rect x="60" y="710" width="1480" height="115" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="800.0" y="746" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">CADS workflow runtime</text>
+<text x="800.0" y="781" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Interpret the workflow • manage FMU lifecycles • exchange values • collect outputs</text>
+<path d="M60 900 H1540" stroke="#B9C9D8"/>
+<text x="60" y="932" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">The same runtime interface applies to all module roles. Numerical connections are defined by each workflow.</text>
+<text x="60" y="960" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">Prototype: sequential final-output handoff with placeholder models. Further coupling patterns require implementation and validation.</text>
+</svg>

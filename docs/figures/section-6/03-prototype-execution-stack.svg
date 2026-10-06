@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200" role="img" aria-labelledby="title desc">
+<title id="title">Inside the prototype: launch, execute, return results</title><desc id="desc">A technical view for §6.3 — hosted dashboard path; each submitted workflow runs its FMUs in one runner process.</desc>
+<defs>
+<marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2563A6"/></marker>
+<marker id="teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#087F8C"/></marker>
+<marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#A96B11"/></marker>
+</defs>
+<rect width="1600" height="100%" fill="white"/>
+<text x="60" y="48.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" text-anchor="start">CADS  /  SECTION 6</text>
+<text x="1540" y="48.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="end">CURRENT PROTOTYPE</text>
+<text x="60" y="102.0" fill="#172B46" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="700" text-anchor="start">Inside the prototype: launch, execute, return results</text>
+<text x="60" y="141.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start">A technical view for §6.3 — hosted dashboard path; each submitted workflow runs its FMUs in one runner process.</text>
+<path d="M60 168 H1540" stroke="#B9C9D8"/>
+<rect x="60" y="205" width="340" height="835" rx="18" fill="#F3F7FB" stroke="#B9C9D8" stroke-width="2"/>
+<text x="82" y="240.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start">LOCAL USER MACHINE</text>
+<rect x="430" y="205" width="430" height="835" rx="18" fill="#F3F7FB" stroke="#B9C9D8" stroke-width="2"/>
+<text x="452" y="240.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start">KAIZEN / KUBERNETES CONTROL</text>
+<rect x="900" y="205" width="640" height="835" rx="18" fill="#F3F7FB" stroke="#B9C9D8" stroke-width="2"/>
+<text x="922" y="240.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start">WORKFLOW POD  /  BUNDLED IMAGE</text>
+<rect x="85" y="285" width="290" height="105" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="230.0" y="321" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Browser dashboard</text>
+<text x="230.0" y="356" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Select a workflow; view results</text>
+<rect x="85" y="470" width="290" height="150" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="230.0" y="506" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Go HTTP service</text>
+<text x="230.0" y="541" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Serve UI and API</text>
+<text x="230.0" y="568" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Build Argo manifest</text>
+<text x="230.0" y="595" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Parse result JSON</text>
+<rect x="85" y="765" width="290" height="110" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="230.0" y="801" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Argo CLI</text>
+<text x="230.0" y="836" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Submit • status • logs</text>
+<path d="M230,390 L230,470" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="230,470 225.0,458.0 235.0,458.0" fill="#2563A6"/>
+<polygon points="230,390 235.0,402.0 225.0,402.0" fill="#2563A6"/>
+<text x="250" y="436.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">HTTP</text>
+<path d="M230,620 L230,765" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="230,765 225.0,753.0 235.0,753.0" fill="#2563A6"/>
+<polygon points="230,620 235.0,632.0 225.0,632.0" fill="#2563A6"/>
+<text x="250" y="700.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">Subprocess calls</text>
+<rect x="475" y="765" width="340" height="110" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="645.0" y="801" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Argo API server</text>
+<text x="645.0" y="836" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Workflow and log access</text>
+<rect x="475" y="535" width="340" height="110" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="645.0" y="571" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Kubernetes API</text>
+<text x="645.0" y="606" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Workflow and pod resources</text>
+<rect x="475" y="285" width="340" height="125" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="645.0" y="321" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Argo workflow controller</text>
+<text x="645.0" y="356" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Reconcile workflow resources</text>
+<text x="645.0" y="383" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Request workflow pods</text>
+<path d="M375,820 L475,820" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="475,820 463.0,825.0 463.0,815.0" fill="#2563A6"/>
+<polygon points="375,820 387.0,815.0 387.0,825.0" fill="#2563A6"/>
+<text x="425" y="801.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">HTTPS</text>
+<path d="M645,765 L645,645" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="645,645 650.0,657.0 640.0,657.0" fill="#2563A6"/>
+<polygon points="645,765 640.0,753.0 650.0,753.0" fill="#2563A6"/>
+<text x="665" y="710.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">Create / query</text>
+<path d="M645,535 L645,410" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="645,410 650.0,422.0 640.0,422.0" fill="#2563A6"/>
+<polygon points="645,535 640.0,523.0 650.0,523.0" fill="#2563A6"/>
+<text x="665" y="477.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">Watch / update</text>
+<path d="M815,347 L955,347" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="955,347 943.0,352.0 943.0,342.0" fill="#2563A6"/>
+<text x="885" y="326.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">Launch¹</text>
+<rect x="955" y="285" width="530" height="125" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="1220.0" y="321" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Go runner + workflow.Executor</text>
+<text x="1220.0" y="356" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Read YAML; resolve CSV / S3 / synthetic inputs</text>
+<text x="1220.0" y="383" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Execute steps; collect final values and traces</text>
+<rect x="955" y="470" width="530" height="90" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="1220.0" y="506" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Go cgo boundary + C++ bridge</text>
+<text x="1220.0" y="541" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Translate configuration and control the FMI lifecycle</text>
+<rect x="955" y="620" width="530" height="90" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="1220.0" y="656" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">FMIL  /  FMI Library</text>
+<text x="1220.0" y="691" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Load FMU package, metadata and native library</text>
+<rect x="955" y="770" width="530" height="115" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="1220.0" y="806" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Active FMU instance</text>
+<text x="1220.0" y="841" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Initialize → set inputs → doStep → get outputs</text>
+<text x="1220.0" y="868" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Terminate and free before the next workflow step</text>
+<path d="M1220,410 L1220,470" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1220,470 1215.0,458.0 1225.0,458.0" fill="#2563A6"/>
+<polygon points="1220,410 1225.0,422.0 1215.0,422.0" fill="#2563A6"/>
+<path d="M1220,560 L1220,620" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1220,620 1215.0,608.0 1225.0,608.0" fill="#2563A6"/>
+<polygon points="1220,560 1225.0,572.0 1215.0,572.0" fill="#2563A6"/>
+<path d="M1220,710 L1220,770" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1220,770 1215.0,758.0 1225.0,758.0" fill="#2563A6"/>
+<polygon points="1220,710 1225.0,722.0 1215.0,722.0" fill="#2563A6"/>
+<rect x="955" y="945" width="530" height="65" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="1220.0" y="981" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Runner stdout → pod logs</text>
+<path d="M1485,348 L1515,348 L1515,917 L1220,917 L1220,945" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1220,945 1215.0,933.0 1225.0,933.0" fill="#087F8C"/>
+<path d="M955,978 L645,978 L645,875" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="645,875 650.0,887.0 640.0,887.0" fill="#087F8C"/>
+<text x="785" y="958.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">JSON results via Argo logs</text>
+<text x="85" y="935" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">No browser-to-Argo connection.</text>
+<text x="85" y="961" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">The local service uses configured</text>
+<text x="85" y="987" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">infrastructure credentials.</text>
+<text x="475" y="1010.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" text-anchor="start">¹ Through Kubernetes scheduling and pod startup.</text>
+<path d="M60 1100 H1540" stroke="#B9C9D8"/>
+<text x="60" y="1132" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">Blue: calls and execution control (two-headed arrows include responses). Teal: FMU component and hosted result path.</text>
+<text x="60" y="1160" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">Image bundles runner, FMIL, FMUs, YAML and dependencies. CSV/S3 inputs are supported; there is no integrated database read/write.</text>
+</svg>

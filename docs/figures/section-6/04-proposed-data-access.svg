@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+<title id="title">Shared data access: a workflow run from start to finish</title><desc id="desc">A proposed integration view — option 2 separates database responsibilities from the model FMUs.</desc>
+<defs>
+<marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2563A6"/></marker>
+<marker id="teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#087F8C"/></marker>
+<marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#A96B11"/></marker>
+</defs>
+<rect width="1600" height="100%" fill="white"/>
+<text x="60" y="48.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" text-anchor="start">CADS  /  SECTION 6</text>
+<text x="1540" y="48.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="end">PROPOSAL  /  TO AGREE WITH KAIZEN</text>
+<text x="60" y="102.0" fill="#172B46" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="700" text-anchor="start">Shared data access: a workflow run from start to finish</text>
+<text x="60" y="141.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start">A proposed integration view — option 2 separates database responsibilities from the model FMUs.</text>
+<path d="M60 168 H1540" stroke="#B9C9D8"/>
+<rect x="65" y="220" width="330" height="105" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="230.0" y="256" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">CADS database</text>
+<text x="230.0" y="291" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Authorized site data</text>
+<path d="M230 325 V900" stroke="#B9C9D8" stroke-width="2" stroke-dasharray="5 6"/>
+<rect x="455" y="220" width="330" height="105" rx="14" fill="#FFF7E9" stroke="#A96B11" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="620.0" y="256" fill="#A96B11" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Data-access component</text>
+<text x="620.0" y="291" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Common adapter implementation</text>
+<path d="M620 325 V900" stroke="#B9C9D8" stroke-width="2" stroke-dasharray="5 6"/>
+<rect x="845" y="220" width="330" height="105" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="1010.0" y="256" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Workflow runner</text>
+<text x="1010.0" y="291" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Run lifecycle and data routing</text>
+<path d="M1010 325 V900" stroke="#B9C9D8" stroke-width="2" stroke-dasharray="5 6"/>
+<rect x="1225" y="220" width="330" height="105" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="1390.0" y="256" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Model FMUs</text>
+<text x="1390.0" y="291" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Standard FMI interfaces</text>
+<path d="M1390 325 V900" stroke="#B9C9D8" stroke-width="2" stroke-dasharray="5 6"/>
+<path d="M1010,385 L620,385" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="620,385 632.0,380.0 632.0,390.0" fill="#2563A6"/>
+<text x="815.0" y="371.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">1  Request scoped input dataset</text>
+<path d="M620,455 L230,455" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="230,455 242.0,450.0 242.0,460.0" fill="#087F8C"/>
+<text x="425.0" y="441.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">2  Read approved time window</text>
+<path d="M230,525 L620,525" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="620,525 608.0,530.0 608.0,520.0" fill="#087F8C"/>
+<text x="425.0" y="511.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">Data + source metadata</text>
+<path d="M620,595 L1010,595" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1010,595 998.0,600.0 998.0,590.0" fill="#087F8C"/>
+<text x="815.0" y="581.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">3  Deliver snapshot / buffered inputs</text>
+<path d="M1010,665 L1390,665" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1390,665 1378.0,670.0 1378.0,660.0" fill="#2563A6"/>
+<text x="1200.0" y="651.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">4  Initialize and step</text>
+<path d="M1390,735 L1010,735" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1010,735 1022.0,730.0 1022.0,740.0" fill="#087F8C"/>
+<text x="1200.0" y="721.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">Outputs / traces</text>
+<path d="M1010,805 L620,805" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="620,805 632.0,800.0 632.0,810.0" fill="#087F8C"/>
+<text x="815.0" y="791.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">5  Submit results + provenance</text>
+<path d="M620,875 L230,875" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="230,875 242.0,870.0 242.0,880.0" fill="#087F8C"/>
+<text x="425.0" y="861.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">6  Persist outputs + metadata</text>
+<rect x="60" y="930" width="1480" height="60" rx="14" fill="#FFF7E9" stroke="#A96B11" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="800" y="968.0" fill="#A96B11" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="middle">Deployment choice remains open: workflow adapter, service, or FMU with explicit runtime lifecycle support.</text>
+<path d="M60 1000 H1540" stroke="#B9C9D8"/>
+<text x="60" y="1032" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">Proposed batch-oriented contract: preserve site scope, input-batch ID, run ID, model/workflow versions and timestamps.</text>
+<text x="60" y="1060" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">The current runner cannot keep a connector FMU alive between steps. A background FMU needs additional coordination.</text>
+</svg>

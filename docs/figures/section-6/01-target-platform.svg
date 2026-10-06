@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+<title id="title">CADS platform: data, computation and access</title><desc id="desc">A target context view for §6.1 — the database and computation remain separate responsibilities.</desc>
+<defs>
+<marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2563A6"/></marker>
+<marker id="teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#087F8C"/></marker>
+<marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#A96B11"/></marker>
+</defs>
+<rect width="1600" height="100%" fill="white"/>
+<text x="60" y="48.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" text-anchor="start">CADS  /  SECTION 6</text>
+<text x="1540" y="48.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" text-anchor="end">TARGET ARCHITECTURE</text>
+<text x="60" y="102.0" fill="#172B46" font-family="Arial, Helvetica, sans-serif" font-size="36" font-weight="700" text-anchor="start">CADS platform: data, computation and access</text>
+<text x="60" y="141.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="400" text-anchor="start">A target context view for §6.1 — the database and computation remain separate responsibilities.</text>
+<path d="M60 168 H1540" stroke="#B9C9D8"/>
+<rect x="315" y="205" width="1225" height="640" rx="18" fill="#F3F7FB" stroke="#B9C9D8" stroke-width="2"/>
+<text x="337" y="240.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="start">CADS CLOUD PLATFORM  •  OVH deployment context in D3.4</text>
+<rect x="345" y="270" width="1165" height="85" rx="14" fill="#F5F7FA" stroke="#53667D" stroke-width="2"/>
+<text x="927.5" y="306" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">User and application access control</text>
+<text x="927.5" y="341" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Apply authorized demonstrator scope to data access, workflow execution and result retrieval.</text>
+<rect x="60" y="420" width="220" height="180" rx="14" fill="#F5F7FA" stroke="#53667D" stroke-width="2"/>
+<text x="170.0" y="456" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Site data</text>
+<text x="170.0" y="491" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">SCADA / historian</text>
+<text x="170.0" y="518" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Condition sensors</text>
+<text x="170.0" y="545" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Market / other data</text>
+<rect x="345" y="440" width="205" height="140" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="447.5" y="476" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Ingestion</text>
+<text x="447.5" y="511" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Validate data</text>
+<text x="447.5" y="538" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Attach metadata</text>
+<rect x="600" y="440" width="220" height="140" rx="14" fill="#EDF9F8" stroke="#087F8C" stroke-width="2"/>
+<text x="710.0" y="476" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">CADS database</text>
+<text x="710.0" y="511" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Inputs + results</text>
+<text x="710.0" y="538" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Site-scoped data</text>
+<rect x="870" y="440" width="265" height="140" rx="14" fill="#FFF7E9" stroke="#A96B11" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="1002.5" y="476" fill="#A96B11" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Data-access</text>
+<text x="1002.5" y="504" fill="#A96B11" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">component</text>
+<text x="1002.5" y="539" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Read / persist</text>
+<rect x="1185" y="440" width="325" height="140" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="1347.5" y="476" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Workflow runtime</text>
+<text x="1347.5" y="511" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Execute connected FMUs</text>
+<text x="1347.5" y="538" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Return model outputs</text>
+<path d="M280,510 L345,510" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="345,510 333.0,515.0 333.0,505.0" fill="#087F8C"/>
+<path d="M550,510 L600,510" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="600,510 588.0,515.0 588.0,505.0" fill="#087F8C"/>
+<path d="M820,510 L870,510" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="870,510 858.0,515.0 858.0,505.0" fill="#087F8C"/>
+<polygon points="820,510 832.0,505.0 832.0,515.0" fill="#087F8C"/>
+<path d="M1135,510 L1185,510" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1185,510 1173.0,515.0 1173.0,505.0" fill="#087F8C"/>
+<polygon points="1135,510 1147.0,505.0 1147.0,515.0" fill="#087F8C"/>
+<text x="1002" y="406.0" fill="#A96B11" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="middle">Proposed integration boundary</text>
+<rect x="565" y="680" width="290" height="110" rx="14" fill="#EDF4FD" stroke="#2563A6" stroke-width="2"/>
+<text x="710.0" y="716" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Dashboard / result API</text>
+<text x="710.0" y="751" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Authorized result views</text>
+<path d="M710,580 L710,680" fill="none" stroke="#087F8C" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="710,680 705.0,668.0 715.0,668.0" fill="#087F8C"/>
+<text x="729" y="631.0" fill="#087F8C" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">Stored results</text>
+<rect x="1185" y="680" width="325" height="110" rx="14" fill="#F5F7FA" stroke="#53667D" stroke-width="2"/>
+<text x="1347.5" y="716" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" text-anchor="middle">Partner model packages</text>
+<text x="1347.5" y="751" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="middle">Accepted Co-Simulation FMUs</text>
+<path d="M1347,680 L1347,580" fill="none" stroke="#2563A6" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="1347,580 1352.0,592.0 1342.0,592.0" fill="#2563A6"/>
+<text x="1365" y="631.0" fill="#2563A6" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" text-anchor="start">Load models</text>
+<text x="350" y="820.0" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" text-anchor="start">Logical site segregation is shown; physical database topology is a separate decision.</text>
+<path d="M60 900 H1540" stroke="#B9C9D8"/>
+<text x="60" y="932" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">Target view, not a deployment-completion claim. Amber dashed box: connector design to agree with Kaizen.</text>
+<text x="60" y="960" fill="#53667D" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" text-anchor="start">Prototype coverage: workflow execution and demo dashboard; database read/write and full access control remain pending.</text>
+</svg>
