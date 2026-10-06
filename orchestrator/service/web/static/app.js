@@ -69,8 +69,8 @@ const COSIM_MODEL_LABELS = { ems: "EMS", iot: "IoT", rul: "RUL" };
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
-// Navigation tabs above the selected-workflow workspace (first is the default).
-const NAV_TABS = ["matrix", "map", "details"];
+// Navigation tabs above the runs rail and results (first is the default).
+const NAV_TABS = ["matrix", "details", "map"];
 const NAV_TAB_STORAGE_KEY = "cads:navTab";
 const MODEL_MATRIX_URL = "/static/cads-model-matrix.json";
 const SEQUENTIAL_COUPLING_LABEL = "Sequential one-way hand-over (final values between steps)";
@@ -829,7 +829,7 @@ function workflowModels(workflow) {
     : [];
 }
 
-function renderWorkflowModelOverview(workflow, options = {}) {
+function renderWorkflowModelOverview(workflow) {
   const models = workflowModels(workflow);
   if (models.length === 0) {
     return "";
@@ -843,14 +843,14 @@ function renderWorkflowModelOverview(workflow, options = {}) {
 
   return `
     <div class="workflow-model-overview">
-      <div class="workflow-model-section-title">Models</div>
+      <div class="workflow-model-section-title">Coupling</div>
       <div class="workflow-model-chain" aria-label="Workflow model sequence">
         ${models.map((model, index) => `
           ${isCosimModel(model) ? renderCosimGroup(model, index, selectedIndex === index) : `
           <button
             class="workflow-model-node${selectedIndex === index ? " selected" : ""}"
             type="button"
-            aria-expanded="${selectedIndex === index ? "true" : "false"}"
+            aria-pressed="${selectedIndex === index ? "true" : "false"}"
             aria-label="Show ${escapeHTML(workflowModelLabel(model))} details"
             data-select-workflow-model="${index}"
           >
@@ -861,11 +861,6 @@ function renderWorkflowModelOverview(workflow, options = {}) {
           ${index < models.length - 1 ? '<span class="workflow-model-arrow" aria-hidden="true">&rarr;</span>' : ""}
         `).join("")}
       </div>
-      ${selectedIndex === null || options.showDetails === false ? "" : `
-        <div class="workflow-model-details" id="workflow-model-details-${selectedIndex}">
-          ${renderWorkflowModelCard(models[selectedIndex], selectedIndex)}
-        </div>
-      `}
     </div>
   `;
 }
@@ -878,33 +873,6 @@ function toggleWorkflowModel(index) {
   state.selectedWorkflowModelIndex = state.selectedWorkflowModelIndex === index ? null : index;
   state.selectedModelKey = state.selectedWorkflowModelIndex === null ? "" : String(index);
   renderWorkflows();
-}
-
-function renderWorkflowModelCard(model, index) {
-  if (isCosimModel(model)) {
-    return renderCosimStepCard(model, index);
-  }
-  const fmuName = model.fmu ? model.fmu.split("/").pop() : "";
-  const startInputs = workflowStartInputLabels(model, index);
-  return `
-    <article class="workflow-model-card">
-      <h4>
-        <span>${index + 1}. ${escapeHTML(workflowModelLabel(model))}</span>
-        ${fmuName ? `<code>${escapeHTML(fmuName)}</code>` : ""}
-      </h4>
-      ${startInputs.length > 0 ? `
-        <div class="workflow-model-row">
-          <span>Inputs</span>
-          <div class="workflow-model-chip-row">${renderWorkflowChips(startInputs, 4)}</div>
-        </div>
-      ` : ""}
-      <div class="workflow-model-row">
-        <span>Outputs</span>
-        <div class="workflow-model-chip-row">${renderWorkflowChips(model.outputs, 6)}</div>
-      </div>
-      ${renderWorkflowModelProblems(model)}
-    </article>
-  `;
 }
 
 function isCosimModel(model) {
@@ -1021,7 +989,7 @@ function renderCosimGroup(model, index, isSelected) {
         <button
           class="workflow-model-node${isSelected ? " selected" : ""}"
           type="button"
-          aria-expanded="${isSelected ? "true" : "false"}"
+          aria-pressed="${isSelected ? "true" : "false"}"
           aria-label="Show ${escapeHTML(label)} details"
           data-select-workflow-model="${index}"
         >
@@ -1032,7 +1000,11 @@ function renderCosimGroup(model, index, isSelected) {
       </div>
       ${members.length > 0 ? `
         <div class="cosim-member-row">
-          ${members.map((member) => `<span class="cosim-model-pill">${escapeHTML(member.label || member.name || "model")}</span>`).join("")}
+          ${members.map((member) => {
+            const key = `${index}.${member.name}`;
+            const memberSelected = isSelected && state.selectedModelKey === key;
+            return `<button type="button" class="cosim-model-pill${memberSelected ? " selected" : ""}" data-model-entry="${escapeHTML(key)}" aria-pressed="${memberSelected ? "true" : "false"}">${escapeHTML(member.label || member.name || "model")}</button>`;
+          }).join("")}
         </div>
       ` : ""}
       ${edges.length > 0 ? `
@@ -1694,15 +1666,18 @@ function renderMatrixModelRow(model, sites, selectedId, usedBySelectedWorkflow) 
       <th scope="row" class="mm-model-cell">
         <div class="mm-model">
           <span class="mm-badge" title="${escapeHTML(matrixCategoryLabel(model.category))}">${escapeHTML(model.id)}</span>
-          <div class="mm-model-text">
-            <span class="mm-model-name">${escapeHTML(model.name || model.id)}</span>
-            <span class="mm-model-sub">
-              ${owners.length > 0 ? `<span class="mm-owners">${escapeHTML(owners.join(", "))}</span>` : ""}
-              ${hasSites ? "" : '<span class="mm-owners">no CADS demonstrator site assigned yet</span>'}
-              ${demoFmus.map((fmu) => `<code class="mm-demo-chip" title="Placeholder FMU in this repo">demo: ${escapeHTML(fmu)}</code>`).join("")}
-            </span>
-          </div>
+          <span class="mm-model-name" title="${escapeHTML(model.name || model.id)}">${escapeHTML(model.name || model.id)}</span>
+          ${owners.length > 0 ? `<span class="mm-owners">${escapeHTML(owners.join(", "))}</span>` : ""}
+          ${hasSites ? "" : '<span class="mm-owners">no site yet</span>'}
+          ${demoFmus.length > 0 ? `
+            <span class="mm-fmu-pill" title="${escapeHTML(`Demo FMUs in this repo: ${demoFmus.join(", ")}`)}">${demoFmus.length} FMU${demoFmus.length === 1 ? "" : "s"}</span>
+          ` : ""}
         </div>
+        ${isFocused && demoFmus.length > 0 ? `
+          <div class="mm-demo-row">
+            ${demoFmus.map((fmu) => `<code class="mm-demo-chip">demo: ${escapeHTML(fmu)}</code>`).join("")}
+          </div>
+        ` : ""}
       </th>
       ${sites.map((site) => renderMatrixCell(model, site, siteMarks[site.id], site.id === selectedId)).join("")}
       <td class="mm-w-cell">
@@ -1750,6 +1725,7 @@ function renderCandidateWorkflowStrip() {
       <div class="mm-candidate-row">
         ${candidates.map((candidate) => {
           const count = visible.filter((workflow) => workflowMatrixMapping(workflow)?.candidate === candidate.id).length;
+          const badges = candidateCouplingBadges(candidate.id);
           const isSelected = state.candidateFocus === candidate.id;
           return `
             <button
@@ -1764,10 +1740,39 @@ function renderCandidateWorkflowStrip() {
               </span>
               <span class="mm-candidate-title">${escapeHTML(candidate.title || "")}</span>
               ${candidate.chain ? `<code>${escapeHTML(candidate.chain)}</code>` : ""}
+              ${badges.length > 0 ? `<span class="coupling-badge-row">${renderCouplingBadges(badges)}</span>` : ""}
             </button>
           `;
         }).join("")}
       </div>
+      ${renderCouplingLegend()}
+    </div>
+  `;
+}
+
+const COUPLING_BADGE_ORDER = ["ping-pong", "lock-step", "event-driven", "one-way", "single step"];
+
+// Coupling badges of every repo workflow mapped to a candidate workflow.
+function candidateCouplingBadges(candidateId) {
+  const badges = new Set();
+  for (const workflow of state.workflows) {
+    if (workflowMatrixMapping(workflow)?.candidate === candidateId) {
+      workflowCouplingInfo(workflow).badges.forEach((badge) => badges.add(badge));
+    }
+  }
+  return COUPLING_BADGE_ORDER.filter((badge) => badges.has(badge));
+}
+
+function renderCouplingLegend() {
+  const items = [
+    ["ping-pong", "Gauss-Seidel: sequential exchange each communication step"],
+    ["lock-step", "Jacobi: parallel exchange each communication step"],
+    ["event-driven", "condition-triggered discrete input"],
+    ["one-way", "final values handed to the next step"],
+  ];
+  return `
+    <div class="coupling-legend" aria-label="FMU coupling legend">
+      ${items.map(([badge, text]) => `<span>${renderCouplingBadges([badge])} ${escapeHTML(text)}</span>`).join("")}
     </div>
   `;
 }
@@ -1900,50 +1905,6 @@ function renderCouplingBadges(badges) {
   return badges
     .map((badge) => `<span class="coupling-badge coupling-${escapeHTML(badge.replace(/[^a-z-]/gi, "-").toLowerCase())}">${escapeHTML(badge)}</span>`)
     .join("");
-}
-
-function workflowSiteLabel(workflow) {
-  const siteId = workflowSiteId(workflow);
-  if (!siteId || siteId === "portfolio") {
-    return "All sites";
-  }
-  const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
-  return demo ? demo.shortLabel || demo.label : siteId;
-}
-
-// Compact header plus the model chain graphic, above the runs rail and output.
-function renderSelectedWorkflow() {
-  const title = document.getElementById("selectedWorkflowTitle");
-  const summary = document.getElementById("selectedWorkflowSummary");
-  const selected = selectedWorkflow();
-  bindLaunchButton(selected);
-  if (title) {
-    title.textContent = selected ? workflowLabel(selected) : "No workflow selected";
-  }
-  if (!summary) {
-    return;
-  }
-  if (!selected) {
-    summary.innerHTML = '<div class="empty-state">Pick a workflow in the Details tab or a matrix cell.</div>';
-    return;
-  }
-
-  const coupling = workflowCouplingInfo(selected);
-  const matrixLabel = workflowMatrixLabel(selected);
-  summary.innerHTML = `
-    <div class="selected-workflow-meta">
-      <span class="workflow-context-site">${escapeHTML(workflowSiteLabel(selected))}</span>
-      ${coupling.badges.length > 0 ? `<span class="coupling-badge-row" title="${escapeHTML(coupling.label)}">${renderCouplingBadges(coupling.badges)}</span>` : ""}
-      ${matrixLabel ? `<span class="matrix-map-chip">${escapeHTML(matrixLabel)}</span>` : ""}
-    </div>
-    ${renderWorkflowModelOverview(selected, { showDetails: false })}
-  `;
-
-  for (const button of summary.querySelectorAll("[data-select-workflow-model]")) {
-    button.addEventListener("click", () => {
-      toggleWorkflowModel(Number(button.dataset.selectWorkflowModel));
-    });
-  }
 }
 
 function bindLaunchButton(selected) {
@@ -2288,6 +2249,7 @@ function renderDetailsModelCard() {
       <h3>${escapeHTML(selected ? selected.label : "Models in this workflow")}</h3>
     </header>
     ${!workflow ? '<div class="details-empty">Choose a workflow to see its models.</div>' : `
+      <div class="details-chain">${renderWorkflowModelOverview(workflow)}</div>
       <div class="details-model-list" role="list">
         ${entries.map((entry) => {
           const family = entryFamily(entry);
@@ -2313,6 +2275,9 @@ function renderDetailsModelCard() {
   `;
   for (const button of card.querySelectorAll("[data-model-entry]")) {
     button.addEventListener("click", () => selectModelEntry(button.dataset.modelEntry));
+  }
+  for (const button of card.querySelectorAll("[data-select-workflow-model]")) {
+    button.addEventListener("click", () => toggleWorkflowModel(Number(button.dataset.selectWorkflowModel)));
   }
 }
 
@@ -2404,7 +2369,7 @@ function renderWorkflows() {
   const workflows = visibleWorkflows();
   const demo = selectedDemonstrator();
 
-  renderSelectedWorkflow();
+  bindLaunchButton(selectedWorkflow());
   renderDetailsDynamic();
 
   if (state.workflows.length === 0) {
@@ -2913,7 +2878,40 @@ function renderWorkflowOutput() {
   renderGenericWorkflowResult(container, workflow);
 }
 
+// Coupling badges plus, once a result is loaded, what each step actually did.
+function renderOutputCoupling(workflow) {
+  const container = document.getElementById("outputCoupling");
+  if (!container) {
+    return;
+  }
+  if (!workflow) {
+    container.innerHTML = "";
+    return;
+  }
+  const coupling = workflowCouplingInfo(workflow);
+  const info = runInfo(latestLoadedPayload(workflow));
+  const steps = Array.isArray(info?.steps) ? info.steps : [];
+  const stepText = steps.map((step) => {
+    const name = step?.name || "step";
+    if (step?.kind === "cosim") {
+      const scheme = String(step.scheme || "").toLowerCase();
+      const label = scheme === "gauss_seidel" ? "Gauss-Seidel ping-pong" : scheme === "jacobi" ? "Jacobi lock-step" : cosimSchemeLabel(step.scheme);
+      const points = step.communication_points ? `, ${step.communication_points} communication points` : "";
+      const events = Array.isArray(step.events) && step.events.length > 0 ? `, ${step.events.length} event edge${step.events.length === 1 ? "" : "s"}` : "";
+      return `${name}: ${label}${points}${events}`;
+    }
+    const calls = (Array.isArray(step?.fmus) ? step.fmus : []).reduce((sum, fmu) => sum + (Number(fmu?.do_step_calls) || 0), 0);
+    const mode = steps.length > 1 ? "one-way" : "single step";
+    return `${name}: ${mode}${calls > 0 ? `, ${calls} steps` : ""}`;
+  });
+  container.innerHTML = `
+    ${coupling.badges.length > 0 ? `<span class="coupling-badge-row" title="${escapeHTML(coupling.label)}">${renderCouplingBadges(coupling.badges)}</span>` : ""}
+    ${stepText.length > 0 ? `<span class="output-step-line">${escapeHTML(stepText.join(" · "))}</span>` : ""}
+  `;
+}
+
 function renderOutputHeader(workflow) {
+  renderOutputCoupling(workflow);
   const kicker = document.getElementById("outputKicker");
   const title = document.getElementById("outputTitle");
   const copy = document.getElementById("outputCopy");

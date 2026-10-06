@@ -42,8 +42,8 @@
         <div class="nav-strip">
           <div id="navTabs" class="nav-tabs" role="tablist" aria-label="Dashboard views">
             <button id="navTab-matrix" class="nav-tab" type="button" role="tab" data-nav-tab="matrix" aria-controls="matrixPane" aria-selected="true">Model matrix</button>
-            <button id="navTab-map" class="nav-tab" type="button" role="tab" data-nav-tab="map" aria-controls="siteMapPane" aria-selected="false" tabindex="-1">Site map</button>
             <button id="navTab-details" class="nav-tab" type="button" role="tab" data-nav-tab="details" aria-controls="detailsPane" aria-selected="false" tabindex="-1">Details</button>
+            <button id="navTab-map" class="nav-tab" type="button" role="tab" data-nav-tab="map" aria-controls="siteMapPane" aria-selected="false" tabindex="-1">Site map</button>
           </div>
           <div class="nav-strip-actions">
             <span id="navSiteChip" class="nav-site-chip" aria-live="polite">All sites</span>
@@ -54,13 +54,6 @@
         <div id="matrixPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-matrix" data-nav-panel="matrix">
           <p class="pane-hint">Pick a demonstrator column, or a cell to focus one model family at that site. The Details tab lists the matching workflows.</p>
           <div id="modelMatrix" class="model-matrix-pane" aria-live="polite"></div>
-        </div>
-
-        <div id="siteMapPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-map" data-nav-panel="map" hidden>
-          <p class="pane-hint">Demonstrator locations; markers select a site like the matrix columns. Site facts are in the Details tab.</p>
-          <div id="siteMapBody" class="site-map-body">
-            <div id="demonstratorMap" class="demonstrator-map" aria-live="polite"></div>
-          </div>
         </div>
 
         <div id="detailsPane" class="nav-panel panel-workflow-picker" role="tabpanel" aria-labelledby="navTab-details" data-nav-panel="details" hidden>
@@ -80,14 +73,13 @@
             <section id="detailsModelCard" class="details-card" tabindex="-1" aria-label="Model"></section>
           </div>
         </div>
-      </section>
-
-      <section id="selectedWorkflowPanel" class="panel panel-selected-workflow" aria-label="Selected workflow">
-        <div class="selected-workflow-head">
-          <p class="panel-kicker">Selected workflow</p>
-          <h2 id="selectedWorkflowTitle">No workflow selected</h2>
+        <div id="siteMapPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-map" data-nav-panel="map" hidden>
+          <p class="pane-hint">Demonstrator locations; markers select a site like the matrix columns. Site facts are in the Details tab.</p>
+          <div id="siteMapBody" class="site-map-body">
+            <div id="demonstratorMap" class="demonstrator-map" aria-live="polite"></div>
+          </div>
         </div>
-        <div id="selectedWorkflowSummary" class="selected-workflow-summary" aria-live="polite"></div>
+
       </section>
 
       <div id="dashboardWorkspace" class="dashboard-workspace">
@@ -117,6 +109,7 @@
             </div>
             <p id="outputCopy" class="panel-copy">The output window follows the selected workflow.</p>
           </div>
+          <div id="outputCoupling" class="output-coupling" aria-live="polite"></div>
           <div id="workflowOutput" class="workflow-output" aria-live="polite"></div>
         </section>
       </div>

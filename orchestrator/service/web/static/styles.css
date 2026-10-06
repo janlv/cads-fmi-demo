@@ -308,22 +308,7 @@ h2 {
   letter-spacing: 0;
 }
 
-.demo-map-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-  margin-bottom: 10px;
-}
-
-.demo-map-head h3,
-.demo-detail-card h3 {
-  margin: 0;
-  font-size: 1.18rem;
-}
-
 .demo-all-button,
-.demo-workflow-pill,
 .inline-action {
   border: 1px solid rgba(0, 28, 99, 0.14);
   border-radius: 999px;
@@ -345,8 +330,7 @@ h2 {
   padding: 6px 10px;
 }
 
-.demo-all-button.selected,
-.demo-workflow-pill.selected {
+.demo-all-button.selected {
   background: rgba(232, 254, 116, 0.74);
   border-color: rgba(5, 66, 235, 0.28);
 }
@@ -464,88 +448,12 @@ h2 {
   border-color: var(--accent);
 }
 
-.demo-detail-card {
-  height: 100%;
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(0, 28, 99, 0.1);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(245, 249, 255, 0.68));
-}
-
-.demo-detail-card p {
-  margin: 10px 0 0;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.demo-detail-topline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.demo-detail-topline span {
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: rgba(5, 66, 235, 0.08);
-  color: var(--accent-deep);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.demo-location {
-  font-weight: 700;
-  color: var(--ink) !important;
-}
-
-.demo-stat-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 14px 0 0;
-}
-
-.demo-stat-list div {
-  padding: 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 28, 99, 0.08);
-  background: rgba(255, 255, 255, 0.62);
-}
-
-.demo-stat-list dt {
-  color: var(--muted);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.demo-stat-list dd {
-  margin: 4px 0 0;
-  color: var(--ink);
-  font-weight: 750;
-}
-
 .demo-facts {
   margin: 14px 0 0;
   padding-left: 18px;
   color: var(--muted);
   line-height: 1.45;
   font-size: 0.88rem;
-}
-
-.demo-workflow-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.demo-workflow-pill {
-  padding: 6px 10px;
 }
 
 .dashboard-workspace {
@@ -608,42 +516,6 @@ h2 {
   margin: -4px 0 12px;
   color: var(--muted);
   font-size: 0.84rem;
-}
-
-.workflow-context-site {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: rgba(5, 66, 235, 0.08);
-  color: var(--accent-deep);
-  font-weight: 750;
-}
-
-.workflow-selected-description {
-  flex: 1 0 100%;
-  display: grid;
-  gap: 3px;
-  max-width: 62rem;
-  margin-top: 4px;
-  padding: 11px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(5, 66, 235, 0.12);
-  background: rgba(255, 255, 255, 0.62);
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.workflow-selected-description strong {
-  color: var(--ink);
-  font-size: 0.92rem;
-}
-
-.workflow-selected-description em {
-  color: var(--accent-deep);
-  font-style: normal;
-  font-size: 0.74rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .workflow-model-overview {
@@ -711,12 +583,6 @@ h2 {
   font-weight: 800;
 }
 
-.workflow-model-details {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 8px;
-}
-
 .workflow-model-card {
   display: grid;
   gap: 8px;
@@ -781,7 +647,6 @@ h2 {
   font-size: 0.7rem;
   font-weight: 700;
 }
-
 
 .run-card {
   border-radius: 16px;
@@ -2031,7 +1896,6 @@ h2 {
   color: var(--muted);
 }
 
-
 /* ---- Model-by-demonstrator matrix (primary navigation) ---- */
 
 .cat-physical { --cat: var(--cat-physical); --cat-ink: #ffffff; }
@@ -2043,17 +1907,17 @@ h2 {
 
 .model-matrix-pane {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
 .model-matrix-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
+  gap: 4px 12px;
   align-items: center;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
 }
 
 .model-matrix-legend > span {
@@ -2099,7 +1963,7 @@ h2 {
 .model-matrix {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .model-matrix th,
@@ -2115,7 +1979,7 @@ h2 {
 }
 
 .model-matrix thead th {
-  padding: 8px 6px;
+  padding: 4px 4px;
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 700;
@@ -2139,11 +2003,11 @@ h2 {
 }
 
 .model-matrix thead th.mm-site-col {
-  width: 92px;
+  width: 84px;
 }
 
 .model-matrix thead th.mm-w-col {
-  width: 150px;
+  width: 128px;
   text-align: left;
 }
 
@@ -2158,11 +2022,11 @@ h2 {
 
 .mm-site-button {
   display: grid;
-  gap: 1px;
+  gap: 0;
   width: 100%;
-  padding: 6px 4px;
+  padding: 3px 4px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -2208,7 +2072,7 @@ h2 {
 }
 
 .mm-model-cell {
-  padding: 7px 10px 7px 12px !important;
+  padding: 3px 8px 3px 10px !important;
   text-align: left;
   font-weight: 400;
   border-left: 4px solid var(--cat);
@@ -2216,19 +2080,21 @@ h2 {
 
 .mm-model {
   display: flex;
-  gap: 9px;
-  align-items: flex-start;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .mm-badge {
   flex: 0 0 auto;
-  min-width: 36px;
-  padding: 3px 6px;
-  border-radius: 7px;
+  min-width: 34px;
+  padding: 1px 5px;
+  border-radius: 6px;
   background: var(--cat);
   color: var(--cat-ink);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 800;
   text-align: center;
 }
@@ -2237,28 +2103,38 @@ h2 {
   box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent);
 }
 
-.mm-model-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
 .mm-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ink);
   font-weight: 650;
   line-height: 1.25;
 }
 
 .mm-owners {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
 }
 
-.mm-model-sub {
+.mm-fmu-pill {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(5, 66, 235, 0.08);
+  color: var(--accent-deep);
+  font-size: 0.64rem;
+  font-weight: 700;
+  cursor: help;
+}
+
+.mm-demo-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px 6px;
-  align-items: center;
+  gap: 3px;
+  margin: 3px 0 1px 42px;
 }
 
 .mm-demo-chip {
@@ -2277,12 +2153,12 @@ h2 {
 .mm-cell-button {
   display: block;
   width: 100%;
-  min-height: 38px;
+  min-height: 24px;
   border: 0;
   background: transparent;
   color: var(--accent);
   font: inherit;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   line-height: 1;
   cursor: pointer;
 }
@@ -2301,13 +2177,13 @@ h2 {
 }
 
 .mm-w-cell {
-  padding: 4px 8px !important;
+  padding: 1px 6px !important;
   white-space: nowrap;
 }
 
 .mm-w-chip {
-  margin: 2px 2px 2px 0;
-  padding: 2px 7px;
+  margin: 1px 1px 1px 0;
+  padding: 0 5px;
   border: 1px solid rgba(0, 28, 99, 0.16);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.85);
@@ -2327,7 +2203,7 @@ h2 {
 
 .mm-candidates {
   display: grid;
-  gap: 7px;
+  gap: 5px;
 }
 
 .mm-candidates-title {
@@ -2345,17 +2221,17 @@ h2 {
 
 .mm-candidate-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
 }
 
 .mm-candidate {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   align-content: start;
-  padding: 8px 10px;
+  padding: 5px 8px;
   border: 1px solid rgba(0, 28, 99, 0.12);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.72);
   color: var(--body-ink);
   font: inherit;
@@ -2394,9 +2270,27 @@ h2 {
 
 .mm-candidate-title {
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 650;
-  line-height: 1.3;
+  line-height: 1.25;
+}
+
+.mm-candidate .coupling-badge-row {
+  margin-top: 2px;
+}
+
+.coupling-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.coupling-legend > span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
 }
 
 .mm-candidate code {
@@ -2510,63 +2404,48 @@ h2 {
   font-size: 0.8rem;
 }
 
-/* ---- Selected workflow summary ---- */
-
-.panel-selected-workflow {
-  padding: 18px 20px;
-}
-
-.panel-selected-workflow .panel-head {
-  margin-bottom: 10px;
-}
-
-.selected-workflow-summary {
-  display: grid;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.86rem;
-  line-height: 1.45;
-}
-
-.selected-workflow-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.selected-workflow-meta em {
-  color: var(--accent-deep);
-  font-style: normal;
-  font-size: 0.74rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.selected-workflow-description {
-  max-width: 72rem;
-  margin: 0;
-}
-
 /* ---- Workflow coupling and matrix mapping ---- */
 
-.workflow-coupling-line,
-.workflow-matrix-line {
+.output-coupling {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 4px 10px;
   align-items: center;
-  font-size: 0.82rem;
+  margin: -6px 0 14px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(233, 236, 242, 0.6);
 }
 
-.workflow-line-label {
-  color: var(--ink);
-  font-weight: 700;
+.output-coupling:empty {
+  display: none;
 }
 
-.workflow-matrix-line code {
+.output-step-line {
+  color: var(--muted);
+  font-family: var(--font-mono);
   font-size: 0.72rem;
+}
+
+button.cosim-model-pill {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+button.cosim-model-pill.selected {
+  border-color: rgba(5, 66, 235, 0.5);
+  background: rgba(5, 66, 235, 0.14);
+}
+
+.details-chain .workflow-model-overview {
+  margin-top: 0;
+  font-size: 0.8rem;
+}
+
+.details-chain .workflow-model-section-title {
+  margin-top: 0;
 }
 
 .coupling-badge-row,
@@ -2655,7 +2534,6 @@ h2 {
 .workflow-tab.focus-dim:hover {
   opacity: 0.8;
 }
-
 
 /* ---- Details tab: breadcrumb and master-detail cards ---- */
 
@@ -3055,14 +2933,6 @@ h2 {
   margin: 0 auto;
 }
 
-.selected-workflow-head {
-  margin-bottom: 8px;
-}
-
-.selected-workflow-head h2 {
-  margin: 0;
-}
-
 @media (max-width: 1040px) {
   .details-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -3183,8 +3053,7 @@ h2 {
     width: 100%;
   }
 
-  .project-facts,
-  .demo-stat-list {
+  .project-facts {
     grid-template-columns: minmax(0, 1fr);
   }
 
