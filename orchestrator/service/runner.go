@@ -27,9 +27,15 @@ func NewRunner(workDir string, opts ...workflow.Option) (*Runner, error) {
 	return &Runner{WorkDir: resolved, exec: exec}, nil
 }
 
-// Run executes the workflow and returns its results.
+// Run executes the workflow and returns its results. The map is non-nil even on error and then
+// carries the `_run` pseudo-step describing the failure.
 func (r *Runner) Run(workflowPath string) (map[string]map[string]any, error) {
 	return r.exec.Run(workflowPath)
+}
+
+// Cancel requests the running workflow to stop (status "cancelled").
+func (r *Runner) Cancel() {
+	r.exec.Cancel()
 }
 
 // ResolveWorkDir figures out the repository root when not provided.

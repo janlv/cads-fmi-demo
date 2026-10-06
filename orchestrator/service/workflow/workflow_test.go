@@ -96,9 +96,7 @@ func TestBuildInputSeriesResolvesCSVWithinRoot(t *testing.T) {
 		t.Fatalf("write csv: %v", err)
 	}
 
-	cfg, err := exec.buildInputSeries(workflowStep{
-		InputSeries: &inputSeriesSpec{CSV: filepath.Join("data", "samples.csv")},
-	})
+	cfg, err := exec.buildInputSeries(&inputSeriesSpec{CSV: filepath.Join("data", "samples.csv")})
 	if err != nil {
 		t.Fatalf("buildInputSeries() error = %v", err)
 	}
@@ -152,11 +150,9 @@ func TestBuildInputSeriesDownloadsS3Object(t *testing.T) {
 		t.Fatalf("NewExecutor() error = %v", err)
 	}
 
-	cfg, err := exec.buildInputSeries(workflowStep{
-		InputSeries: &inputSeriesSpec{
+	cfg, err := exec.buildInputSeries(&inputSeriesSpec{
 			S3: &s3InputSeriesSpec{Key: "acoustic/latest.csv"},
-		},
-	})
+		})
 	if err != nil {
 		t.Fatalf("buildInputSeries() error = %v", err)
 	}
@@ -189,9 +185,7 @@ func TestBuildInputSeriesRejectsTraversal(t *testing.T) {
 		t.Fatalf("NewExecutor() error = %v", err)
 	}
 
-	_, err = exec.buildInputSeries(workflowStep{
-		InputSeries: &inputSeriesSpec{CSV: filepath.Join("..", "outside.csv")},
-	})
+	_, err = exec.buildInputSeries(&inputSeriesSpec{CSV: filepath.Join("..", "outside.csv")})
 	if !errors.Is(err, ErrPathEscapesRoot) {
 		t.Fatalf("buildInputSeries() error = %v, want ErrPathEscapesRoot", err)
 	}
@@ -204,12 +198,10 @@ func TestBuildInputSeriesRejectsConflictingSources(t *testing.T) {
 		t.Fatalf("NewExecutor() error = %v", err)
 	}
 
-	_, err = exec.buildInputSeries(workflowStep{
-		InputSeries: &inputSeriesSpec{
+	_, err = exec.buildInputSeries(&inputSeriesSpec{
 			CSV: "data/samples.csv",
 			S3:  &s3InputSeriesSpec{Bucket: "demo", Key: "samples.csv"},
-		},
-	})
+		})
 	if err == nil || !strings.Contains(err.Error(), "exactly one source") {
 		t.Fatalf("buildInputSeries() error = %v, want conflicting source rejection", err)
 	}
@@ -224,11 +216,9 @@ func TestBuildInputSeriesRequiresS3BucketOrEnv(t *testing.T) {
 		t.Fatalf("NewExecutor() error = %v", err)
 	}
 
-	_, err = exec.buildInputSeries(workflowStep{
-		InputSeries: &inputSeriesSpec{
+	_, err = exec.buildInputSeries(&inputSeriesSpec{
 			S3: &s3InputSeriesSpec{Key: "samples.csv"},
-		},
-	})
+		})
 	if err == nil || !strings.Contains(err.Error(), "S3_BUCKET") {
 		t.Fatalf("buildInputSeries() error = %v, want missing bucket rejection", err)
 	}

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -23,6 +25,11 @@ type Executor struct {
 	root         string
 	logger       func(string, ...any)
 	s3Downloader s3DownloadFunc
+	runFMU       func(fmi.Config) (*fmi.Result, error)
+	runCoSim     func(fmi.CoSimConfig) (*fmi.Result, error)
+	now          func() time.Time
+	version      string
+	cancelled    atomic.Bool
 }
 
 // Option configures the executor.
@@ -42,6 +49,32 @@ func WithS3Downloader(downloader s3DownloadFunc) Option {
 	}
 }
 
+// WithRunnerVersion stamps the runner version into the `_run` provenance block.
+func WithRunnerVersion(version string) Option {
+	return func(e *Executor) {
+		e.version = version
+	}
+}
+
+// WithClock overrides the wall clock (tests).
+func WithClock(now func() time.Time) Option {
+	return func(e *Executor) {
+		e.now = now
+	}
+}
+
+// withFMIRunners replaces the bridge entry points (tests).
+func withFMIRunners(runFMU func(fmi.Config) (*fmi.Result, error), runCoSim func(fmi.CoSimConfig) (*fmi.Result, error)) Option {
+	return func(e *Executor) {
+		if runFMU != nil {
+			e.runFMU = runFMU
+		}
+		if runCoSim != nil {
+			e.runCoSim = runCoSim
+		}
+	}
+}
+
 // NewExecutor creates a workflow executor rooted at repoRoot.
 func NewExecutor(repoRoot string, opts ...Option) (*Executor, error) {
 	if repoRoot == "" {
@@ -51,120 +84,251 @@ func NewExecutor(repoRoot string, opts ...Option) (*Executor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve workflow root %s: %w", repoRoot, err)
 	}
-	e := &Executor{root: absRoot}
+	e := &Executor{
+		root:     absRoot,
+		runFMU:   fmi.Run,
+		runCoSim: fmi.RunCoSim,
+		now:      time.Now,
+		version:  "dev",
+	}
 	for _, opt := range opts {
 		opt(e)
 	}
 	if e.s3Downloader == nil {
 		e.s3Downloader = defaultS3Downloader
 	}
+	fmi.ResetCancel()
 	return e, nil
 }
 
+// Cancel asks the running workflow to stop at the next step boundary and the bridge to stop at
+// the next communication point. The run then finishes with status "cancelled".
+func (e *Executor) Cancel() {
+	e.cancelled.Store(true)
+	fmi.RequestCancel()
+}
+
 // Run executes a workflow file (relative to repo root unless absolute).
+//
+// The returned map always carries the `_run` pseudo-step (status, timing, provenance), also when
+// err is non-nil, so callers can report partial results and the failing step (ARCH-COMP-017).
 func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
+	rec := newRunRecorder(e.now, e.version, e.root)
+	results := make(map[string]map[string]any)
+	// The cancel flag is deliberately NOT reset here: a cancellation requested before Run starts
+	// (e.g. SIGTERM delivered between signal.Notify and Run) must still take effect.
+	err := e.run(workflowPath, results, rec)
+	results[RunInfoStepName] = rec.finish(err)
+	return results, err
+}
+
+func (e *Executor) run(workflowPath string, results map[string]map[string]any, rec *runRecorder) error {
 	absPath, err := e.resolveRepoPath(workflowPath, "workflow")
 	if err != nil {
-		return nil, fmt.Errorf("invalid workflow path: %w", err)
+		return fmt.Errorf("invalid workflow path: %w", err)
 	}
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("read workflow %s: %w", absPath, err)
+		return fmt.Errorf("read workflow %s: %w", absPath, err)
+	}
+	if rel, relErr := filepath.Rel(e.root, absPath); relErr == nil {
+		rec.setWorkflow(rel, data)
+	} else {
+		rec.setWorkflow(workflowPath, data)
 	}
 
 	var doc workflowFile
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parse workflow %s: %w", absPath, err)
+		return fmt.Errorf("parse workflow %s: %w", absPath, err)
 	}
 	if len(doc.Steps) == 0 {
-		return nil, fmt.Errorf("workflow %s does not define any steps", absPath)
+		return fmt.Errorf("workflow %s does not define any steps", absPath)
+	}
+	if err := validateSteps(absPath, doc.Steps); err != nil {
+		return err
 	}
 
-	results := make(map[string]map[string]any, len(doc.Steps)+1)
 	if doc.SyntheticCase != nil {
 		syntheticCase, err := e.loadSyntheticCase(doc.SyntheticCase)
 		if err != nil {
-			return nil, fmt.Errorf("synthetic_case invalid: %w", err)
+			return fmt.Errorf("synthetic_case invalid: %w", err)
 		}
 		results[syntheticCaseStepName] = syntheticCase
 	}
-	for _, step := range doc.Steps {
-		if step.Name == "" {
-			return nil, fmt.Errorf("workflow %s contains a step without name", absPath)
-		}
-		if step.Name == syntheticCaseStepName {
-			return nil, fmt.Errorf("workflow step name %s is reserved", syntheticCaseStepName)
-		}
-		if _, exists := results[step.Name]; exists {
-			return nil, fmt.Errorf("workflow step %s defined multiple times", step.Name)
-		}
-		if step.FMU == "" {
-			return nil, fmt.Errorf("step %s is missing its fmu path", step.Name)
-		}
 
-		fmuPath, err := e.resolveRepoPath(step.FMU, "fmu")
-		if err != nil {
-			return nil, fmt.Errorf("step %s invalid fmu path: %w", step.Name, err)
+	for index, step := range doc.Steps {
+		if e.cancelled.Load() {
+			for _, rest := range doc.Steps[index:] {
+				rec.stepSkipped(rest.Name, stepKind(rest))
+			}
+			return &StepError{Step: step.Name, Err: fmi.ErrCancelled}
 		}
-		if _, err := os.Stat(fmuPath); err != nil {
-			return nil, fmt.Errorf("step %s references missing FMU %s: %w", step.Name, fmuPath, err)
+		var stepErr error
+		if step.CoSim != nil {
+			stepErr = e.runCoSimStep(step, results, rec)
+		} else {
+			stepErr = e.runFMUStep(step, results, rec)
 		}
-
-		startVals, err := e.buildStartValues(step, results)
-		if err != nil {
-			return nil, fmt.Errorf("step %s start values invalid: %w", step.Name, err)
+		if stepErr != nil {
+			for _, rest := range doc.Steps[index+1:] {
+				rec.stepSkipped(rest.Name, stepKind(rest))
+			}
+			return &StepError{Step: step.Name, Err: stepErr}
 		}
-
-		inputSeries, err := e.buildInputSeries(step)
-		if err != nil {
-			return nil, fmt.Errorf("step %s input series invalid: %w", step.Name, err)
-		}
-		trace, err := e.buildTraceConfig(step)
-		if err != nil {
-			return nil, fmt.Errorf("step %s trace config invalid: %w", step.Name, err)
-		}
-
-		cfg := fmi.Config{
-			FMUPath:     fmuPath,
-			StartValues: startVals,
-			Outputs:     step.Outputs,
-			Trace:       trace,
-		}
-		if inputSeries != nil {
-			cfg.InputSeries = inputSeries.Config
-		}
-		if step.StartTime != nil {
-			cfg.StartTime = step.StartTime
-		}
-		if step.StopTime != nil {
-			cfg.StopTime = step.StopTime
-		}
-		if step.StepSize != nil {
-			cfg.StepSize = step.StepSize
-		}
-
-		result, err := fmi.Run(cfg)
-		if inputSeries != nil && inputSeries.Cleanup != nil {
-			inputSeries.Cleanup()
-		}
-		if err != nil {
-			return nil, fmt.Errorf("step %s failed: %w", step.Name, err)
-		}
-
-		results[step.Name] = result
 		if step.ResultPath != "" {
 			resultPath, err := e.resolveRepoPath(step.ResultPath, "result")
 			if err != nil {
-				return nil, fmt.Errorf("step %s invalid result path: %w", step.Name, err)
+				return &StepError{Step: step.Name, Err: fmt.Errorf("invalid result path: %w", err)}
 			}
-			if err := writeResultFile(resultPath, result); err != nil {
-				return nil, fmt.Errorf("write result for step %s: %w", step.Name, err)
+			if err := writeResultFile(resultPath, results[step.Name]); err != nil {
+				return &StepError{Step: step.Name, Err: fmt.Errorf("write result: %w", err)}
 			}
 		}
-		e.logf("[workflow] Step %s completed. Outputs: %v", step.Name, result)
+		e.logf("[workflow] Step %s completed. Outputs: %v", step.Name, results[step.Name])
+	}
+	return nil
+}
+
+func stepKind(step workflowStep) string {
+	if step.CoSim != nil {
+		return StepKindCoSim
+	}
+	return StepKindFMU
+}
+
+// validateSteps checks names and the fmu/cosim exclusivity for every step before anything runs.
+func validateSteps(workflowPath string, steps []workflowStep) error {
+	seen := make(map[string]struct{}, len(steps))
+	for _, step := range steps {
+		if step.Name == "" {
+			return fmt.Errorf("workflow %s contains a step without name", workflowPath)
+		}
+		if strings.HasPrefix(step.Name, "_") {
+			return fmt.Errorf("workflow step name %s is reserved (names starting with _ are reserved)", step.Name)
+		}
+		if strings.Contains(step.Name, ".") {
+			return fmt.Errorf("workflow step name %s must not contain a dot", step.Name)
+		}
+		if _, dup := seen[step.Name]; dup {
+			return fmt.Errorf("workflow step %s defined multiple times", step.Name)
+		}
+		seen[step.Name] = struct{}{}
+		if step.CoSim != nil {
+			if step.FMU != "" || step.StepSize != nil || step.StartTime != nil || step.StopTime != nil ||
+				len(step.StartValues) > 0 || len(step.StartFrom) > 0 || step.InputSeries != nil ||
+				step.Trace != nil || len(step.Outputs) > 0 {
+				return fmt.Errorf("step %s: cosim steps must not also set fmu, timing, start values, input_series, trace or outputs at step level", step.Name)
+			}
+			if err := ValidateCoSim(step.Name, step.CoSim); err != nil {
+				return err
+			}
+			continue
+		}
+		if step.FMU == "" {
+			return fmt.Errorf("step %s is missing its fmu path", step.Name)
+		}
+	}
+	return nil
+}
+
+func (e *Executor) runFMUStep(step workflowStep, results map[string]map[string]any, rec *runRecorder) error {
+	info := StepInfo{Name: step.Name, Kind: StepKindFMU}
+	started := e.now()
+	fail := func(err error) error {
+		rec.stepDone(info, e.now().Sub(started), nil, err)
+		return err
 	}
 
-	return results, nil
+	fmuPath, err := e.resolveRepoPath(step.FMU, "fmu")
+	if err != nil {
+		return fail(fmt.Errorf("invalid fmu path: %w", err))
+	}
+	if _, err := os.Stat(fmuPath); err != nil {
+		return fail(fmt.Errorf("references missing FMU %s: %w", fmuPath, err))
+	}
+	info.FMUs = []FMUDescriptor{rec.describeFMU(step.Name, fmuPath)}
+
+	startVals, err := e.buildStartValues(step.StartValues, step.StartFrom, results)
+	if err != nil {
+		return fail(fmt.Errorf("start values invalid: %w", err))
+	}
+	inputSeries, err := e.buildInputSeries(step.InputSeries)
+	if err != nil {
+		return fail(fmt.Errorf("input series invalid: %w", err))
+	}
+	trace, err := e.buildTraceConfig(step)
+	if err != nil {
+		return fail(fmt.Errorf("trace config invalid: %w", err))
+	}
+
+	cfg := fmi.Config{
+		FMUPath:     fmuPath,
+		StartValues: startVals,
+		Outputs:     step.Outputs,
+		Trace:       trace,
+		StartTime:   step.StartTime,
+		StopTime:    step.StopTime,
+		StepSize:    step.StepSize,
+	}
+	if inputSeries != nil {
+		cfg.InputSeries = inputSeries.Config
+	}
+
+	result, runErr := e.runFMU(cfg)
+	if inputSeries != nil && inputSeries.Cleanup != nil {
+		inputSeries.Cleanup()
+	}
+	var stats *fmi.Stats
+	if result != nil {
+		stats = &result.Stats
+	}
+	rec.stepDone(info, e.now().Sub(started), stats, runErr)
+	if runErr != nil {
+		return runErr
+	}
+	if result.Values == nil {
+		result.Values = map[string]any{}
+	}
+	results[step.Name] = result.Values
+	return nil
+}
+
+func (e *Executor) runCoSimStep(step workflowStep, results map[string]map[string]any, rec *runRecorder) error {
+	info := StepInfo{
+		Name:              step.Name,
+		Kind:              StepKindCoSim,
+		Scheme:            strings.ToLower(strings.TrimSpace(step.CoSim.Scheme)),
+		CommunicationStep: step.CoSim.CommunicationStep,
+	}
+	started := e.now()
+	fail := func(err error) error {
+		rec.stepDone(info, e.now().Sub(started), nil, err)
+		return err
+	}
+
+	resolved, err := e.buildCoSimConfig(step.Name, step.CoSim, results)
+	if err != nil {
+		return fail(err)
+	}
+	defer resolved.Cleanup()
+	for _, model := range step.CoSim.Models {
+		info.FMUs = append(info.FMUs, rec.describeFMU(model.Name, resolved.FMUPaths[model.Name]))
+	}
+
+	result, runErr := e.runCoSim(resolved.Config)
+	var stats *fmi.Stats
+	if result != nil {
+		stats = &result.Stats
+	}
+	rec.stepDone(info, e.now().Sub(started), stats, runErr)
+	if runErr != nil {
+		return runErr
+	}
+	if result.Values == nil {
+		result.Values = map[string]any{}
+	}
+	results[step.Name] = result.Values
+	return nil
 }
 
 func (e *Executor) logf(format string, args ...any) {
@@ -211,6 +375,7 @@ type workflowStep struct {
 	StartFrom   map[string]string `yaml:"start_from"`
 	InputSeries *inputSeriesSpec  `yaml:"input_series"`
 	Trace       *traceSpec        `yaml:"trace"`
+	CoSim       *CoSimSpec        `yaml:"cosim"`
 }
 
 type inputSeriesSpec struct {
@@ -295,24 +460,22 @@ func normalizeSyntheticCaseValue(value any) (any, error) {
 	}
 }
 
-func (e *Executor) buildStartValues(step workflowStep, results map[string]map[string]any) (map[string]string, error) {
+// buildStartValues encodes literal start values and resolves `start_from` references of the form
+// `step.variable` against earlier results. Cosim results use flattened `model.variable` keys, so a
+// reference like `cosim_step.battery.soc_percent` splits into step `cosim_step` and key
+// `battery.soc_percent`.
+func (e *Executor) buildStartValues(literal map[string]any, from map[string]string, results map[string]map[string]any) (map[string]string, error) {
 	values := make(map[string]string)
-	if len(step.StartValues) > 0 {
-		keys := make([]string, 0, len(step.StartValues))
-		for key := range step.StartValues {
-			keys = append(keys, key)
+	for _, key := range sortedKeys(literal) {
+		encoded, err := encodeScalar(literal[key])
+		if err != nil {
+			return nil, fmt.Errorf("start_values[%s]: %w", key, err)
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			encoded, err := encodeScalar(step.StartValues[key])
-			if err != nil {
-				return nil, fmt.Errorf("start_values[%s]: %w", key, err)
-			}
-			values[key] = encoded
-		}
+		values[key] = encoded
 	}
 
-	for target, reference := range step.StartFrom {
+	for _, target := range sortedKeys(from) {
+		reference := from[target]
 		stepName, variable, ok := strings.Cut(reference, ".")
 		if !ok || stepName == "" || variable == "" {
 			return nil, fmt.Errorf("start_from[%s] must use format step.variable", target)
@@ -340,19 +503,19 @@ type resolvedInputSeries struct {
 	Cleanup func()
 }
 
-func (e *Executor) buildInputSeries(step workflowStep) (*resolvedInputSeries, error) {
-	if step.InputSeries == nil {
+func (e *Executor) buildInputSeries(spec *inputSeriesSpec) (*resolvedInputSeries, error) {
+	if spec == nil {
 		return nil, nil
 	}
 
-	hasCSV := strings.TrimSpace(step.InputSeries.CSV) != ""
-	hasS3 := step.InputSeries.S3 != nil
+	hasCSV := strings.TrimSpace(spec.CSV) != ""
+	hasS3 := spec.S3 != nil
 
 	switch {
 	case hasCSV && hasS3:
 		return nil, fmt.Errorf("input_series must define exactly one source")
 	case hasCSV:
-		csvPath, err := e.resolveRepoPath(step.InputSeries.CSV, "input series")
+		csvPath, err := e.resolveRepoPath(spec.CSV, "input series")
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +524,7 @@ func (e *Executor) buildInputSeries(step workflowStep) (*resolvedInputSeries, er
 		}
 		return &resolvedInputSeries{Config: &fmi.InputSeriesConfig{CSVPath: csvPath}}, nil
 	case hasS3:
-		return e.buildS3InputSeries(*step.InputSeries.S3)
+		return e.buildS3InputSeries(*spec.S3)
 	default:
 		return nil, fmt.Errorf("input_series.csv or input_series.s3 is required")
 	}
@@ -420,7 +583,7 @@ func encodeScalar(value any) (string, error) {
 }
 
 func formatFloat(v float64) string {
-	return fmt.Sprintf("%.9g", v)
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
 func writeResultFile(path string, result map[string]any) error {
