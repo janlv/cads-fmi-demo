@@ -13,6 +13,7 @@ const state = {
   aeStatsResultsCache: new Map(),
   genericResult: null,
   genericResultsCache: new Map(),
+  runResultsInflight: new Set(),
   traceCharts: new Map(),
   hiddenTraceSeries: new Set(),
   runtimeProblems: [],
@@ -33,16 +34,19 @@ const CHEYLAS_WORKFLOW_PATHS = [
   "workflows/demonstrators/cheylas/control/fast_dewatering.yaml",
   "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml",
   "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml",
+  "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
 ];
 const LA_RANCE_WORKFLOW_PATHS = [
   "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml",
   "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml",
   "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml",
+  "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml",
 ];
 const ALQUEVA_WORKFLOW_PATHS = [
   "workflows/demonstrators/alqueva/control/fast_service_controller.yaml",
   "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml",
   "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml",
+  "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
 ];
 const VILARINHO_WORKFLOW_PATHS = [
   "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml",
@@ -52,6 +56,9 @@ const VILARINHO_WORKFLOW_PATHS = [
 const CIVECTOR_LABELS = ["Mean", "RMS", "Peak-to-Peak", "Skewness", "Kurtosis"];
 const SIMULINK_RESULT_RETRY_MS = 15_000;
 const AECIS_TREND_WINDOW_SECONDS = 2.5;
+const RUN_INFO_STEP = "_run";
+const FINISHED_RUN_PHASES = ["succeeded", "failed", "error"];
+const COSIM_MODEL_LABELS = { ems: "EMS", iot: "IoT", rul: "RUL" };
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
@@ -322,17 +329,149 @@ const STORHY_DASHBOARD_CONFIG = {
     ],
     valueBlocks: [STORHY_BENEFIT_VALUES, STORHY_RISK_VALUES],
   },
+  "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml": {
+    summary: [
+      "battery.soc_percent",
+      "battery.soh_percent",
+      "battery.rul_days",
+      "battery.cycle_count",
+      "ems.revenue_eur",
+      "kpi_score",
+      "risk_index",
+      "recommendation_code",
+    ],
+    charts: [
+      {
+        title: "Battery SoC And SoH",
+        description: "State of charge and state of health exchanged by the battery FMU at every communication point.",
+        step: "battery_ems",
+        signals: ["battery.soc_percent", "battery.soh_percent"],
+      },
+      {
+        title: "EMS Set-point Versus Battery Power",
+        description: "Gauss-Seidel ping-pong: the EMS set-point drives the battery, whose SoC feeds back into the EMS.",
+        step: "battery_ems",
+        signals: ["ems.power_setpoint_mw", "battery.power_actual_mw"],
+      },
+      {
+        title: "Day-ahead Price",
+        description: "Price seen by the EMS when it chooses to charge or discharge.",
+        step: "battery_ems",
+        signals: ["ems.price_eur_mwh"],
+      },
+      {
+        title: "Cumulative EMS Revenue",
+        description: "Revenue accumulated by the EMS over the simulated day.",
+        step: "battery_ems",
+        signals: ["ems.revenue_eur"],
+      },
+      {
+        title: "Battery Remaining Life",
+        description: "Battery RUL estimate as cycling accumulates.",
+        step: "battery_ems",
+        signals: ["battery.rul_days"],
+      },
+      STORHY_KPI_RISK_CHART,
+    ],
+    valueBlocks: [STORHY_BENEFIT_VALUES],
+  },
+  "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml": {
+    summary: [
+      "rul.rul_days",
+      "rul.damage_index",
+      "rul.status_code",
+      "iot.condition_indicator",
+      "iot.vibration_rms_mm_s",
+      "runner.start_stop_count",
+      "runner.stress_amplitude_mpa",
+      "recommendation_code",
+    ],
+    statusKey: "rul.status_code",
+    charts: [
+      {
+        title: "Lock-step Runner Load",
+        description: "Jacobi lock-step: the runner load is published to the IoT and RUL models at the same communication point.",
+        step: "runner_health",
+        signals: ["runner.load_pu"],
+      },
+      {
+        title: "Stress And Vibration",
+        description: "Runner stress amplitude and the vibration level observed by the IoT model.",
+        step: "runner_health",
+        signals: ["runner.stress_amplitude_mpa", "iot.vibration_rms_mm_s"],
+      },
+      {
+        title: "Condition And Damage",
+        description: "IoT condition indicator and the accumulated damage index computed by the RUL model.",
+        step: "runner_health",
+        signals: ["iot.condition_indicator", "rul.damage_index"],
+      },
+      {
+        title: "Runner Remaining Life",
+        description: "Remaining useful life from the coupled RUL model.",
+        step: "runner_health",
+        signals: ["rul.rul_days"],
+      },
+      { ...STORHY_MAINTENANCE_CHART, step: "predictive_maintenance" },
+    ],
+    valueBlocks: [STORHY_RISK_VALUES],
+  },
+  "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml": {
+    summary: [
+      "sediment.sediment_exposure",
+      "events.high_exposure.count",
+      "cleaning.cleaning_count",
+      "cleaning.cumulative_cost_eur",
+      "cleaning.downtime_h",
+      "sediment.tidal_head_m",
+      "sediment.sediment_concentration_g_l",
+    ],
+    charts: [
+      {
+        title: "Exposure Versus Threshold",
+        description: "Sediment exposure against the event threshold; the event flag is 1 while the cleaning trigger is raised.",
+        step: "sediment_cleaning",
+        signals: ["sediment.sediment_exposure", "events.high_exposure.active"],
+        eventThreshold: { step: "sediment_cleaning", event: "high_exposure" },
+      },
+      {
+        title: "Tidal Head",
+        description: "Tidal head driving sediment transport through the turbines.",
+        step: "sediment_cleaning",
+        signals: ["sediment.tidal_head_m"],
+      },
+      {
+        title: "Sediment Concentration",
+        description: "Suspended sediment concentration from the sediment model.",
+        step: "sediment_cleaning",
+        signals: ["sediment.sediment_concentration_g_l"],
+      },
+      {
+        title: "Cleaning Decisions",
+        description: "Cleanings triggered by the high-exposure event and the downtime they cost.",
+        step: "sediment_cleaning",
+        signals: ["cleaning.cleaning_count", "cleaning.downtime_h", "events.high_exposure.active"],
+      },
+      {
+        title: "Cumulative Cleaning Cost",
+        description: "Cost accumulated by the cleaning model.",
+        step: "sediment_cleaning",
+        signals: ["cleaning.cumulative_cost_eur"],
+      },
+    ],
+    valueBlocks: [],
+  },
 };
 const DEMONSTRATORS = [
   {
     id: "portfolio",
     label: "All demonstrators",
     shortLabel: "All sites",
-    location: "France and Portugal",
+    location: "France, Portugal and the United Kingdom",
     operator: "STOR-HY consortium",
     country: "Europe",
     focus: "Portfolio view for CADS workflow templates across the STOR-HY demonstrator set.",
-    capacity: "Five current pilot sites",
+    capacity: "Six pilot sites",
     workflowPaths: [],
     facts: [
       "Pumped-storage hydropower and tidal-storage use cases",
@@ -447,6 +586,27 @@ const DEMONSTRATORS = [
       "Main inlet valve and hydraulic short-circuit operation",
     ],
   },
+  {
+    id: "rheenergise",
+    label: "RheEnergise demonstrator",
+    shortLabel: "RheEnergise",
+    location: "Devon, United Kingdom",
+    operator: "RheEnergise",
+    country: "United Kingdom",
+    mapX: 42.5,
+    mapY: 17.6,
+    mapLabelX: 40.6,
+    mapLabelY: 14.9,
+    mapLabelAlign: "right",
+    mapSubtitle: "Scope to be decided",
+    focus: "Scope to be decided. No CADS workflow is mapped to this demonstrator yet.",
+    capacity: "Scope to be decided",
+    workflowPaths: [],
+    facts: [
+      "Sixth STOR-HY demonstrator site",
+      "Demonstrator scope and CADS workflows are still to be decided",
+    ],
+  },
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -538,7 +698,8 @@ function renderBanner() {
 
   if (problems.length === 0) {
     banner.className = "status-banner status-ready";
-    banner.innerHTML = "<strong>Ready.</strong>Select a demonstrator below to inspect its workflows and recent outputs.";
+    const version = state.config.version ? ` Dashboard ${escapeHTML(state.config.version)}.` : "";
+    banner.innerHTML = `<strong>Ready.</strong>Select a demonstrator below to inspect its workflows and recent outputs.${version}`;
     return;
   }
 
@@ -649,6 +810,11 @@ function workflowDescription(workflow) {
   return workflow.path || "";
 }
 
+function workflowMaxRuntimeLabel(workflow) {
+  const seconds = Number(workflow?.metadata?.limits?.maxRuntimeSeconds || state.config?.maxRuntimeSeconds || 0);
+  return seconds > 0 ? `max runtime ${formatDuration(seconds)}` : "";
+}
+
 function workflowModels(workflow) {
   return Array.isArray(workflow?.models)
     ? workflow.models.filter((model) => model && (model.name || model.label || model.fmu))
@@ -672,6 +838,7 @@ function renderWorkflowModelOverview(workflow) {
       <div class="workflow-model-section-title">Models</div>
       <div class="workflow-model-chain" aria-label="Workflow model sequence">
         ${models.map((model, index) => `
+          ${isCosimModel(model) ? renderCosimGroup(model, index, selectedIndex === index) : `
           <button
             class="workflow-model-node${selectedIndex === index ? " selected" : ""}"
             type="button"
@@ -682,6 +849,7 @@ function renderWorkflowModelOverview(workflow) {
             <span class="workflow-model-index">${index + 1}</span>
             <span>${escapeHTML(workflowModelLabel(model))}</span>
           </button>
+          `}
           ${index < models.length - 1 ? '<span class="workflow-model-arrow" aria-hidden="true">&rarr;</span>' : ""}
         `).join("")}
       </div>
@@ -704,6 +872,9 @@ function toggleWorkflowModel(index) {
 }
 
 function renderWorkflowModelCard(model, index) {
+  if (isCosimModel(model)) {
+    return renderCosimStepCard(model, index);
+  }
   const fmuName = model.fmu ? model.fmu.split("/").pop() : "";
   const startInputs = workflowStartInputLabels(model, index);
   return `
@@ -722,6 +893,243 @@ function renderWorkflowModelCard(model, index) {
         <span>Outputs</span>
         <div class="workflow-model-chip-row">${renderWorkflowChips(model.outputs, 6)}</div>
       </div>
+      ${renderWorkflowModelProblems(model)}
+    </article>
+  `;
+}
+
+function isCosimModel(model) {
+  return model?.kind === "cosim" && Boolean(model.cosim);
+}
+
+function renderWorkflowModelProblems(model) {
+  const problems = Array.isArray(model?.problems) ? model.problems.filter(Boolean) : [];
+  if (problems.length === 0) {
+    return "";
+  }
+  return `
+    <ul class="workflow-model-problems">
+      ${problems.map((problem) => `<li>${escapeHTML(problem)}</li>`).join("")}
+    </ul>
+  `;
+}
+
+function cosimSchemeLabel(scheme) {
+  switch (String(scheme || "").toLowerCase()) {
+    case "gauss_seidel":
+      return "Gauss-Seidel (ping-pong)";
+    case "jacobi":
+      return "Jacobi (lock-step)";
+    default:
+      return scheme ? formatWorkflowCategory(scheme) : "Co-simulation";
+  }
+}
+
+function cosimVarModel(ref) {
+  return String(ref || "").split(".")[0];
+}
+
+// Collapses directed FMU connections into model-level edges; a pair connected
+// in both directions becomes one bidirectional edge (rendered "a <-> b").
+function cosimEdges(cosim) {
+  const connections = Array.isArray(cosim?.connections) ? cosim.connections : [];
+  const directed = new Map();
+  for (const connection of connections) {
+    const from = connection?.fromModel || cosimVarModel(connection?.from);
+    const to = connection?.toModel || cosimVarModel(connection?.to);
+    if (!from || !to) {
+      continue;
+    }
+    const key = `${from}\u0000${to}`;
+    if (!directed.has(key)) {
+      directed.set(key, { from, to, connections: [] });
+    }
+    directed.get(key).connections.push(connection);
+  }
+
+  const edges = [];
+  const consumed = new Set();
+  for (const [key, edge] of directed) {
+    if (consumed.has(key)) {
+      continue;
+    }
+    consumed.add(key);
+    const reverseKey = `${edge.to}\u0000${edge.from}`;
+    const reverse = edge.from !== edge.to ? directed.get(reverseKey) : null;
+    if (reverse) {
+      consumed.add(reverseKey);
+    }
+    edges.push({
+      from: edge.from,
+      to: edge.to,
+      bidirectional: Boolean(reverse),
+      count: edge.connections.length + (reverse ? reverse.connections.length : 0),
+    });
+  }
+  return edges;
+}
+
+function cosimPatterns(cosim) {
+  if (Array.isArray(cosim?.patterns) && cosim.patterns.length > 0) {
+    return cosim.patterns.map((pattern) => formatWorkflowCategory(pattern)).filter(Boolean);
+  }
+  const edges = cosimEdges(cosim);
+  const scheme = String(cosim?.scheme || "").toLowerCase();
+  const patterns = [];
+  if (scheme === "gauss_seidel" && edges.some((edge) => edge.bidirectional)) {
+    patterns.push("sequential ping-pong");
+  }
+  if (scheme === "jacobi") {
+    patterns.push("parallel lock-step");
+  }
+  if (edges.some((edge) => !edge.bidirectional)) {
+    patterns.push("one-way");
+  }
+  if (Array.isArray(cosim?.events) && cosim.events.length > 0) {
+    patterns.push("event-driven");
+  }
+  return patterns;
+}
+
+function cosimEventText(event) {
+  const name = event?.name || "event";
+  const when = event?.when ? ` when ${event.when}` : "";
+  const target = event?.set ? ` sets ${event.set}` : "";
+  const mode = event?.mode ? ` (${event.mode})` : "";
+  return `event: ${name}${when}${target}${mode}`;
+}
+
+function renderCosimGroup(model, index, isSelected) {
+  const cosim = model.cosim || {};
+  const members = Array.isArray(cosim.models) ? cosim.models : [];
+  const edges = cosimEdges(cosim);
+  const events = Array.isArray(cosim.events) ? cosim.events : [];
+  const patterns = cosimPatterns(cosim);
+  const label = workflowModelLabel(model);
+  return `
+    <div class="workflow-cosim-group${isSelected ? " selected" : ""}" role="group" aria-label="${escapeHTML(label)} co-simulation">
+      <div class="workflow-cosim-head">
+        <button
+          class="workflow-model-node${isSelected ? " selected" : ""}"
+          type="button"
+          aria-expanded="${isSelected ? "true" : "false"}"
+          aria-label="Show ${escapeHTML(label)} details"
+          data-select-workflow-model="${index}"
+        >
+          <span class="workflow-model-index">${index + 1}</span>
+          <span>${escapeHTML(label)}</span>
+        </button>
+        <span class="cosim-scheme-badge">${escapeHTML(cosimSchemeLabel(cosim.scheme))}</span>
+      </div>
+      ${members.length > 0 ? `
+        <div class="cosim-member-row">
+          ${members.map((member) => `<span class="cosim-model-pill">${escapeHTML(member.label || member.name || "model")}</span>`).join("")}
+        </div>
+      ` : ""}
+      ${edges.length > 0 ? `
+        <ul class="cosim-edge-list" aria-label="Coupling">
+          ${edges.map((edge) => `<li><code>${escapeHTML(`${edge.from} ${edge.bidirectional ? "<->" : "->"} ${edge.to}`)}</code></li>`).join("")}
+        </ul>
+      ` : ""}
+      ${events.map((event) => `<div class="cosim-event-line">${escapeHTML(cosimEventText(event))}</div>`).join("")}
+      ${patterns.length > 0 ? `<div class="cosim-pattern-line">${escapeHTML(patterns.join(" | "))}</div>` : ""}
+      ${Array.isArray(model.problems) && model.problems.length > 0 ? '<div class="cosim-problem-flag">Invalid co-simulation spec, see details</div>' : ""}
+    </div>
+  `;
+}
+
+function cosimMemberInputs(member) {
+  const labels = [];
+  for (const input of Array.isArray(member?.inputs) ? member.inputs : []) {
+    if (typeof input === "string") {
+      labels.push(input);
+    } else if (input && (input.name || input.source)) {
+      labels.push(input.source && input.name ? `${input.source} -> ${input.name}` : input.name || input.source);
+    }
+  }
+  if (member?.inputSeries) {
+    labels.push(member.inputSeries);
+  }
+  return labels;
+}
+
+function cosimMemberParameters(member) {
+  const parameters = member?.parameters;
+  if (Array.isArray(parameters)) {
+    return parameters;
+  }
+  if (parameters && typeof parameters === "object") {
+    return Object.entries(parameters).map(([key, value]) => `${key}=${value}`);
+  }
+  return [];
+}
+
+function renderCosimStepCard(model, index) {
+  const cosim = model.cosim || {};
+  const members = Array.isArray(cosim.models) ? cosim.models : [];
+  const connections = Array.isArray(cosim.connections) ? cosim.connections : [];
+  const events = Array.isArray(cosim.events) ? cosim.events : [];
+  const startInputs = workflowStartInputLabels(model, index);
+  const timing = [
+    cosimSchemeLabel(cosim.scheme),
+    Number.isFinite(Number(cosim.stopTime)) && cosim.stopTime !== undefined
+      ? `${formatSimDuration(cosim.startTime || 0)} to ${formatSimDuration(cosim.stopTime)}`
+      : "",
+    Number(cosim.communicationStep) > 0 ? `H = ${formatSimDuration(cosim.communicationStep)}` : "",
+  ].filter(Boolean).join(" | ");
+  return `
+    <article class="workflow-model-card workflow-cosim-card">
+      <h4>
+        <span>${index + 1}. ${escapeHTML(workflowModelLabel(model))}</span>
+        <code>${escapeHTML(timing)}</code>
+      </h4>
+      ${members.length > 0 ? `
+        <div class="workflow-model-row">
+          <span>Models</span>
+          <div class="cosim-table-wrap">
+            <table class="cosim-model-table">
+              <thead><tr><th>Model</th><th>FMU</th><th>Parameters</th><th>Inputs</th></tr></thead>
+              <tbody>
+                ${members.map((member) => `
+                  <tr>
+                    <td><strong>${escapeHTML(member.label || member.name || "model")}</strong></td>
+                    <td><code>${escapeHTML(String(member.fmu || "n/a").split("/").pop())}</code></td>
+                    <td>${renderWorkflowChips(cosimMemberParameters(member), 4)}</td>
+                    <td>${renderWorkflowChips(cosimMemberInputs(member), 4)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ""}
+      <div class="workflow-model-row">
+        <span>Connections</span>
+        ${connections.length > 0 ? `
+          <ul class="cosim-connection-list">
+            ${connections.map((connection) => `<li><code>${escapeHTML(`${connection.from || ""} -> ${connection.to || ""}`)}</code></li>`).join("")}
+          </ul>
+        ` : '<span class="workflow-model-muted">none (independent models)</span>'}
+      </div>
+      ${events.length > 0 ? `
+        <div class="workflow-model-row">
+          <span>Events</span>
+          <ul class="cosim-connection-list">
+            ${events.map((event) => `<li><code>${escapeHTML(cosimEventText(event))}</code></li>`).join("")}
+          </ul>
+        </div>
+      ` : ""}
+      ${startInputs.length > 0 ? `
+        <div class="workflow-model-row">
+          <span>Step inputs</span>
+          <div class="workflow-model-chip-row">${renderWorkflowChips(startInputs, 6)}</div>
+        </div>
+      ` : ""}
+      <div class="workflow-model-row">
+        <span>Outputs</span>
+        <div class="workflow-model-chip-row">${renderWorkflowChips(model.outputs, 8)}</div>
+      </div>
+      ${renderWorkflowModelProblems(model)}
     </article>
   `;
 }
@@ -730,7 +1138,14 @@ function renderWorkflowModelCard(model, index) {
 function workflowStartInputLabels(model, index) {
   const inputs = Array.isArray(model.inputs) ? model.inputs : [];
   if (inputs.length > 0) {
-    return inputs.map((input) => input.name || input.source).filter(Boolean);
+    return inputs
+      .map((input) => {
+        if (input?.sourceStep && input?.sourceOutput && input?.name) {
+          return `${input.sourceStep}.${input.sourceOutput} -> ${input.name}`;
+        }
+        return input?.name || input?.source;
+      })
+      .filter(Boolean);
   }
 
   const labels = [];
@@ -884,6 +1299,16 @@ function selectedWorkflowRuns() {
 
 function successfulSelectedWorkflowRuns() {
   return selectedWorkflowRuns().filter((run) => String(run.phase || "").toLowerCase() === "succeeded");
+}
+
+function isFinishedRunPhase(phase) {
+  return FINISHED_RUN_PHASES.includes(String(phase || "").toLowerCase());
+}
+
+// Succeeded, failed, and errored runs all publish (possibly partial) results
+// plus the _run provenance block, so the output panel follows the latest one.
+function finishedSelectedWorkflowRuns() {
+  return selectedWorkflowRuns().filter((run) => isFinishedRunPhase(run.phase));
 }
 
 function renderDemonstrators() {
@@ -1049,6 +1474,7 @@ function renderWorkflows() {
       ? [
           formatWorkflowCategory(workflowCategory(selected)),
           `${selected.stepCount} step${selected.stepCount === 1 ? "" : "s"}`,
+          workflowMaxRuntimeLabel(selected),
         ].filter(Boolean).join(" | ")
       : "";
     context.innerHTML = `
@@ -1379,12 +1805,12 @@ async function loadSelectedWorkflowResult() {
 }
 
 async function loadGenericWorkflowResult(workflow) {
-  const candidates = successfulSelectedWorkflowRuns();
+  const candidates = finishedSelectedWorkflowRuns();
   if (candidates.length === 0) {
     state.genericResult = {
       state: "empty",
       workflowPath: workflow.path,
-      message: `No successful ${workflowLabel(workflow)} run has been observed yet.`,
+      message: `No finished ${workflowLabel(workflow)} run has been observed yet.`,
     };
     return;
   }
@@ -1585,7 +2011,7 @@ function renderStorhyMockResult(container, workflow) {
   const result = state.genericResult;
 
   if (!result || result.workflowPath !== workflow.path || result.state === "loading") {
-    container.innerHTML = '<div class="empty-state">Waiting for the latest successful STOR-HY replica workflow result…</div>';
+    container.innerHTML = '<div class="empty-state">Waiting for the latest finished STOR-HY replica workflow result…</div>';
     return;
   }
 
@@ -1600,22 +2026,42 @@ function renderStorhyMockResult(container, workflow) {
   }
 
   const payload = result.payload || {};
-  const stepEntries = Object.entries(payload.stepResults || {});
+  const run = runSummaryByName(payload.runName || result.runName);
   const syntheticCase = payload.stepResults?._synthetic_case || null;
-  const modelStepEntries = stepEntries.filter(([stepName]) => !stepName.startsWith("_"));
+  const modelStepEntries = modelStepEntriesOf(payload);
+  const alertBanner = renderRunAlertBanner(payload, run);
+  const resultHead = `
+    <div class="result-head">
+      <h3>${escapeHTML(payload.runName || result.runName)}</h3>
+      <div class="result-head-actions">
+        ${renderResultExportButtons(payload)}
+        <span class="result-kind-pill result-kind-storhy">STOR-HY Mock</span>
+      </div>
+    </div>
+  `;
   if (modelStepEntries.length === 0) {
-    container.innerHTML = '<div class="empty-state">The latest run did not publish structured step results.</div>';
+    container.innerHTML = `
+      <article class="result-card storhy-summary-card">
+        ${alertBanner}
+        ${resultHead}
+        <div class="result-meta">
+          <div>${escapeHTML(payload.workflowPath || workflow.path)}</div>
+          ${renderRunTimingStrip(payload, run)}
+        </div>
+        ${renderStorhyStepChain(payload, modelStepEntries)}
+        <div class="empty-state">The latest run did not publish structured step results.</div>
+      </article>
+    `;
+    bindResultExportButtons(container);
     return;
   }
 
   const dashboardConfig = storhyDashboardConfig(workflow);
   const [summaryStepName, summaryStep] = preferredStorhySummaryStep(modelStepEntries);
   const metricCards = buildStorhyMetricCards(modelStepEntries, dashboardConfig.summary || STORHY_DEFAULT_SUMMARY).join("");
-  const status = storhyStatus(summaryStep?.status_code);
-  const recommendation = storhyRecommendation(summaryStep?.recommendation_code);
   const syntheticCaseMarkup = renderStorhySyntheticCase(syntheticCase);
   const valueBlocks = renderStorhyValueBlocks(modelStepEntries, dashboardConfig.valueBlocks || []);
-  const configuredTraceCards = renderStorhyConfiguredTraceCards(modelStepEntries, dashboardConfig.charts || []);
+  const configuredTraceCards = renderStorhyConfiguredTraceCards(modelStepEntries, dashboardConfig.charts || [], workflow);
   const fallbackTraceCard = configuredTraceCards
     ? ""
     : renderStorhyFallbackTraceCard(modelStepEntries);
@@ -1623,37 +2069,84 @@ function renderStorhyMockResult(container, workflow) {
 
   container.innerHTML = `
     <article class="result-card storhy-summary-card">
-      <div class="result-head">
-        <h3>${escapeHTML(payload.runName || result.runName)}</h3>
-        <span class="result-kind-pill result-kind-storhy">STOR-HY Mock</span>
-      </div>
+      ${alertBanner}
+      ${resultHead}
       <div class="result-meta">
         <div>${escapeHTML(payload.workflowPath || workflow.path)}</div>
         <div>${modelStepEntries.length} model step${modelStepEntries.length === 1 ? "" : "s"}</div>
         <div>summary step ${escapeHTML(summaryStepName)}</div>
+        ${renderRunTimingStrip(payload, run)}
       </div>
       ${buildGenericFallbackMarkup(result)}
-      <div class="storhy-model-chain" aria-label="Replica model chain">
-        ${modelStepEntries.map(([stepName]) => `<span>${escapeHTML(formatWorkflowCategory(stepName))}</span>`).join("")}
-      </div>
+      ${renderStorhyStepChain(payload, modelStepEntries)}
       ${syntheticCaseMarkup}
       ${metricCards ? `<div class="metric-grid storhy-metric-grid">${metricCards}</div>` : ""}
       ${valueBlocks ? `<div class="storhy-visual-grid">${valueBlocks}</div>` : ""}
-      <div class="storhy-decision-grid">
-        <div class="storhy-decision-card">
-          <span class="metric-label">Status</span>
-          <strong>${escapeHTML(status.label)}</strong>
-          <p>${escapeHTML(status.description)}</p>
-        </div>
-        <div class="storhy-decision-card">
-          <span class="metric-label">Recommendation</span>
-          <strong>${escapeHTML(recommendation.label)}</strong>
-          <p>${escapeHTML(recommendation.description)}</p>
-        </div>
-      </div>
+      ${renderStorhyDecisionGrid(modelStepEntries, summaryStep, dashboardConfig)}
     </article>
     ${traceCards ? `<div class="trace-stack">${traceCards}</div>` : ""}
   `;
+  bindResultExportButtons(container);
+}
+
+function modelStepEntriesOf(payload) {
+  return Object.entries(payload?.stepResults || {}).filter(
+    ([stepName, stepResult]) => !stepName.startsWith("_") && stepResult && typeof stepResult === "object",
+  );
+}
+
+// Chain of workflow steps; uses _run.steps when present so failed and skipped
+// steps (which publish no results) still appear and the failed one is highlighted.
+function renderStorhyStepChain(payload, modelStepEntries) {
+  const info = runInfo(payload);
+  const failedStep = info?.failed_step || payload?.failedStep || "";
+  const steps = Array.isArray(info?.steps) && info.steps.length > 0
+    ? info.steps.map((step) => ({ name: step?.name || "", status: String(step?.status || "").toLowerCase(), kind: step?.kind || "" }))
+    : modelStepEntries.map(([stepName]) => ({ name: stepName, status: "", kind: "" }));
+  if (steps.length === 0) {
+    return "";
+  }
+  return `
+    <div class="storhy-model-chain" aria-label="Replica model chain">
+      ${steps.map((step) => {
+        const status = step.name && step.name === failedStep ? "failed" : step.status;
+        const statusClass = status ? ` chain-step-${traceSlug(status, "unknown")}` : "";
+        const title = [step.kind === "cosim" ? "co-simulation step" : "", status].filter(Boolean).join(", ");
+        return `<span class="chain-step${statusClass}"${title ? ` title="${escapeHTML(title)}"` : ""}>${escapeHTML(formatWorkflowCategory(step.name))}${step.kind === "cosim" ? ' <em class="chain-step-kind">co-sim</em>' : ""}${status && status !== "succeeded" ? ` <em class="chain-step-kind">${escapeHTML(status)}</em>` : ""}</span>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderStorhyDecisionGrid(modelStepEntries, summaryStep, dashboardConfig) {
+  const statusValue = dashboardConfig.statusKey
+    ? findStorhyMetricValue(modelStepEntries, dashboardConfig.statusKey)?.value
+    : summaryStep?.status_code;
+  const recommendationValue = summaryStep?.recommendation_code !== undefined
+    ? summaryStep.recommendation_code
+    : findStorhyMetricValue(modelStepEntries, "recommendation_code")?.value;
+  const cards = [];
+  if (statusValue !== undefined && statusValue !== null) {
+    const status = storhyStatus(statusValue);
+    cards.push(`
+      <div class="storhy-decision-card">
+        <span class="metric-label">Status</span>
+        <strong>${escapeHTML(status.label)}</strong>
+        <p>${escapeHTML(status.description)}</p>
+      </div>
+    `);
+  }
+  if (recommendationValue !== undefined && recommendationValue !== null) {
+    const recommendation = storhyRecommendation(recommendationValue);
+    cards.push(`
+      <div class="storhy-decision-card">
+        <span class="metric-label">Recommendation</span>
+        <strong>${escapeHTML(recommendation.label)}</strong>
+        <p>${escapeHTML(recommendation.description)}</p>
+      </div>
+    `);
+  }
+  return cards.length > 0 ? `<div class="storhy-decision-grid">${cards.join("")}</div>` : "";
 }
 
 function storhyDashboardConfig(workflow) {
@@ -1709,8 +2202,47 @@ function normalizeStorhyMetricSpec(metricSpec) {
 }
 
 function storhyMetricLabel(key) {
+  const text = String(key || "");
+  const parts = text.split(".");
+  if (parts.length === 3 && parts[0] === "events") {
+    const eventName = formatWorkflowCategory(parts[1]);
+    const eventLabel = eventName.charAt(0).toUpperCase() + eventName.slice(1);
+    if (parts[2] === "count") {
+      return `${eventLabel} events`;
+    }
+    if (parts[2] === "active") {
+      return `${eventLabel} active`;
+    }
+    return `${eventLabel} ${formatWorkflowCategory(parts[2])}`;
+  }
+  if (parts.length >= 2) {
+    const model = parts[0];
+    const variable = parts.slice(1).join(".");
+    const modelLabel = COSIM_MODEL_LABELS[model] || formatWorkflowCategory(model);
+    return `${storhyBaseMetricLabel(variable)} (${modelLabel})`;
+  }
+  return storhyBaseMetricLabel(text);
+}
+
+function storhyBaseMetricLabel(key) {
   const labels = {
     availability_delta_percent: "Availability delta",
+    cleaning_count: "Cleanings",
+    condition_indicator: "Condition indicator",
+    cumulative_cost_eur: "Cumulative cost",
+    cycle_count: "Cycle count",
+    downtime_h: "Downtime",
+    load_pu: "Load",
+    power_actual_mw: "Actual power",
+    power_setpoint_mw: "Power set-point",
+    price_eur_mwh: "Price",
+    revenue_eur: "Revenue",
+    sediment_concentration_g_l: "Sediment concentration",
+    soh_percent: "State of health",
+    start_stop_count: "Start-stop count",
+    stress_amplitude_mpa: "Stress amplitude",
+    tidal_head_m: "Tidal head",
+    vibration_rms_mm_s: "Vibration RMS",
     biofouling_index: "Biofouling index",
     co2_delta_tonnes: "CO2 delta",
     confidence: "Confidence",
@@ -1755,6 +2287,19 @@ function findStorhyMetricValue(stepEntries, key, preferredStep = "") {
       };
     }
   }
+  // Fall back to the final trace sample: cosim summary keys may be trace-only signals.
+  const candidates = preferredStep
+    ? stepEntries.filter(([stepName]) => stepName === preferredStep)
+    : [...stepEntries].reverse();
+  for (const [stepName, stepResult] of candidates) {
+    const series = stepResult?.trace?.signals?.[key];
+    if (Array.isArray(series) && series.length > 0) {
+      return {
+        stepName,
+        value: series[series.length - 1],
+      };
+    }
+  }
   return null;
 }
 
@@ -1763,23 +2308,41 @@ function formatStorhyMetric(key, value) {
   if (!Number.isFinite(numeric)) {
     return String(value);
   }
-  if (key === "status_code") {
+  const name = String(key || "");
+  if (name === "status_code" || name.endsWith(".status_code")) {
     return storhyStatus(numeric).label;
   }
-  if (key === "recommendation_code") {
+  if (name === "recommendation_code" || name.endsWith(".recommendation_code")) {
     return storhyRecommendation(numeric).label;
   }
-  if (key.endsWith("_percent")) {
+  if (name.endsWith("_percent")) {
     return `${formatMetric(numeric)}%`;
   }
-  if (key.endsWith("_eur")) {
+  if (name.endsWith("_eur_mwh")) {
+    return `${formatMetric(numeric)} EUR/MWh`;
+  }
+  if (name.endsWith("_eur")) {
     return `${formatMetric(numeric)} EUR`;
   }
-  if (key.endsWith("_tonnes")) {
+  if (name.endsWith("_tonnes")) {
     return `${formatMetric(numeric)} t`;
   }
-  if (key === "rul_days") {
+  if (name.endsWith("rul_days")) {
     return `${formatMetric(numeric)} days`;
+  }
+  const units = [
+    ["_mm_s", "mm/s"],
+    ["_g_l", "g/L"],
+    ["_mpa", "MPa"],
+    ["_mw", "MW"],
+    ["_pu", "p.u."],
+    ["_h", "h"],
+    ["_m", "m"],
+  ];
+  for (const [suffix, unit] of units) {
+    if (name.endsWith(suffix)) {
+      return `${formatMetric(numeric)} ${unit}`;
+    }
   }
   return formatMetric(numeric);
 }
@@ -1892,14 +2455,14 @@ function renderStorhyFallbackTraceCard(stepEntries) {
   );
 }
 
-function renderStorhyConfiguredTraceCards(stepEntries, chartSpecs) {
+function renderStorhyConfiguredTraceCards(stepEntries, chartSpecs, workflow = null) {
   return chartSpecs
-    .map((chartSpec) => renderStorhyConfiguredTraceCard(stepEntries, chartSpec))
+    .map((chartSpec) => renderStorhyConfiguredTraceCard(stepEntries, chartSpec, workflow))
     .filter(Boolean)
     .join("");
 }
 
-function renderStorhyConfiguredTraceCard(stepEntries, chartSpec) {
+function renderStorhyConfiguredTraceCard(stepEntries, chartSpec, workflow = null) {
   const candidates = chartSpec.step
     ? stepEntries.filter(([stepName]) => stepName === chartSpec.step)
     : stepEntries;
@@ -1911,6 +2474,16 @@ function renderStorhyConfiguredTraceCard(stepEntries, chartSpec) {
     const series = buildStorhyConfiguredTraceSeries(trace, chartSpec.signals || []);
     if (series.length === 0) {
       continue;
+    }
+    const threshold = chartSpec.eventThreshold
+      ? cosimEventThreshold(workflow, chartSpec.eventThreshold.step || stepName, chartSpec.eventThreshold.event)
+      : null;
+    if (threshold) {
+      series.push({
+        name: `Threshold ${threshold.op} ${formatMetric(threshold.value)}`,
+        color: "#a53f2b",
+        values: trace.times.map(() => threshold.value),
+      });
     }
     return renderTraceCard(
       chartSpec.title || "Workflow Trace",
@@ -1943,6 +2516,19 @@ function buildStorhyConfiguredTraceSeries(trace, signalSpecs) {
       };
     })
     .filter(Boolean);
+}
+
+// Reads the numeric threshold of a cosim event ("model.var > 0.8") from the
+// workflow catalog so the chart reference line follows the YAML.
+function cosimEventThreshold(workflow, stepName, eventName) {
+  const step = workflowModels(workflow).find((model) => isCosimModel(model) && model.name === stepName);
+  const event = (step?.cosim?.events || []).find((item) => item?.name === eventName);
+  const match = /^\s*([A-Za-z_][\w.]*)\s*(<=|>=|==|!=|<|>)\s*(-?[0-9.]+(?:[eE][-+]?\d+)?)\s*$/.exec(String(event?.when || ""));
+  if (!match) {
+    return null;
+  }
+  const value = Number(match[3]);
+  return Number.isFinite(value) ? { signal: match[1], op: match[2], value } : null;
 }
 
 function normalizeStorhySignalSpec(signalSpec) {
@@ -2008,7 +2594,7 @@ function storhyValueScaleType(key) {
   if (key.endsWith("_percent")) {
     return "percent";
   }
-  if (key.endsWith("_index") || key === "confidence" || key === "sediment_exposure") {
+  if (key.endsWith("_index") || key.endsWith("confidence") || key.endsWith("sediment_exposure") || key.endsWith("condition_indicator")) {
     return "ratio";
   }
   return "absolute";
@@ -2048,7 +2634,7 @@ function renderGenericWorkflowResult(container, workflow) {
   const result = state.genericResult;
 
   if (!result || result.workflowPath !== workflow.path || result.state === "loading") {
-    container.innerHTML = '<div class="empty-state">Waiting for the latest successful workflow result…</div>';
+    container.innerHTML = '<div class="empty-state">Waiting for the latest finished workflow result…</div>';
     return;
   }
 
@@ -2063,7 +2649,8 @@ function renderGenericWorkflowResult(container, workflow) {
   }
 
   const payload = result.payload || {};
-  const stepEntries = Object.entries(payload.stepResults || {});
+  const run = runSummaryByName(payload.runName || result.runName);
+  const stepEntries = Object.entries(payload.stepResults || {}).filter(([stepName]) => !stepName.startsWith("_"));
   const stepSummary = stepEntries
     .map(([stepName, stepResult]) => {
       const valueCount = stepResult && typeof stepResult === "object" ? Object.keys(stepResult).length : 1;
@@ -2078,19 +2665,226 @@ function renderGenericWorkflowResult(container, workflow) {
 
   container.innerHTML = `
     <article class="result-card">
+      ${renderRunAlertBanner(payload, run)}
       <div class="result-head">
         <h3>${escapeHTML(payload.runName || result.runName)}</h3>
-        <span class="result-kind-pill result-kind-trace">Structured Result</span>
+        <div class="result-head-actions">
+          ${renderResultExportButtons(payload)}
+          <span class="result-kind-pill result-kind-trace">Structured Result</span>
+        </div>
       </div>
       <div class="result-meta">
         <div>${escapeHTML(payload.workflowPath || workflow.path)}</div>
         <div>${stepEntries.length} step result${stepEntries.length === 1 ? "" : "s"}</div>
+        ${renderRunTimingStrip(payload, run)}
       </div>
       ${buildGenericFallbackMarkup(result)}
       ${stepSummary ? `<div class="metric-grid">${stepSummary}</div>` : ""}
       <pre class="result-json">${escapeHTML(JSON.stringify(payload, null, 2))}</pre>
     </article>
   `;
+  bindResultExportButtons(container);
+}
+
+function runSummaryByName(runName) {
+  return state.runs.find((run) => run.name === runName) || null;
+}
+
+function runInfo(payload) {
+  const info = payload?.stepResults?.[RUN_INFO_STEP];
+  return info && typeof info === "object" && !Array.isArray(info) ? info : null;
+}
+
+// Combines the Argo phase, the runner's _run block, and the results endpoint
+// fields into one outcome used by the alert banner and run pills.
+function runOutcome(payload, run) {
+  const info = runInfo(payload);
+  const phase = String(payload?.phase || run?.phase || "").toLowerCase();
+  let status = String(info?.status || payload?.status || "").toLowerCase();
+  if (!status) {
+    status = phase === "failed" || phase === "error" ? "failed" : phase;
+  }
+  if ((phase === "failed" || phase === "error") && status === "succeeded") {
+    status = "failed";
+  }
+  const deadlineExceeded = Boolean(run?.deadlineExceeded);
+  return {
+    status,
+    phase,
+    failed: status === "failed" || status === "error" || status === "cancelled" || deadlineExceeded,
+    cancelled: status === "cancelled",
+    partial: Boolean(payload?.partial),
+    deadlineExceeded,
+    deadlineSeconds: Number(run?.deadlineSeconds || 0),
+    failedStep: info?.failed_step || payload?.failedStep || "",
+    error: info?.error || payload?.error || run?.message || "",
+  };
+}
+
+function renderRunAlertBanner(payload, run) {
+  const outcome = runOutcome(payload, run);
+  if (!outcome.failed && !outcome.partial) {
+    return "";
+  }
+  let title = "Run failed";
+  if (outcome.deadlineExceeded) {
+    title = outcome.deadlineSeconds > 0
+      ? `Max execution time exceeded (${formatDuration(outcome.deadlineSeconds)})`
+      : "Max execution time exceeded";
+  } else if (outcome.cancelled) {
+    title = "Run cancelled";
+  } else if (!outcome.failed) {
+    title = "Partial result";
+  }
+  const hasResults = modelStepEntriesOf(payload).length > 0;
+  return `
+    <div class="run-alert" role="alert">
+      <strong>${escapeHTML(title)}</strong>
+      ${outcome.failedStep ? `<span>Failed at step <code>${escapeHTML(outcome.failedStep)}</code>.</span>` : ""}
+      ${outcome.error ? `<span class="run-alert-error">${escapeHTML(outcome.error)}</span>` : ""}
+      <span>${hasResults
+        ? "Showing results from the steps that completed before the run stopped."
+        : "No step results were recovered from the run logs."}</span>
+    </div>
+  `;
+}
+
+function renderRunTimingStrip(payload, run) {
+  const info = runInfo(payload);
+  const items = [];
+  if (info) {
+    if (Number.isFinite(Number(info.wall_seconds)) && info.wall_seconds !== null) {
+      items.push(["wall", formatWallSeconds(info.wall_seconds)]);
+    }
+    if (Number.isFinite(Number(info.simulated_seconds)) && info.simulated_seconds !== null) {
+      items.push(["simulated", formatSimDuration(info.simulated_seconds)]);
+    }
+    if (Number.isFinite(Number(info.ratio)) && info.ratio !== null && Number(info.ratio) > 0) {
+      items.push(["", formatRatio(info.ratio)]);
+    }
+    if (info.status) {
+      items.push(["status", String(info.status)]);
+    }
+  } else if (run && Number(run.durationSeconds) > 0) {
+    items.push(["pod duration", formatDuration(run.durationSeconds)]);
+  }
+  if (items.length === 0) {
+    return "";
+  }
+  return `
+    <div class="run-timing-strip" aria-label="Run timing">
+      ${items.map(([label, value]) => `<span><strong>${escapeHTML(value)}</strong>${label ? ` ${escapeHTML(label)}` : ""}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderResultExportButtons(payload) {
+  const hasTrace = modelStepEntriesOf(payload).some(([, stepResult]) => extractSimulinkTrace(stepResult));
+  const hasOutputs = modelStepEntriesOf(payload).length > 0;
+  if (!hasTrace && !hasOutputs) {
+    return "";
+  }
+  return `
+    <span class="result-export-buttons">
+      ${hasTrace ? '<button type="button" class="result-export-button" data-export-csv="trace">Trace CSV</button>' : ""}
+      ${hasOutputs ? '<button type="button" class="result-export-button" data-export-csv="outputs">Outputs CSV</button>' : ""}
+    </span>
+  `;
+}
+
+function bindResultExportButtons(container) {
+  for (const button of container.querySelectorAll("[data-export-csv]")) {
+    button.addEventListener("click", () => exportResultCsv(button.dataset.exportCsv));
+  }
+}
+
+function exportResultCsv(kind) {
+  const result = state.genericResult;
+  if (result?.state !== "ready" || !result.payload) {
+    return;
+  }
+  const payload = result.payload;
+  const run = runSummaryByName(payload.runName || result.runName);
+  const meta = {
+    runName: payload.runName || result.runName || "",
+    workflowPath: payload.workflowPath || result.workflowPath || "",
+    workflowSha256: runInfo(payload)?.workflow?.sha256 || run?.workflowSha256 || "",
+  };
+  const stem = traceSlug(meta.runName, "run");
+  if (kind === "trace") {
+    downloadCsv(`${stem}-trace.csv`, buildTraceCsv(payload, meta));
+  } else if (kind === "outputs") {
+    downloadCsv(`${stem}-outputs.csv`, buildFinalOutputsCsv(payload, meta));
+  }
+}
+
+function csvCell(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function csvScalar(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "boolean") {
+    return value ? "1" : "0";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+// Long format: one row per (step, sample time, signal).
+function buildTraceCsv(payload, meta = {}) {
+  const header = ["run_name", "workflow_path", "workflow_sha256", "step", "time_s", "signal", "value"];
+  const lines = [header.join(",")];
+  const prefix = [meta.runName || payload?.runName || "", meta.workflowPath || payload?.workflowPath || "", meta.workflowSha256 || ""];
+  for (const [stepName, stepResult] of modelStepEntriesOf(payload)) {
+    const trace = extractSimulinkTrace(stepResult);
+    if (!trace) {
+      continue;
+    }
+    const signals = Object.entries(trace.signals).filter(([, values]) => Array.isArray(values));
+    trace.times.forEach((time, index) => {
+      for (const [signal, values] of signals) {
+        if (index >= values.length) {
+          continue;
+        }
+        lines.push([...prefix, stepName, time, signal, csvScalar(values[index])].map(csvCell).join(","));
+      }
+    });
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function buildFinalOutputsCsv(payload, meta = {}) {
+  const header = ["run_name", "workflow_path", "workflow_sha256", "step", "output", "value"];
+  const lines = [header.join(",")];
+  const prefix = [meta.runName || payload?.runName || "", meta.workflowPath || payload?.workflowPath || "", meta.workflowSha256 || ""];
+  for (const [stepName, stepResult] of modelStepEntriesOf(payload)) {
+    for (const [output, value] of Object.entries(stepResult)) {
+      if (output === "trace") {
+        continue;
+      }
+      lines.push([...prefix, stepName, output, csvScalar(value)].map(csvCell).join(","));
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function downloadCsv(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function buildGenericFallbackMarkup(result) {
@@ -2615,11 +3409,18 @@ function classifyStorhyMockRun(run) {
   if (workflowResultFamily(workflow) !== "storhy_mock") {
     return null;
   }
-  if (String(run.phase || "").toLowerCase() !== "succeeded") {
+  const phase = String(run.phase || "").toLowerCase();
+  if (!isFinishedRunPhase(phase)) {
     return null;
   }
   const cached = state.genericResultsCache.get(run.name);
   if (cached?.state === "ready") {
+    const outcome = runOutcome(cached.payload, run);
+    if (outcome.failed || outcome.partial) {
+      return modelStepEntriesOf(cached.payload).length > 0
+        ? { kind: "partial", label: "Partial Result" }
+        : { kind: "missing", label: "No Result Payload" };
+    }
     return {
       kind: "storhy",
       label: "STOR-HY Mock",
@@ -3450,6 +4251,10 @@ function renderRuns() {
   if (state.selectedRunName && !runs.some((run) => run.name === state.selectedRunName)) {
     state.selectedRunName = "";
   }
+  const expandedRun = runs.find((run) => run.name === state.selectedRunName);
+  if (expandedRun) {
+    ensureRunResultsLoaded(expandedRun);
+  }
 
   if (state.runsRailCollapsed) {
     if (list) {
@@ -3514,6 +4319,7 @@ function renderRuns() {
                 <code>${escapeHTML(run.serviceAccount || "n/a")}</code>
               </div>
               ${run.message ? `<div class="run-message">${escapeHTML(run.message)}</div>` : ""}
+              ${renderRunProvenance(run)}
             </div>
           ` : ""}
         </article>
@@ -3527,6 +4333,237 @@ function renderRuns() {
       renderRuns();
     });
   }
+}
+
+function cachedRunResults(runName) {
+  for (const cache of [state.genericResultsCache, state.simulinkResultsCache, state.aeStatsResultsCache]) {
+    const cached = cache.get(runName);
+    if (cached?.state === "ready") {
+      return cached;
+    }
+  }
+  return state.genericResultsCache.get(runName) || null;
+}
+
+// Fetches /results for an expanded finished run so its card can show the _run
+// provenance. Safe to call on every render: in-flight and cached runs are skipped.
+function ensureRunResultsLoaded(run) {
+  if (!run?.name || !isFinishedRunPhase(run.phase) || state.runResultsInflight.has(run.name)) {
+    return;
+  }
+  const cached = cachedRunResults(run.name);
+  if (cached?.state === "ready") {
+    return;
+  }
+  if (cached?.state === "error" && Date.now() - (cached.checkedAt || 0) < SIMULINK_RESULT_RETRY_MS) {
+    return;
+  }
+  state.runResultsInflight.add(run.name);
+  void fetchJSON(`/api/runs/${encodeURIComponent(run.name)}/results`)
+    .then((payload) => {
+      state.genericResultsCache.set(run.name, { state: "ready", payload, checkedAt: Date.now() });
+    })
+    .catch((error) => {
+      state.genericResultsCache.set(run.name, { state: "error", message: error.message, checkedAt: Date.now() });
+    })
+    .finally(() => {
+      state.runResultsInflight.delete(run.name);
+      renderRuns();
+    });
+}
+
+function normalizeSha(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+// Labels carry a 12-hex prefix while annotations and _run carry the full hash,
+// so two hashes match when one is a prefix of the other.
+function shaMatches(left, right) {
+  const a = normalizeSha(left);
+  const b = normalizeSha(right);
+  if (!a || !b) {
+    return true;
+  }
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+function workflowShaCheck(run, info) {
+  const submitted = normalizeSha(run?.workflowSha256);
+  const executed = normalizeSha(info?.workflow?.sha256);
+  const current = normalizeSha(workflowByPath(run?.workflowPath || "")?.sha256);
+  const warnings = [];
+  if (submitted && executed && !shaMatches(submitted, executed)) {
+    warnings.push("The workflow the runner executed differs from the one the dashboard submitted.");
+  }
+  const reference = executed || submitted;
+  if (reference && current && !shaMatches(reference, current)) {
+    warnings.push("The workflow file in the catalog has changed since this run.");
+  }
+  return {
+    entries: [["Submitted", submitted], ["Executed", executed], ["Current", current]].filter(([, value]) => value),
+    warnings,
+  };
+}
+
+function uniqueRunFmus(info) {
+  const seen = new Map();
+  for (const step of Array.isArray(info?.steps) ? info.steps : []) {
+    for (const fmu of Array.isArray(step?.fmus) ? step.fmus : []) {
+      const key = fmu?.sha256 || fmu?.path || fmu?.model;
+      if (!key) {
+        continue;
+      }
+      if (!seen.has(key)) {
+        seen.set(key, { ...fmu, usedBy: [] });
+      }
+      seen.get(key).usedBy.push(fmu.model ? `${step.name}.${fmu.model}` : step.name);
+    }
+  }
+  return [...seen.values()];
+}
+
+function formatRunResources(resources) {
+  const part = (label, values) => {
+    const items = [values?.cpu ? `cpu ${values.cpu}` : "", values?.memory ? `mem ${values.memory}` : ""].filter(Boolean);
+    return items.length > 0 ? `${label} ${items.join(", ")}` : "";
+  };
+  return [part("requests", resources?.requests), part("limits", resources?.limits)].filter(Boolean).join(" | ");
+}
+
+function renderRunProvenance(run) {
+  const lines = [];
+  if (Number(run.deadlineSeconds) > 0) {
+    lines.push(`
+      <div class="run-detail-line">
+        <span>Max execution time</span>
+        <strong>${escapeHTML(formatDuration(run.deadlineSeconds))}${run.deadlineExceeded ? " (exceeded)" : ""}</strong>
+      </div>
+    `);
+  }
+  const resources = formatRunResources(run.resources);
+  if (resources) {
+    lines.push(`<div class="run-detail-line"><span>Resources</span><code>${escapeHTML(resources)}</code></div>`);
+  }
+  if (run.submittedFrom || run.dashboardVersion) {
+    lines.push(`
+      <div class="run-detail-line">
+        <span>Submitted from</span>
+        <code>${escapeHTML([run.submittedFrom, run.dashboardVersion ? `dashboard ${run.dashboardVersion}` : ""].filter(Boolean).join(" | "))}</code>
+      </div>
+    `);
+  }
+
+  let body = "";
+  if (!isFinishedRunPhase(run.phase)) {
+    body = '<div class="run-provenance-note">Run provenance is published when the run finishes.</div>';
+  } else {
+    const cached = cachedRunResults(run.name);
+    if (state.runResultsInflight.has(run.name) || !cached) {
+      body = '<div class="run-provenance-note">Loading run provenance…</div>';
+    } else if (cached.state === "error") {
+      body = `<div class="run-provenance-note">Provenance unavailable: ${escapeHTML(cached.message || "no result payload")}</div>`;
+    } else {
+      body = renderRunInfoDetails(run, cached.payload);
+    }
+  }
+
+  return `
+    <div class="run-provenance" aria-label="Run provenance">
+      <div class="run-provenance-title">Provenance</div>
+      ${lines.join("")}
+      ${body}
+    </div>
+  `;
+}
+
+function renderRunInfoDetails(run, payload) {
+  const info = runInfo(payload);
+  const outcome = runOutcome(payload, run);
+  const shaCheck = workflowShaCheck(run, info);
+  const shaMarkup = `
+    ${shaCheck.entries.length > 0 ? `
+      <div class="run-detail-line">
+        <span>Workflow sha256</span>
+        <div class="run-sha-list">
+          ${shaCheck.entries.map(([label, value]) => `<code title="${escapeHTML(value)}">${escapeHTML(label)} ${escapeHTML(value.slice(0, 12))}</code>`).join("")}
+        </div>
+      </div>
+    ` : ""}
+    ${shaCheck.warnings.map((warning) => `<div class="run-sha-warning" role="status">${escapeHTML(warning)}</div>`).join("")}
+  `;
+  if (!info) {
+    return `
+      ${shaMarkup}
+      <div class="run-provenance-note">${payload?.partial
+        ? escapeHTML(outcome.error || "The run stopped before the runner could publish provenance.")
+        : "This run predates run provenance (no _run block in its results)."}</div>
+    `;
+  }
+
+  const steps = Array.isArray(info.steps) ? info.steps : [];
+  const fmus = uniqueRunFmus(info);
+  return `
+    <div class="run-detail-line">
+      <span>Outcome</span>
+      <strong class="run-outcome run-outcome-${escapeHTML(traceSlug(outcome.status, "unknown"))}">${escapeHTML(outcome.status || "unknown")}</strong>
+    </div>
+    ${outcome.failedStep ? `<div class="run-detail-line"><span>Failed step</span><code>${escapeHTML(outcome.failedStep)}</code></div>` : ""}
+    ${info.error ? `<div class="run-message">${escapeHTML(info.error)}</div>` : ""}
+    <div class="run-detail-line">
+      <span>Timing</span>
+      <strong>${escapeHTML(`${formatWallSeconds(info.wall_seconds)} wall | ${formatSimDuration(info.simulated_seconds)} simulated | ${formatRatio(info.ratio)}`)}</strong>
+    </div>
+    ${info.started_at || info.finished_at ? `
+      <div class="run-detail-line">
+        <span>Runner window</span>
+        <strong>${escapeHTML(`${formatTimestamp(info.started_at)} to ${formatTimestamp(info.finished_at)}`)}</strong>
+      </div>
+    ` : ""}
+    ${shaMarkup}
+    ${steps.length > 0 ? `
+      <div class="run-detail-line">
+        <span>Steps</span>
+        <ul class="run-step-list">
+          ${steps.map((step) => `
+            <li class="run-step-${escapeHTML(traceSlug(step?.status, "unknown"))}">
+              <code>${escapeHTML(step?.name || "step")}</code>
+              <em>${escapeHTML([
+                step?.kind === "cosim" ? cosimSchemeLabel(step.scheme) : step?.kind,
+                step?.status,
+                step?.wall_seconds !== undefined ? formatWallSeconds(step.wall_seconds) : "",
+                step?.ratio ? formatRatio(step.ratio) : "",
+                step?.communication_points ? `${step.communication_points} comm. points` : "",
+                Array.isArray(step?.events) && step.events.length > 0 ? `${step.events.length} event edge${step.events.length === 1 ? "" : "s"}` : "",
+              ].filter(Boolean).join(" | "))}</em>
+            </li>
+          `).join("")}
+        </ul>
+      </div>
+    ` : ""}
+    ${fmus.length > 0 ? `
+      <div class="run-detail-line">
+        <span>FMUs</span>
+        <ul class="run-fmu-list">
+          ${fmus.map((fmu) => `
+            <li>
+              <strong>${escapeHTML([fmu.model_name || String(fmu.path || fmu.model || "fmu").split("/").pop(), fmu.model_version].filter(Boolean).join(" "))}</strong>
+              <em>${escapeHTML([
+                fmu.fmi_version ? `FMI ${fmu.fmi_version}` : "",
+                fmu.generation_tool,
+                fmu.declared_step !== undefined && fmu.declared_step !== null ? `declared step ${formatMetric(fmu.declared_step)}` : "",
+                fmu.sha256 ? `sha ${String(fmu.sha256).slice(0, 12)}` : "",
+              ].filter(Boolean).join(" | "))}</em>
+              ${fmu.usedBy.length > 0 ? `<code>${escapeHTML(fmu.usedBy.join(", "))}</code>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      </div>
+    ` : ""}
+    <div class="run-detail-line">
+      <span>Versions</span>
+      <code>${escapeHTML([`runner ${info.runner_version || "unknown"}`, run.dashboardVersion ? `dashboard ${run.dashboardVersion}` : ""].filter(Boolean).join(" | "))}</code>
+    </div>
+  `;
 }
 
 function renderRunResultPill(run) {
@@ -3585,6 +4622,50 @@ function formatDuration(value) {
     return `${minutes}m ${remainder}s`;
   }
   return `${seconds.toFixed(seconds >= 10 ? 0 : 1)}s`;
+}
+
+function formatWallSeconds(value) {
+  const seconds = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(seconds)) {
+    return "n/a";
+  }
+  if (seconds < 1) {
+    return `${Math.round(seconds * 1000)} ms`;
+  }
+  return formatDuration(seconds);
+}
+
+// Simulated time is in the FMU's own unit; the FMI 3 demo workflows use SI seconds.
+function formatSimDuration(value) {
+  const seconds = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(seconds)) {
+    return "n/a";
+  }
+  const abs = Math.abs(seconds);
+  if (abs >= 86400) {
+    return `${trimFixed(seconds / 86400, 2)} d`;
+  }
+  if (abs >= 3600) {
+    return `${trimFixed(seconds / 3600, 2)} h`;
+  }
+  if (abs >= 60) {
+    return `${trimFixed(seconds / 60, 1)} min`;
+  }
+  return `${trimFixed(seconds, 2)} s`;
+}
+
+function formatRatio(value) {
+  const ratio = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(ratio) || ratio <= 0) {
+    return "n/a";
+  }
+  if (ratio >= 1000) {
+    return `${Math.round(ratio).toLocaleString("en-US")}x real time`;
+  }
+  if (ratio >= 10) {
+    return `${ratio.toFixed(0)}x real time`;
+  }
+  return `${trimFixed(ratio, 2)}x real time`;
 }
 
 function formatMetric(value) {

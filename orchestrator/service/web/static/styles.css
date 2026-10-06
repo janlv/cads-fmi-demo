@@ -1733,6 +1733,299 @@ h2 {
   font-weight: 700;
 }
 
+/* Co-simulation coupling view */
+.workflow-cosim-group {
+  display: grid;
+  gap: 6px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1.5px dashed rgba(5, 66, 235, 0.36);
+  border-radius: 12px;
+  background: rgba(5, 66, 235, 0.04);
+}
+
+.workflow-cosim-group.selected {
+  border-color: rgba(5, 66, 235, 0.6);
+  background: rgba(5, 66, 235, 0.08);
+}
+
+.workflow-cosim-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.cosim-scheme-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-lime);
+  color: var(--accent-deep);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.cosim-member-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cosim-model-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 28, 99, 0.16);
+  background: var(--paper);
+  color: var(--accent-deep);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.cosim-edge-list,
+.cosim-connection-list,
+.workflow-model-problems,
+.run-step-list,
+.run-fmu-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cosim-edge-list code,
+.cosim-connection-list code {
+  color: var(--accent-deep);
+  font-size: 0.7rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cosim-event-line,
+.cosim-pattern-line {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.cosim-event-line {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.cosim-problem-flag,
+.workflow-model-problems li {
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.workflow-cosim-card {
+  grid-column: 1 / -1;
+}
+
+.cosim-table-wrap {
+  overflow-x: auto;
+}
+
+.cosim-model-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.7rem;
+}
+
+.cosim-model-table th,
+.cosim-model-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--body-ink);
+  text-align: left;
+  vertical-align: top;
+}
+
+.cosim-model-table th {
+  color: var(--muted);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cosim-model-table td code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Step chain status (failed / skipped steps from _run) */
+.storhy-model-chain .chain-step-kind {
+  font-style: normal;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.storhy-model-chain .chain-step-failed,
+.storhy-model-chain .chain-step-error {
+  border-color: rgba(165, 63, 43, 0.45);
+  background: rgba(165, 63, 43, 0.12);
+  color: var(--danger);
+}
+
+.storhy-model-chain .chain-step-skipped,
+.storhy-model-chain .chain-step-cancelled {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+
+/* Failure alert and timing */
+.run-alert {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  border: 1px solid rgba(165, 63, 43, 0.4);
+  border-left-width: 5px;
+  background: rgba(165, 63, 43, 0.1);
+  color: var(--body-ink);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.run-alert strong {
+  color: var(--danger);
+  font-size: 0.95rem;
+}
+
+.run-alert-error {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.run-timing-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.run-timing-strip span {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(5, 66, 235, 0.06);
+  font-size: 0.76rem;
+}
+
+.run-timing-strip strong {
+  color: var(--ink);
+}
+
+.result-head-actions,
+.result-export-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.result-export-button {
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 28, 99, 0.16);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--accent-deep);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.result-export-button:hover,
+.result-export-button:focus-visible {
+  border-color: rgba(5, 66, 235, 0.4);
+  background: rgba(5, 66, 235, 0.1);
+}
+
+.result-kind-partial {
+  border-color: rgba(165, 63, 43, 0.26);
+  background: rgba(165, 63, 43, 0.12);
+  color: var(--danger);
+}
+
+/* Run card provenance */
+.run-provenance {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.run-provenance-title {
+  color: var(--accent-deep);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.run-provenance-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+.run-sha-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.run-sha-warning {
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(191, 95, 47, 0.3);
+  background: rgba(191, 95, 47, 0.12);
+  color: var(--warning);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.run-outcome-succeeded {
+  color: var(--ok) !important;
+}
+
+.run-outcome-failed,
+.run-outcome-error,
+.run-outcome-cancelled {
+  color: var(--danger) !important;
+}
+
+.run-step-list li,
+.run-fmu-list li {
+  display: grid;
+  gap: 1px;
+  font-size: 0.72rem;
+}
+
+.run-step-list em,
+.run-fmu-list em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.run-step-list .run-step-failed code,
+.run-step-list .run-step-error code {
+  color: var(--danger);
+}
+
+.run-step-list .run-step-skipped code,
+.run-step-list .run-step-cancelled code {
+  color: var(--muted);
+}
+
 @media (max-width: 1040px) {
   .hero-project,
   .project-overview {
