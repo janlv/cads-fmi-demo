@@ -1964,7 +1964,7 @@ h2 {
 /* Table on the left, candidate cards stacked on the right (stacked below 1040px). */
 .mm-layout {
   display: grid;
-  grid-template-columns: minmax(0, max-content) minmax(300px, 400px);
+  grid-template-columns: max-content minmax(260px, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -2112,23 +2112,6 @@ h2 {
   white-space: nowrap;
 }
 
-.mm-badge {
-  flex: 0 0 auto;
-  min-width: 34px;
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: var(--cat);
-  color: var(--cat-ink);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 800;
-  text-align: center;
-}
-
-.mm-row.focused .mm-badge {
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent);
-}
-
 .mm-model-name {
   min-width: 0;
   overflow: hidden;
@@ -2142,33 +2125,6 @@ h2 {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.68rem;
-}
-
-.mm-fmu-pill {
-  flex: 0 0 auto;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: rgba(5, 66, 235, 0.08);
-  color: var(--accent-deep);
-  font-size: 0.64rem;
-  font-weight: 700;
-  cursor: help;
-}
-
-.mm-demo-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin: 3px 0 1px 42px;
-}
-
-.mm-demo-chip {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(5, 66, 235, 0.07);
-  color: var(--accent-deep);
-  font-size: 0.64rem;
-  white-space: nowrap;
 }
 
 .mm-cell {
@@ -2214,7 +2170,6 @@ h2 {
   background: rgba(255, 255, 255, 0.85);
   color: var(--accent-deep);
   font: inherit;
-  font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 700;
   cursor: pointer;
@@ -2289,8 +2244,10 @@ h2 {
 
 .mm-candidate-top strong {
   color: var(--accent-deep);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .mm-candidate-title {
@@ -2532,16 +2489,6 @@ button.cosim-model-pill.selected {
   color: var(--pattern-oneway-ink);
 }
 
-.mm-candidate-marker {
-  padding: 0 6px;
-  border-radius: 999px;
-  border: 1px dashed var(--muted);
-  color: var(--muted);
-  font-size: 0.62rem;
-  font-style: normal;
-  font-weight: 700;
-}
-
 .run-step-name {
   display: flex;
   flex-wrap: wrap;
@@ -2552,17 +2499,6 @@ button.cosim-model-pill.selected {
 .run-step-name .coupling-badge {
   text-transform: none;
   letter-spacing: 0;
-}
-
-.matrix-map-chip {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: rgba(5, 66, 235, 0.09);
-  color: var(--accent-deep);
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 .matrix-focus-chip {
@@ -2759,38 +2695,10 @@ button.cosim-model-pill.selected {
   line-height: 1.4;
 }
 
-.details-family-row,
 .details-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.family-badge {
-  min-width: 36px;
-  padding: 2px 6px;
-  border: 2px solid var(--cat);
-  border-radius: 7px;
-  font: inherit;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.family-badge.identified {
-  background: var(--cat);
-  color: var(--cat-ink);
-}
-
-.family-badge.candidate {
-  background: transparent;
-  color: var(--ink);
-  border-style: dashed;
-}
-
-.family-badge.focused {
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent);
 }
 
 .partner-chip {
@@ -3004,6 +2912,17 @@ button.cosim-model-pill.selected {
   margin: 0 auto;
 }
 
+/* The table keeps its natural width; below this width the cards move under it. */
+@media (max-width: 1280px) {
+  .mm-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mm-layout .mm-candidate-row {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
 @media (max-width: 1040px) {
   .details-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -3017,13 +2936,6 @@ button.cosim-model-pill.selected {
     align-items: stretch;
   }
 
-  .mm-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .mm-layout .mm-candidate-row {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  }
 
   .hero-project,
   .project-overview {
@@ -3150,4 +3062,73 @@ button.cosim-model-pill.selected {
     flex-direction: column;
     gap: 2px;
   }
+}
+
+/* ---- Demo matrix: model names, FMU names and workflow chips ---- */
+
+.mm-fmu-name {
+  color: var(--accent-deep);
+  font-size: 0.7rem;
+}
+
+.mm-candidate-models {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.details-family-list {
+  display: grid;
+  gap: 4px;
+}
+
+.family-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border: 1px solid rgba(0, 28, 99, 0.1);
+  border-left: 4px solid var(--cat);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.family-item code {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.family-item:hover {
+  border-color: rgba(5, 66, 235, 0.3);
+}
+
+.family-item.focused {
+  background: rgba(232, 254, 116, 0.6);
+}
+
+.family-tag {
+  max-width: 45%;
+  overflow: hidden;
+  padding: 1px 7px;
+  border-left: 3px solid var(--cat);
+  border-radius: 4px;
+  background: rgba(233, 236, 242, 0.8);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.details-family {
+  padding-left: 8px;
+  border-left: 4px solid var(--cat);
 }
