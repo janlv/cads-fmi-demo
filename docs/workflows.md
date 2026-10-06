@@ -242,22 +242,18 @@ The FMI 3.0 models under `create_fmu/storhy_fmi3/` are stateful, deterministic
 placeholders with time-compressed ageing so a 24 h run shows visible trends.
 They are not validated engineering models.
 
-## Model And Workflow Matrix (dashboard navigation)
+## Demo Workflows Tab (dashboard navigation)
 
-The dashboard's primary navigation is the consortium's model-by-demonstrator
-matrix from the Task 3.3 slides (14 model families M1 to M14, candidate
-workflows W1 to W7). It is data, not code:
-`orchestrator/service/web/static/cads-model-matrix.json`, served as
-`/static/cads-model-matrix.json` and embedded with the dashboard. Edit that
-file to change which sites a model family is identified or candidate for,
-which FMUs in this repo stand in for a family (`demo_fmus`), and which
-candidate workflow and model families a repo workflow maps onto
-(`demo_workflows`). The mapping is a draft to be confirmed with partners, as
-the slide itself says. The dashboard derives the FMU coupling label shown per
-workflow from the catalog (`cosim.scheme` and `patterns`), not from this file.
-The slide numbering (M1 to M14, W1 to W7) is kept in the data file for
-traceability only; the dashboard shows model family names, FMU names and
-workflow names, never the ids.
+The dashboard's first tab lists the workflows the demo runs and, for each, the
+chain of models it couples (FMU names, a short label, owners), with the
+coupling drawn between them. The short labels and the per-workflow model lists
+come from `orchestrator/service/web/static/cads-model-matrix.json`
+(`models[].name`, `demo_fmus`, `demo_workflows`), which also carries the demo
+scope (`demo_scope.sites`) and the partner access lists per site. The file
+still holds the slide numbering of the Task 3.3 matrix (M1 to M14, W1 to W7)
+for traceability, but the dashboard never shows ids or model-family groupings.
+The FMU coupling label shown per workflow is derived from the catalog
+(`cosim.scheme` and `patterns`), not from this file.
 
 ## Runtime Positioning
 
