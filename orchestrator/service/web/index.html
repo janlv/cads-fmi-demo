@@ -41,7 +41,7 @@
       <section id="navArea" class="panel nav-area" aria-label="Demonstrators, models and workflows">
         <div class="nav-strip">
           <div id="navTabs" class="nav-tabs" role="tablist" aria-label="Dashboard views">
-            <button id="navTab-matrix" class="nav-tab" type="button" role="tab" data-nav-tab="matrix" aria-controls="matrixPane" aria-selected="true">Model matrix</button>
+            <button id="navTab-workflows" class="nav-tab" type="button" role="tab" data-nav-tab="workflows" aria-controls="workflowsPane" aria-selected="true">Demo workflows</button>
             <button id="navTab-details" class="nav-tab" type="button" role="tab" data-nav-tab="details" aria-controls="detailsPane" aria-selected="false" tabindex="-1">Details</button>
             <button id="navTab-map" class="nav-tab" type="button" role="tab" data-nav-tab="map" aria-controls="siteMapPane" aria-selected="false" tabindex="-1">Site map</button>
           </div>
@@ -51,14 +51,13 @@
           </div>
         </div>
 
-        <div id="matrixPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-matrix" data-nav-panel="matrix">
-          <p class="pane-hint">Pick a demonstrator column, or a cell to focus one model family at that site. The Details tab lists the matching workflows.</p>
-          <div id="modelMatrix" class="model-matrix-pane" aria-live="polite"></div>
+        <div id="workflowsPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-workflows" data-nav-panel="workflows">
+          <p class="pane-hint">The workflows the demo runs, with the models each one couples. Click a workflow or a model.</p>
+          <div id="demoWorkflowList" class="demo-workflow-pane" aria-live="polite"></div>
         </div>
 
         <div id="detailsPane" class="nav-panel panel-workflow-picker" role="tabpanel" aria-labelledby="navTab-details" data-nav-panel="details" hidden>
           <nav id="detailsBreadcrumb" class="details-breadcrumb" aria-label="Selection"></nav>
-          <div id="workflowContext" class="workflow-context" aria-live="polite"></div>
           <div class="details-grid">
             <section id="detailsDemoCard" class="details-card" tabindex="-1" aria-label="Demonstrator"></section>
             <section id="detailsWorkflowCard" class="details-card details-workflow-card" tabindex="-1" aria-label="Workflow">
@@ -74,7 +73,7 @@
           </div>
         </div>
         <div id="siteMapPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-map" data-nav-panel="map" hidden>
-          <p class="pane-hint">The demo sites, Le Cheylas and Alqueva; markers select a site like the matrix columns. Site facts are in the Details tab.</p>
+          <p class="pane-hint">The demo sites, Le Cheylas and Alqueva; click a marker to select a site. Site facts are in the Details tab.</p>
           <div id="siteMapBody" class="site-map-body">
             <div id="demonstratorMap" class="demonstrator-map" aria-live="polite"></div>
           </div>

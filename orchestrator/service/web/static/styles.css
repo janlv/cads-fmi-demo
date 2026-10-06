@@ -23,11 +23,6 @@
   --pattern-eventdriven-ink: var(--warning);
   --pattern-oneway-bg: rgba(233, 236, 242, 0.9);
   --pattern-oneway-ink: var(--muted);
-  --cat-physical: var(--accent);
-  --cat-virtual-sensors: var(--ok);
-  --cat-degradation: var(--warning);
-  --cat-optimization: var(--accent-deep);
-  --cat-decision-support: var(--muted);
   --font-sans: Inter, Aptos, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
 }
@@ -515,16 +510,6 @@ h2 {
   overflow-x: auto;
   padding: 2px 2px 8px;
   scrollbar-width: thin;
-}
-
-.workflow-context {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: -4px 0 12px;
-  color: var(--muted);
-  font-size: 0.84rem;
 }
 
 .workflow-model-overview {
@@ -1905,362 +1890,6 @@ h2 {
   color: var(--muted);
 }
 
-/* ---- Model-by-demonstrator matrix (primary navigation) ---- */
-
-.cat-physical { --cat: var(--cat-physical); --cat-ink: #ffffff; }
-.cat-virtual-sensors { --cat: var(--cat-virtual-sensors); --cat-ink: #ffffff; }
-.cat-degradation { --cat: var(--cat-degradation); --cat-ink: #ffffff; }
-.cat-optimization { --cat: var(--cat-optimization); --cat-ink: #ffffff; }
-.cat-decision-support { --cat: var(--cat-decision-support); --cat-ink: #ffffff; }
-.cat-unknown { --cat: var(--muted); --cat-ink: #ffffff; }
-
-.model-matrix-pane {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.model-matrix-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  align-items: center;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.model-matrix-legend > span {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-}
-
-.mm-legend-sep {
-  width: 1px;
-  height: 14px;
-  background: var(--line);
-}
-
-.mm-mark {
-  color: var(--accent);
-  font-size: 0.95rem;
-  line-height: 1;
-}
-
-.mm-cat-legend i,
-.mm-used-legend i {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
-  background: var(--cat);
-  border: 1px solid rgba(0, 28, 99, 0.18);
-}
-
-.mm-used-legend i {
-  background: rgba(232, 254, 116, 0.7);
-}
-
-/* Table on the left, candidate cards stacked on the right (stacked below 1040px). */
-.mm-layout {
-  display: grid;
-  grid-template-columns: max-content minmax(260px, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.mm-layout .mm-candidate-row {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.model-matrix-scroll {
-  justify-self: start;
-  max-width: 100%;
-  min-width: 0;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.6);
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.model-matrix {
-  width: auto;
-  table-layout: auto;
-  border-collapse: collapse;
-  font-size: 0.78rem;
-  white-space: nowrap;
-}
-
-.model-matrix th,
-.model-matrix td {
-  border-bottom: 1px solid var(--line);
-  padding: 0;
-  vertical-align: middle;
-}
-
-.model-matrix tbody tr:last-child th,
-.model-matrix tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.model-matrix thead th {
-  padding: 4px 4px;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  text-align: center;
-  background: rgba(233, 236, 242, 0.7);
-}
-
-.model-matrix thead th:first-child {
-  border-top-left-radius: 15px;
-}
-
-.model-matrix thead th:last-child {
-  border-top-right-radius: 15px;
-}
-
-.model-matrix thead th.mm-model-col {
-  padding-left: 12px;
-  text-align: left;
-}
-
-.model-matrix thead th.mm-site-col {
-  width: 84px;
-}
-
-.model-matrix thead th.mm-w-col {
-  width: 128px;
-  text-align: left;
-}
-
-.model-matrix th.selected,
-.model-matrix td.selected {
-  background: rgba(5, 66, 235, 0.09);
-}
-
-.model-matrix thead th.selected {
-  background: rgba(5, 66, 235, 0.16);
-}
-
-.mm-site-button {
-  display: grid;
-  gap: 0;
-  width: 100%;
-  padding: 3px 4px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 750;
-  letter-spacing: 0;
-  text-transform: none;
-  cursor: pointer;
-}
-
-.mm-site-button small {
-  color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 600;
-}
-
-.mm-site-button:hover {
-  border-color: rgba(5, 66, 235, 0.28);
-  background: rgba(255, 255, 255, 0.7);
-}
-
-.mm-site-button.selected {
-  border-color: rgba(5, 66, 235, 0.4);
-  background: var(--accent);
-  color: #ffffff;
-}
-
-.mm-site-button.selected small {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.mm-row.used > th,
-.mm-row.used > td {
-  background-color: rgba(232, 254, 116, 0.3);
-}
-
-.mm-row.used > td.selected {
-  background-color: rgba(190, 214, 120, 0.42);
-}
-
-.mm-row.no-site .mm-model-name {
-  color: var(--muted);
-}
-
-.mm-model-cell {
-  padding: 3px 8px 3px 10px !important;
-  text-align: left;
-  font-weight: 400;
-  border-left: 4px solid var(--cat);
-}
-
-.mm-model {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.mm-model-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--ink);
-  font-weight: 650;
-  line-height: 1.25;
-}
-
-.mm-owners {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-
-.mm-cell {
-  text-align: center;
-}
-
-.mm-cell-button {
-  display: block;
-  width: 100%;
-  min-height: 24px;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 0.95rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.mm-cell.candidate .mm-cell-button {
-  color: var(--muted);
-}
-
-.mm-cell-button:hover {
-  background: rgba(5, 66, 235, 0.1);
-}
-
-.mm-cell-button.focused {
-  background: rgba(232, 254, 116, 0.8);
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-
-.mm-w-cell {
-  padding: 1px 6px !important;
-  white-space: nowrap;
-}
-
-.mm-w-chip {
-  margin: 1px 1px 1px 0;
-  padding: 0 5px;
-  border: 1px solid rgba(0, 28, 99, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--accent-deep);
-  font: inherit;
-  font-size: 0.68rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.mm-w-chip:hover,
-.mm-w-chip.selected {
-  border-color: rgba(5, 66, 235, 0.4);
-  background: var(--accent-lime);
-}
-
-.mm-candidates {
-  display: grid;
-  gap: 5px;
-}
-
-.mm-candidates-title {
-  color: var(--ink);
-  font-size: 0.84rem;
-  font-weight: 750;
-}
-
-.mm-candidates-title span {
-  margin-left: 6px;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 500;
-}
-
-.mm-candidate-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 6px;
-}
-
-.mm-candidate {
-  display: grid;
-  gap: 2px;
-  align-content: start;
-  padding: 5px 8px;
-  border: 1px solid rgba(0, 28, 99, 0.12);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--body-ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.mm-candidate:hover {
-  border-color: rgba(5, 66, 235, 0.32);
-}
-
-.mm-candidate.selected {
-  border-color: rgba(5, 66, 235, 0.5);
-  background: rgba(232, 254, 116, 0.6);
-  box-shadow: inset 0 0 0 1px rgba(5, 66, 235, 0.2);
-}
-
-.mm-candidate.empty {
-  opacity: 0.62;
-}
-
-.mm-candidate-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  align-items: baseline;
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-
-.mm-candidate-top strong {
-  color: var(--accent-deep);
-  font-size: 0.68rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.mm-candidate-title {
-  color: var(--ink);
-  font-size: 0.74rem;
-  font-weight: 650;
-  line-height: 1.25;
-}
-
-.mm-candidate .coupling-badge-row {
-  margin-top: 2px;
-}
-
 .coupling-legend {
   display: flex;
   flex-wrap: wrap;
@@ -2273,17 +1902,6 @@ h2 {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-}
-
-.mm-candidate code {
-  color: var(--muted);
-  font-size: 0.66rem;
-}
-
-.model-matrix-source {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
 }
 
 /* ---- Demo scope note ---- */
@@ -2501,47 +2119,6 @@ button.cosim-model-pill.selected {
   letter-spacing: 0;
 }
 
-.matrix-focus-chip {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-  padding: 3px 4px 3px 9px;
-  border-radius: 999px;
-  background: var(--accent-lime);
-  color: var(--accent-deep);
-  font-size: 0.78rem;
-}
-
-.matrix-focus-chip button {
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(0, 28, 99, 0.12);
-  color: var(--accent-deep);
-  font: inherit;
-  font-weight: 800;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.matrix-focus-count {
-  font-size: 0.76rem;
-}
-
-.workflow-tab.focus-match {
-  border-color: rgba(5, 66, 235, 0.42);
-  box-shadow: 0 0 0 2px rgba(232, 254, 116, 0.95);
-}
-
-.workflow-tab.focus-dim {
-  opacity: 0.42;
-}
-
-.workflow-tab.focus-dim:hover {
-  opacity: 0.8;
-}
-
 /* ---- Details tab: breadcrumb and master-detail cards ---- */
 
 .details-breadcrumb {
@@ -2576,10 +2153,6 @@ button.cosim-model-pill.selected {
 
 .crumb-sep {
   color: var(--muted);
-}
-
-.workflow-context:empty {
-  display: none;
 }
 
 .details-grid {
@@ -2880,17 +2453,6 @@ button.cosim-model-pill.selected {
   margin: 0;
 }
 
-.details-family {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.details-family strong {
-  color: var(--ink);
-  font-size: 0.86rem;
-}
-
 .details-fmu-name {
   color: var(--accent-deep);
   font-size: 0.78rem;
@@ -2912,30 +2474,15 @@ button.cosim-model-pill.selected {
   margin: 0 auto;
 }
 
-/* The table keeps its natural width; below this width the cards move under it. */
-@media (max-width: 1280px) {
-  .mm-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .mm-layout .mm-candidate-row {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  }
-}
-
 @media (max-width: 1040px) {
   .details-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .model-matrix-scroll {
-    overflow-x: auto;
-  }
-
+  
   .workflow-toolbar {
     align-items: stretch;
   }
-
 
   .hero-project,
   .project-overview {
@@ -3064,71 +2611,220 @@ button.cosim-model-pill.selected {
   }
 }
 
-/* ---- Demo matrix: model names, FMU names and workflow chips ---- */
 
-.mm-fmu-name {
-  color: var(--accent-deep);
-  font-size: 0.7rem;
-}
+/* ---- Demo workflows tab: one row per workflow with its model chain ---- */
 
-.mm-candidate-models {
-  color: var(--muted);
-  font-size: 0.7rem;
-  line-height: 1.35;
-}
-
-.details-family-list {
+.demo-workflow-pane {
   display: grid;
-  gap: 4px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.family-item {
+.dw-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dw-row {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+
+.dw-row:hover {
+  border-color: rgba(5, 66, 235, 0.3);
+}
+
+.dw-row.selected {
+  border-color: rgba(5, 66, 235, 0.45);
+  background: rgba(5, 66, 235, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(5, 66, 235, 0.12);
+}
+
+.dw-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
-  align-items: baseline;
-  padding: 5px 8px;
-  border: 1px solid rgba(0, 28, 99, 0.1);
-  border-left: 4px solid var(--cat);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.dw-site {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.dw-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 650;
+  font-size: 0.98rem;
+  font-weight: 750;
   text-align: left;
   cursor: pointer;
 }
 
-.family-item code {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 500;
-}
-
-.family-item:hover {
-  border-color: rgba(5, 66, 235, 0.3);
-}
-
-.family-item.focused {
-  background: rgba(232, 254, 116, 0.6);
-}
-
-.family-tag {
-  max-width: 45%;
+.dw-description {
+  margin: 0;
   overflow: hidden;
-  padding: 1px 7px;
-  border-left: 3px solid var(--cat);
-  border-radius: 4px;
-  background: rgba(233, 236, 242, 0.8);
   color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 700;
+  font-size: 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.details-family {
-  padding-left: 8px;
-  border-left: 4px solid var(--cat);
+.dw-chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.dw-step {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dw-cosim {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px 8px;
+  border: 1px dashed rgba(5, 66, 235, 0.32);
+  border-radius: 14px;
+  background: rgba(5, 66, 235, 0.04);
+}
+
+.dw-cosim .cosim-scheme-badge {
+  align-self: flex-start;
+}
+
+.dw-cosim-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.dw-pill {
+  display: grid;
+  gap: 1px;
+  justify-items: start;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 28, 99, 0.14);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dw-pill:hover {
+  border-color: rgba(5, 66, 235, 0.4);
+}
+
+.dw-pill.selected {
+  border-color: var(--accent);
+  background: rgba(232, 254, 116, 0.7);
+}
+
+.dw-pill code {
+  color: var(--accent-deep);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.dw-pill-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.dw-pill-owners {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.dw-event {
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pattern-eventdriven-bg);
+  color: var(--pattern-eventdriven-ink);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.dw-arrow,
+.dw-link {
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.dw-link {
+  color: var(--accent);
+}
+
+.demo-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* ---- Details: models used at a site, model list entries ---- */
+
+.details-fmu-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+}
+
+.details-fmu-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.details-fmu-list li span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.details-fmu-list code {
+  color: var(--accent-deep);
+  font-size: 0.72rem;
+}
+
+.details-model-name code {
+  display: block;
+  color: var(--accent-deep);
+  font-size: 0.76rem;
+}
+
+.details-model-name small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.details-model-label {
+  color: var(--ink);
+  font-size: 0.86rem;
 }
