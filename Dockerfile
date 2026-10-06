@@ -84,6 +84,8 @@ WORKDIR /src/orchestrator/service
 COPY orchestrator/service/go.mod orchestrator/service/go.sum ./
 RUN go mod download
 COPY orchestrator/service/ ./
+# Version string baked into both binaries (e.g. `git describe --always --dirty`).
+ARG CADS_VERSION=dev
 RUN set -eux; \
     case "${TARGETARCH}" in \
         amd64) target_cc=x86_64-linux-gnu-gcc; target_cxx=x86_64-linux-gnu-g++ ;; \
@@ -95,10 +97,11 @@ RUN set -eux; \
     export CGO_CFLAGS="-I/opt/fmil-target/include"; \
     export CGO_CXXFLAGS="-I/opt/fmil-target/include"; \
     export CGO_LDFLAGS="-L/opt/fmil-target/lib"; \
-    echo "[go-builder] Compiling Go workflow runner for linux/${TARGETARCH}"; \
-    go build -trimpath -o /out/cads-workflow-runner ./cmd/cads-workflow-runner; \
-    echo "[go-builder] Compiling dashboard service for linux/${TARGETARCH}"; \
-    CGO_ENABLED=0 go build -trimpath -o /out/cads-workflow-service ./cmd/cads-workflow-service; \
+    version_ldflags="-X github.com/norceresearch/cads-fmi-demo/orchestrator/service.Version=${CADS_VERSION}"; \
+    echo "[go-builder] Compiling Go workflow runner for linux/${TARGETARCH} (version ${CADS_VERSION})"; \
+    go build -trimpath -ldflags "${version_ldflags}" -o /out/cads-workflow-runner ./cmd/cads-workflow-runner; \
+    echo "[go-builder] Compiling dashboard service for linux/${TARGETARCH} (version ${CADS_VERSION})"; \
+    CGO_ENABLED=0 go build -trimpath -ldflags "${version_ldflags}" -o /out/cads-workflow-service ./cmd/cads-workflow-service; \
     file /out/cads-workflow-runner /out/cads-workflow-service
 
 FROM python:3.11-slim
@@ -152,8 +155,8 @@ COPY create_fmu/requirements.txt /tmp/pythonfmu-requirements.txt
 COPY create_fmu/patch_pythonfmu_export.py /tmp/patch_pythonfmu_export.py
 RUN echo "[image] Installing pythonfmu requirements inside the image" \
     && pip install --no-cache-dir -r /tmp/pythonfmu-requirements.txt
-RUN echo "[image] Applying pythonfmu exporter patch" \
-    && python /tmp/patch_pythonfmu_export.py
+RUN echo "[image] Applying pythonfmu/pythonfmu3 exporter patches" \
+    && python /tmp/patch_pythonfmu_export.py --package all
 
 # Rebuild pythonfmu exporter for the active architecture so generated FMUs ship
 # with matching binaries.
@@ -164,6 +167,25 @@ RUN set -eux; \
     chmod +x build_unix.sh; \
     ./build_unix.sh; \
     rm -rf build
+
+# Same for the pythonfmu3 (FMI 3.0) exporter. The wheel ships a prebuilt
+# x86_64-linux library that is not linked against libpython; drop it so the
+# FMI 3 FMUs only carry the exporter built (and patched) in this image.
+RUN set -eux; \
+    echo "[image] Compiling pythonfmu3 (FMI 3.0) exporter artifacts"; \
+    case "$(uname -m)" in \
+        x86_64) fmi3_arch=x86_64 ;; \
+        aarch64|arm64) fmi3_arch=aarch64 ;; \
+        *) echo "Unsupported architecture for pythonfmu3: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    PYFMU3_DIR=/usr/local/lib/python3.11/site-packages/pythonfmu3; \
+    rm -rf "$PYFMU3_DIR/resources/binaries/x86_64-linux" "$PYFMU3_DIR/resources/binaries/aarch64-linux"; \
+    cd "$PYFMU3_DIR/pythonfmu-export"; \
+    sh build_unix.sh; \
+    rm -rf build; \
+    lib="$PYFMU3_DIR/resources/binaries/${fmi3_arch}-linux/libpythonfmu-export.so"; \
+    test -f "$lib"; \
+    ldd "$lib" | grep -q libpython3 || { echo "pythonfmu3 exporter is not linked against libpython: $lib" >&2; exit 1; }
 
 WORKDIR /app
 COPY . /app
@@ -228,6 +250,17 @@ RUN echo "[image] Building bundled demo FMUs" && \
     python -m pythonfmu build -f create_fmu/ae_event_stats_fmu.py -d fmu/models && \
     for replica in create_fmu/storhy_replicas/*_fmu.py; do \
         python -m pythonfmu build -f "$replica" -d fmu/models create_fmu/storhy_replicas/storhy_replica_common.py; \
+    done && \
+    echo "[image] Building STOR-HY FMI 3.0 FMUs via pythonfmu3" && \
+    for model in create_fmu/storhy_fmi3/*_fmi3.py; do \
+        python -m pythonfmu3 build -f "$model" -d fmu/models \
+            create_fmu/storhy_fmi3/storhy_fmi3_common.py \
+            create_fmu/storhy_fmi3/storhy_fmi3_models.py || exit 1; \
+    done && \
+    case "$(uname -m)" in aarch64|arm64) fmi3_arch=aarch64 ;; *) fmi3_arch=x86_64 ;; esac && \
+    for fmu in fmu/models/*Fmi3.fmu; do \
+        unzip -l "$fmu" | grep -q "binaries/${fmi3_arch}-linux/" \
+            || { echo "[image] $fmu lacks binaries/${fmi3_arch}-linux/" >&2; exit 1; }; \
     done && \
     echo 'Built FMUs to /app/fmu/models'
 

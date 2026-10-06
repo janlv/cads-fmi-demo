@@ -1,0 +1,36 @@
+# Runtime test (catalog-hidden): Gauss-Seidel co-simulation of two FMI 2.0
+# replicas coupled through their tunable input_* parameters, in both directions.
+# Replicas declare no DefaultExperiment, so each advances with the
+# communication step. Placeholder models, not validated physics.
+steps:
+  - name: gs_pair
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 24
+      communication_step: 1
+      models:
+        - name: ems
+          fmu: fmu/models/HybridEMSReplica.fmu
+          start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+        - name: pm
+          fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+          start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+      connections:
+        - {from: ems.risk_index, to: pm.input_risk_index}
+        - {from: ems.score, to: pm.input_score}
+        - {from: ems.value_delta_eur, to: pm.input_value_delta_eur}
+        - {from: pm.rul_days, to: ems.input_rul_days}
+      outputs: [ems.soc_percent, ems.risk_index, pm.risk_index, pm.rul_days]
+      trace:
+        signals: [ems.soc_percent, ems.risk_index, pm.risk_index]
+        sample_every: 1
+  - name: kpi_tail
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_from:
+      input_risk_index: gs_pair.pm.risk_index
+      input_rul_days: gs_pair.pm.rul_days
+    outputs: [score, risk_index, kpi_score, rul_days]

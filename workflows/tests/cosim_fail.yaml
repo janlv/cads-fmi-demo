@@ -1,0 +1,18 @@
+# Runtime test (catalog-hidden): must FAIL. The connection targets a variable
+# that PredictiveMaintenanceReplica does not declare, so the runtime has to
+# reject it after opening the FMUs and report status "failed" in _run.
+steps:
+  - name: broken_pair
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 24
+      communication_step: 1
+      models:
+        - name: ems
+          fmu: fmu/models/HybridEMSReplica.fmu
+        - name: pm
+          fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+      connections:
+        - {from: ems.risk_index, to: pm.input_does_not_exist}
+      outputs: [pm.risk_index]

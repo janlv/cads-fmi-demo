@@ -1,0 +1,31 @@
+# Runtime test (catalog-hidden): event-driven co-simulation of two FMI 2.0
+# replicas. While the EMS replica's SoC is above 65 % the master drives the
+# maintenance replica's input_damage_index to 0.6 (level event), else 0.2.
+# Placeholder models, not validated physics.
+steps:
+  - name: event_pair
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 24
+      communication_step: 1
+      models:
+        - name: ems
+          fmu: fmu/models/HybridEMSReplica.fmu
+          start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+        - name: pm
+          fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+          start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+      connections:
+        - {from: ems.risk_index, to: pm.input_risk_index}
+      events:
+        - name: high_soc
+          when: ems.soc_percent > 65
+          set: pm.input_damage_index
+          value: 0.6
+          reset: 0.2
+          mode: level
+      outputs: [ems.soc_percent, pm.damage_index, pm.risk_index]
+      trace:
+        signals: [ems.soc_percent, pm.damage_index]
+        sample_every: 1

@@ -1,0 +1,58 @@
+metadata:
+  display_name: Alqueva Battery-EMS Co-simulation (FMI 3.0)
+  site_id: alqueva
+  category: hybrid
+  result_family: storhy_mock
+  description: >-
+    Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS and a BESS degradation model,
+    both FMI 3.0 FMUs exchanging state of charge and power set-point every 15 minutes; the battery
+    sub-steps at its own 5-minute step. An FMI 2.0 KPI replica then reads the coupled results.
+    Deterministic placeholder models, not validated physics.
+  tags: [alqueva, hybrid, bess, ems, fmi3, cosim, gauss-seidel, ping-pong]
+  limits: {max_runtime_seconds: 300}
+synthetic_case: data/storhy/synthetic/alqueva_hybrid_flexibility.yaml
+steps:
+  - name: battery_ems
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 86400
+      communication_step: 900
+      models:
+        - name: ems
+          fmu: fmu/models/EmsDispatchFmi3.fmu
+          start_values: {rated_power_mw: 10.0}
+        - name: battery
+          fmu: fmu/models/BatteryDegradationFmi3.fmu
+          start_values: {capacity_mwh: 40.0, max_power_mw: 10.0, initial_soc_percent: 50.0, ambient_temp_c: 22.0}
+      connections:
+        - {from: battery.soc_percent, to: ems.soc_percent}
+        - {from: ems.power_setpoint_mw, to: battery.power_setpoint_mw}
+      outputs:
+        - battery.soc_percent
+        - battery.soh_percent
+        - battery.rul_days
+        - battery.cycle_count
+        - battery.cell_temp_c
+        - ems.revenue_eur
+        - ems.mode
+      trace:
+        signals:
+          - battery.soc_percent
+          - ems.power_setpoint_mw
+          - battery.power_actual_mw
+          - ems.price_eur_mwh
+          - battery.soh_percent
+          - ems.revenue_eur
+        sample_every: 900
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_time: 0.0
+    stop_time: 24.0
+    step_size: 1.0
+    start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+    start_from:
+      input_rul_days: battery_ems.battery.rul_days
+      input_value_delta_eur: battery_ems.ems.revenue_eur
+    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, rul_days]
+    result: data/storhy/alqueva/hybrid/battery_ems_cosim_result.json

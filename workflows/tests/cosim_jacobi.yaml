@@ -1,0 +1,31 @@
+# Runtime test (catalog-hidden): Jacobi (lock-step) co-simulation of three
+# FMI 2.0 replicas in a one-way chain through their tunable input_* parameters.
+# Placeholder models, not validated physics.
+steps:
+  - name: jacobi_chain
+    cosim:
+      scheme: jacobi
+      start_time: 0
+      stop_time: 24
+      communication_step: 1
+      models:
+        - name: cm
+          fmu: fmu/models/ConditionMonitoringReplica.fmu
+          start_values: {site_id: 2, scenario_id: 3, profile_id: 3, input_sediment_exposure: 0.36}
+        - name: pm
+          fmu: fmu/models/PredictiveMaintenanceReplica.fmu
+          start_values: {site_id: 2, scenario_id: 3, profile_id: 3}
+        - name: kpi
+          fmu: fmu/models/KPIAssessmentReplica.fmu
+          start_values: {site_id: 2, scenario_id: 3, profile_id: 3}
+      connections:
+        - {from: cm.risk_index, to: pm.input_risk_index}
+        - {from: cm.damage_index, to: pm.input_damage_index}
+        - {from: cm.rul_days, to: pm.input_rul_days}
+        - {from: pm.risk_index, to: kpi.input_risk_index}
+        - {from: pm.rul_days, to: kpi.input_rul_days}
+        - {from: pm.score, to: kpi.input_score}
+      outputs: [cm.damage_index, pm.risk_index, pm.rul_days, kpi.kpi_score]
+      trace:
+        signals: [cm.risk_index, pm.risk_index, kpi.kpi_score]
+        sample_every: 1

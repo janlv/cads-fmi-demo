@@ -1,0 +1,52 @@
+metadata:
+  display_name: La Rance Sediment Cleaning Events (FMI 3.0)
+  site_id: la-rance
+  category: maintenance
+  result_family: storhy_mock
+  description: >-
+    Event-driven co-simulation of two FMI 3.0 FMUs: tidal sediment exposure feeds a cleaning
+    decision model, whose cleaning count resets the exposure. The master raises a high_exposure
+    event when exposure exceeds 0.8 and pulses the cleaning trigger for one 15-minute interval.
+    Deterministic placeholder models, not validated physics.
+  tags: [la-rance, maintenance, sediment, cleaning, fmi3, cosim, event-driven, gauss-seidel]
+  limits: {max_runtime_seconds: 300}
+synthetic_case: data/storhy/synthetic/la_rance_saltwater_low_head.yaml
+steps:
+  - name: sediment_cleaning
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 86400
+      communication_step: 900
+      models:
+        - name: sediment
+          fmu: fmu/models/SedimentExposureFmi3.fmu
+          start_values: {initial_exposure: 0.3}
+        - name: cleaning
+          fmu: fmu/models/CleaningDecisionFmi3.fmu
+          start_values: {exposure_threshold: 1.0, min_interval_h: 4.0, cost_per_cleaning_eur: 18000.0}
+      connections:
+        - {from: sediment.sediment_exposure, to: cleaning.sediment_exposure}
+        - {from: cleaning.cleaning_count, to: sediment.cleanings_done}
+      events:
+        - name: high_exposure
+          when: sediment.sediment_exposure > 0.8
+          set: cleaning.trigger
+          value: 1
+          reset: 0
+          mode: pulse
+      outputs:
+        - sediment.sediment_exposure
+        - cleaning.cleaning_count
+        - cleaning.cumulative_cost_eur
+        - cleaning.downtime_h
+        - cleaning.hours_since_cleaning
+      trace:
+        signals:
+          - sediment.sediment_exposure
+          - sediment.tidal_head_m
+          - sediment.sediment_concentration_g_l
+          - cleaning.cleaning_count
+          - cleaning.cleaning_active
+        sample_every: 900
+    result: data/storhy/la_rance/maintenance/sediment_cleaning_events_result.json
