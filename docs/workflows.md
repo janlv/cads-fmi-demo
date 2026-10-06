@@ -255,6 +255,9 @@ candidate workflow and model families a repo workflow maps onto
 (`demo_workflows`). The mapping is a draft to be confirmed with partners, as
 the slide itself says. The dashboard derives the FMU coupling label shown per
 workflow from the catalog (`cosim.scheme` and `patterns`), not from this file.
+The slide numbering (M1 to M14, W1 to W7) is kept in the data file for
+traceability only; the dashboard shows model family names, FMU names and
+workflow names, never the ids.
 
 ## Runtime Positioning
 
