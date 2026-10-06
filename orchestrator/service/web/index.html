@@ -38,55 +38,36 @@
     </header>
 
     <main class="dashboard-grid">
-      <section id="matrixPane" class="panel collapsible-pane panel-project" data-pane="matrix" aria-label="CADS model matrix">
-        <div class="pane-head">
-          <div class="pane-title">
-            <p class="panel-kicker">Demonstrators and models</p>
-            <h2>CADS model matrix</h2>
-            <p class="pane-hint">Pick a demonstrator column, or a cell to focus one model family at that site.</p>
+      <section id="navArea" class="panel nav-area" aria-label="Demonstrators, models and workflows">
+        <div class="nav-strip">
+          <div id="navTabs" class="nav-tabs" role="tablist" aria-label="Dashboard views">
+            <button id="navTab-matrix" class="nav-tab" type="button" role="tab" data-nav-tab="matrix" aria-controls="matrixPane" aria-selected="true">Model matrix</button>
+            <button id="navTab-map" class="nav-tab" type="button" role="tab" data-nav-tab="map" aria-controls="siteMapPane" aria-selected="false" tabindex="-1">Site map</button>
+            <button id="navTab-details" class="nav-tab" type="button" role="tab" data-nav-tab="details" aria-controls="detailsPane" aria-selected="false" tabindex="-1">Details</button>
           </div>
-          <div class="pane-actions">
-            <button id="matrixAllSites" class="demo-all-button" type="button">All sites</button>
-            <button class="rail-toggle-button pane-toggle" type="button" data-pane-toggle="matrix" aria-controls="matrixPaneBody" aria-expanded="true">Collapse</button>
+          <div class="nav-strip-actions">
+            <span id="navSiteChip" class="nav-site-chip" aria-live="polite">All sites</span>
+            <button id="matrixAllSites" class="demo-all-button" type="button">Show all sites</button>
           </div>
         </div>
-        <div id="matrixPaneBody" class="pane-body">
+
+        <div id="matrixPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-matrix" data-nav-panel="matrix">
+          <p class="pane-hint">Pick a demonstrator column, or a cell to focus one model family at that site; the Details tab then lists its workflows.</p>
           <div id="modelMatrix" class="model-matrix-pane" aria-live="polite"></div>
         </div>
-      </section>
 
-      <section id="siteMapPane" class="panel collapsible-pane site-map-pane" data-pane="map" aria-label="Site map">
-        <div class="pane-head">
-          <div class="pane-title">
-            <p class="panel-kicker">Demonstrators</p>
-            <h2>Site map</h2>
-            <p class="pane-hint">Demonstrator locations and site facts; markers select a site like the matrix columns.</p>
-          </div>
-          <div class="pane-actions">
-            <button id="siteMapShowAll" class="demo-all-button" type="button">Show all</button>
-            <button class="rail-toggle-button pane-toggle" type="button" data-pane-toggle="map" aria-controls="siteMapBody" aria-expanded="true">Collapse</button>
+        <div id="siteMapPane" class="nav-panel" role="tabpanel" aria-labelledby="navTab-map" data-nav-panel="map" hidden>
+          <p class="pane-hint">Demonstrator locations and site facts; markers select a site like the matrix columns.</p>
+          <div id="siteMapBody" class="project-overview">
+            <div id="demonstratorMap" class="demonstrator-map" aria-live="polite"></div>
+            <div id="demonstratorDetails" class="demonstrator-details" aria-live="polite"></div>
           </div>
         </div>
-        <div id="siteMapBody" class="pane-body project-overview">
-          <div id="demonstratorMap" class="demonstrator-map" aria-live="polite"></div>
-          <div id="demonstratorDetails" class="demonstrator-details" aria-live="polite"></div>
-        </div>
-      </section>
 
-      <section id="detailsPane" class="panel collapsible-pane panel-workflow" data-pane="details" aria-label="Workflow selector">
-        <div class="pane-head">
-          <div class="pane-title">
-            <p class="panel-kicker">Workflows</p>
-            <h2>Details</h2>
-            <p class="pane-hint">Workflows for the selected site, with FMU coupling pattern and model-matrix mapping.</p>
-          </div>
-          <div class="pane-actions">
-            <button class="rail-toggle-button pane-toggle" type="button" data-pane-toggle="details" aria-controls="detailsPaneBody" aria-expanded="true">Collapse</button>
-          </div>
-        </div>
-        <div id="detailsPaneBody" class="pane-body">
+        <div id="detailsPane" class="nav-panel panel-workflow-picker" role="tabpanel" aria-labelledby="navTab-details" data-nav-panel="details" hidden>
+          <p class="pane-hint">Workflows for the selected site, with FMU coupling pattern and model-matrix mapping.</p>
           <div id="workflowContext" class="workflow-context" aria-live="polite"></div>
-          <div id="workflowGrid" class="workflow-grid workflow-tabs" role="tablist" aria-live="polite"></div>
+          <div id="workflowGrid" class="workflow-grid workflow-tabs" role="tablist" aria-label="Workflows" aria-live="polite"></div>
         </div>
       </section>
 

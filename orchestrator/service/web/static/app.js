@@ -7,7 +7,7 @@ const state = {
   selectedRunName: "",
   selectedDemonstratorId: "portfolio",
   runsRailCollapsed: false,
-  paneCollapsed: { matrix: false, map: true, details: true },
+  navTab: "matrix",
   modelMatrix: null,
   modelMatrixError: "",
   modelFocus: "",
@@ -67,10 +67,9 @@ const COSIM_MODEL_LABELS = { ems: "EMS", iot: "IoT", rul: "RUL" };
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
-// Collapsible panes stacked above the selected-workflow workspace, with their
-// default collapsed state (matrix open, map and workflow picker closed).
-const PANE_DEFAULT_COLLAPSED = { matrix: false, map: true, details: true };
-const PANE_COLLAPSED_STORAGE_PREFIX = "cads:paneCollapsed:";
+// Navigation tabs above the selected-workflow workspace (first is the default).
+const NAV_TABS = ["matrix", "map", "details"];
+const NAV_TAB_STORAGE_KEY = "cads:navTab";
 const MODEL_MATRIX_URL = "/static/cads-model-matrix.json";
 const SEQUENTIAL_COUPLING_LABEL = "Sequential one-way hand-over (final values between steps)";
 const STORHY_DEFAULT_SUMMARY = ["score", "kpi_score", "risk_index", "confidence", "rul_days", "availability_delta_percent", "flexibility_delta_percent", "value_delta_eur"];
@@ -609,8 +608,9 @@ async function initializeDashboard() {
   try {
     state.selectedDemonstratorId = readPersistedDemonstratorId();
     state.runsRailCollapsed = readPersistedRunsRailCollapsed();
-    state.paneCollapsed = readPersistedPaneStates();
-    renderPaneChrome();
+    state.navTab = readPersistedNavTab();
+    bindNavTabs();
+    renderNavChrome();
     const [config] = await Promise.all([fetchJSON("/api/config"), loadModelMatrix()]);
     state.config = config;
     renderConfigMeta();
@@ -1240,43 +1240,67 @@ function persistRunsRailCollapsed(collapsed) {
   }
 }
 
-function readPersistedPaneStates() {
-  const panes = { ...PANE_DEFAULT_COLLAPSED };
-  for (const pane of Object.keys(panes)) {
-    try {
-      const saved = window.localStorage?.getItem(`${PANE_COLLAPSED_STORAGE_PREFIX}${pane}`);
-      if (saved === "true" || saved === "false") {
-        panes[pane] = saved === "true";
-      }
-    } catch (_error) {
-      // Local storage can be unavailable in private or embedded browser contexts.
-    }
+function readPersistedNavTab() {
+  try {
+    const saved = window.localStorage?.getItem(NAV_TAB_STORAGE_KEY) || "";
+    return NAV_TABS.includes(saved) ? saved : NAV_TABS[0];
+  } catch (_error) {
+    return NAV_TABS[0];
   }
-  return panes;
 }
 
-function persistPaneCollapsed(pane, collapsed) {
+function persistNavTab(tab) {
   try {
-    window.localStorage?.setItem(`${PANE_COLLAPSED_STORAGE_PREFIX}${pane}`, collapsed ? "true" : "false");
+    window.localStorage?.setItem(NAV_TAB_STORAGE_KEY, tab);
   } catch (_error) {
     // Local storage can be unavailable in private or embedded browser contexts.
   }
 }
 
-function setPaneCollapsed(pane, collapsed) {
-  if (!(pane in PANE_DEFAULT_COLLAPSED)) {
+function setNavTab(tab, options = {}) {
+  if (!NAV_TABS.includes(tab)) {
     return;
   }
-  state.paneCollapsed[pane] = Boolean(collapsed);
-  persistPaneCollapsed(pane, state.paneCollapsed[pane]);
-  renderPaneChrome();
+  state.navTab = tab;
+  persistNavTab(tab);
+  renderNavChrome();
+  if (options.focus) {
+    document.querySelector(`#navTabs [data-nav-tab="${tab}"]`)?.focus();
+  }
 }
 
-// Site selection from the matrix or the map opens the workflow picker.
-function expandDetailsPane() {
-  if (state.paneCollapsed.details) {
-    setPaneCollapsed("details", false);
+// Site selection from the matrix or the map moves on to the workflow picker.
+function showDetailsTab() {
+  setNavTab("details");
+}
+
+// Nav tabs live in #navTabs and use data-nav-tab hooks; the workflow picker
+// tabs in #workflowGrid keep their own [role='tab'] buttons.
+function bindNavTabs() {
+  const tablist = document.getElementById("navTabs");
+  if (!tablist) {
+    return;
   }
+  for (const button of tablist.querySelectorAll("[data-nav-tab]")) {
+    button.addEventListener("click", () => setNavTab(button.dataset.navTab));
+  }
+  tablist.addEventListener("keydown", (event) => {
+    const index = NAV_TABS.indexOf(state.navTab);
+    let next = -1;
+    if (event.key === "ArrowRight") {
+      next = (index + 1) % NAV_TABS.length;
+    } else if (event.key === "ArrowLeft") {
+      next = (index - 1 + NAV_TABS.length) % NAV_TABS.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = NAV_TABS.length - 1;
+    }
+    if (next >= 0) {
+      event.preventDefault();
+      setNavTab(NAV_TABS[next], { focus: true });
+    }
+  });
 }
 
 function setRunsRailCollapsed(collapsed) {
@@ -1365,7 +1389,7 @@ function renderDemonstrators() {
 
   const selected = selectedDemonstrator();
   renderModelMatrix();
-  renderPaneChrome();
+  renderNavChrome();
   const demonstratorsWithLocations = DEMONSTRATORS.filter((demo) => Number.isFinite(demo.mapX) && Number.isFinite(demo.mapY));
   map.innerHTML = `
     <div class="demo-map-canvas" role="img" aria-label="Clickable map of STOR-HY demonstrator locations">
@@ -1381,7 +1405,7 @@ function renderDemonstrators() {
 
   for (const button of map.querySelectorAll("[data-demo-id]")) {
     button.addEventListener("click", () => {
-      expandDetailsPane();
+      showDetailsTab();
       selectDemonstrator(button.dataset.demoId || "portfolio");
     });
   }
@@ -1392,25 +1416,30 @@ function renderDemonstrators() {
   }
 }
 
-function renderPaneChrome() {
-  const selectedId = selectedDemonstrator().id;
-  for (const pane of Object.keys(PANE_DEFAULT_COLLAPSED)) {
-    const collapsed = Boolean(state.paneCollapsed[pane]);
-    const section = document.querySelector(`.collapsible-pane[data-pane="${pane}"]`);
-    section?.classList.toggle("collapsed", collapsed);
-    const toggle = document.querySelector(`[data-pane-toggle="${pane}"]`);
-    if (toggle) {
-      toggle.textContent = collapsed ? "Expand" : "Collapse";
-      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      toggle.onclick = () => setPaneCollapsed(pane, !state.paneCollapsed[pane]);
+function renderNavChrome() {
+  for (const tab of NAV_TABS) {
+    const active = state.navTab === tab;
+    const button = document.querySelector(`#navTabs [data-nav-tab="${tab}"]`);
+    if (button) {
+      button.classList.toggle("selected", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+    }
+    const panel = document.querySelector(`[data-nav-panel="${tab}"]`);
+    if (panel) {
+      panel.hidden = !active;
     }
   }
-  for (const id of ["matrixAllSites", "siteMapShowAll"]) {
-    const button = document.getElementById(id);
-    if (button) {
-      button.classList.toggle("selected", selectedId === "portfolio");
-      button.onclick = () => selectDemonstrator("portfolio");
-    }
+  const demo = selectedDemonstrator();
+  const chip = document.getElementById("navSiteChip");
+  if (chip) {
+    chip.textContent = demo.id === "portfolio" ? "All sites" : demo.shortLabel || demo.label;
+    chip.classList.toggle("all-sites", demo.id === "portfolio");
+  }
+  const allSites = document.getElementById("matrixAllSites");
+  if (allSites) {
+    allSites.hidden = demo.id === "portfolio";
+    allSites.onclick = () => selectDemonstrator("portfolio");
   }
 }
 
@@ -1667,7 +1696,7 @@ function renderModelMatrix() {
     button.addEventListener("click", () => {
       const siteId = button.dataset.matrixSite || "portfolio";
       const modelId = button.dataset.matrixModel || "";
-      expandDetailsPane();
+      showDetailsTab();
       if (modelId) {
         selectMatrixCell(siteId, modelId);
       } else {

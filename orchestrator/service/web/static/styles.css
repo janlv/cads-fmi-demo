@@ -2410,59 +2410,104 @@ h2 {
   font-size: 0.72rem;
 }
 
-/* ---- Collapsible panes (matrix, site map, workflow details) ---- */
+/* ---- Navigation tabs (model matrix, site map, workflow details) ---- */
 
-.collapsible-pane {
-  padding: 16px 20px;
+.nav-area {
+  padding: 14px 20px 20px;
 }
 
-.pane-head {
+.nav-strip {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
 }
 
-.pane-title {
-  min-width: 0;
-}
-
-.pane-title .panel-kicker {
-  margin-bottom: 2px;
-  font-size: 0.68rem;
-}
-
-.pane-title h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1.12rem;
-}
-
-.pane-hint {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.pane-actions {
+.nav-tabs {
   display: flex;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(233, 236, 242, 0.85);
+  scrollbar-width: thin;
+}
+
+.nav-tab {
   flex: 0 0 auto;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.nav-tab:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.nav-tab.selected {
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(0, 28, 99, 0.16);
+}
+
+.nav-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nav-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
 
-.pane-toggle {
-  width: auto;
-  min-width: 86px;
-  padding: 7px 12px;
+.nav-site-chip {
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 750;
 }
 
-.pane-body {
-  margin-top: 14px;
+.nav-site-chip::before {
+  content: "Site: ";
+  font-weight: 500;
+  opacity: 0.8;
 }
 
-.collapsible-pane.collapsed .pane-body {
-  display: none;
+.nav-site-chip.all-sites {
+  background: rgba(5, 66, 235, 0.1);
+  color: var(--accent-deep);
+}
+
+.nav-panel {
+  padding-top: 12px;
+}
+
+.nav-panel[hidden],
+.nav-strip-actions [hidden] {
+  display: none !important;
+}
+
+.pane-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 /* ---- Selected workflow summary ---- */
@@ -2700,13 +2745,12 @@ h2 {
 }
 
 @media (max-width: 640px) {
-  .pane-head {
-    flex-direction: column;
-    align-items: stretch;
+  .nav-area {
+    padding: 12px 14px 16px;
   }
 
-  .pane-actions {
-    justify-content: flex-end;
+  .nav-tab {
+    padding: 7px 11px;
   }
 
   .page-shell {
