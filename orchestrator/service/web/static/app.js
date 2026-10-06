@@ -7,7 +7,7 @@ const state = {
   selectedRunName: "",
   selectedDemonstratorId: "portfolio",
   runsRailCollapsed: false,
-  siteMapCollapsed: false,
+  paneCollapsed: { matrix: false, map: true, details: true },
   modelMatrix: null,
   modelMatrixError: "",
   modelFocus: "",
@@ -67,7 +67,10 @@ const COSIM_MODEL_LABELS = { ems: "EMS", iot: "IoT", rul: "RUL" };
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
-const SITE_MAP_COLLAPSED_STORAGE_KEY = "cads:siteMapCollapsed";
+// Collapsible panes stacked above the selected-workflow workspace, with their
+// default collapsed state (matrix open, map and workflow picker closed).
+const PANE_DEFAULT_COLLAPSED = { matrix: false, map: true, details: true };
+const PANE_COLLAPSED_STORAGE_PREFIX = "cads:paneCollapsed:";
 const MODEL_MATRIX_URL = "/static/cads-model-matrix.json";
 const SEQUENTIAL_COUPLING_LABEL = "Sequential one-way hand-over (final values between steps)";
 const STORHY_DEFAULT_SUMMARY = ["score", "kpi_score", "risk_index", "confidence", "rul_days", "availability_delta_percent", "flexibility_delta_percent", "value_delta_eur"];
@@ -606,7 +609,8 @@ async function initializeDashboard() {
   try {
     state.selectedDemonstratorId = readPersistedDemonstratorId();
     state.runsRailCollapsed = readPersistedRunsRailCollapsed();
-    state.siteMapCollapsed = readPersistedSiteMapCollapsed();
+    state.paneCollapsed = readPersistedPaneStates();
+    renderPaneChrome();
     const [config] = await Promise.all([fetchJSON("/api/config"), loadModelMatrix()]);
     state.config = config;
     renderConfigMeta();
@@ -1236,26 +1240,43 @@ function persistRunsRailCollapsed(collapsed) {
   }
 }
 
-function readPersistedSiteMapCollapsed() {
-  try {
-    return window.localStorage?.getItem(SITE_MAP_COLLAPSED_STORAGE_KEY) === "true";
-  } catch (_error) {
-    return false;
+function readPersistedPaneStates() {
+  const panes = { ...PANE_DEFAULT_COLLAPSED };
+  for (const pane of Object.keys(panes)) {
+    try {
+      const saved = window.localStorage?.getItem(`${PANE_COLLAPSED_STORAGE_PREFIX}${pane}`);
+      if (saved === "true" || saved === "false") {
+        panes[pane] = saved === "true";
+      }
+    } catch (_error) {
+      // Local storage can be unavailable in private or embedded browser contexts.
+    }
   }
+  return panes;
 }
 
-function persistSiteMapCollapsed(collapsed) {
+function persistPaneCollapsed(pane, collapsed) {
   try {
-    window.localStorage?.setItem(SITE_MAP_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
+    window.localStorage?.setItem(`${PANE_COLLAPSED_STORAGE_PREFIX}${pane}`, collapsed ? "true" : "false");
   } catch (_error) {
     // Local storage can be unavailable in private or embedded browser contexts.
   }
 }
 
-function setSiteMapCollapsed(collapsed) {
-  state.siteMapCollapsed = Boolean(collapsed);
-  persistSiteMapCollapsed(state.siteMapCollapsed);
-  renderDemonstrators();
+function setPaneCollapsed(pane, collapsed) {
+  if (!(pane in PANE_DEFAULT_COLLAPSED)) {
+    return;
+  }
+  state.paneCollapsed[pane] = Boolean(collapsed);
+  persistPaneCollapsed(pane, state.paneCollapsed[pane]);
+  renderPaneChrome();
+}
+
+// Site selection from the matrix or the map opens the workflow picker.
+function expandDetailsPane() {
+  if (state.paneCollapsed.details) {
+    setPaneCollapsed("details", false);
+  }
 }
 
 function setRunsRailCollapsed(collapsed) {
@@ -1344,7 +1365,7 @@ function renderDemonstrators() {
 
   const selected = selectedDemonstrator();
   renderModelMatrix();
-  renderSiteMapChrome(selected);
+  renderPaneChrome();
   const demonstratorsWithLocations = DEMONSTRATORS.filter((demo) => Number.isFinite(demo.mapX) && Number.isFinite(demo.mapY));
   map.innerHTML = `
     <div class="demo-map-canvas" role="img" aria-label="Clickable map of STOR-HY demonstrator locations">
@@ -1360,6 +1381,7 @@ function renderDemonstrators() {
 
   for (const button of map.querySelectorAll("[data-demo-id]")) {
     button.addEventListener("click", () => {
+      expandDetailsPane();
       selectDemonstrator(button.dataset.demoId || "portfolio");
     });
   }
@@ -1370,20 +1392,25 @@ function renderDemonstrators() {
   }
 }
 
-function renderSiteMapChrome(selected) {
-  const pane = document.getElementById("siteMapPane");
-  const toggle = document.getElementById("siteMapToggle");
-  const showAll = document.getElementById("siteMapShowAll");
-  const collapsed = state.siteMapCollapsed;
-  pane?.classList.toggle("collapsed", collapsed);
-  if (toggle) {
-    toggle.textContent = collapsed ? "Expand" : "Collapse";
-    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-    toggle.onclick = () => setSiteMapCollapsed(!state.siteMapCollapsed);
+function renderPaneChrome() {
+  const selectedId = selectedDemonstrator().id;
+  for (const pane of Object.keys(PANE_DEFAULT_COLLAPSED)) {
+    const collapsed = Boolean(state.paneCollapsed[pane]);
+    const section = document.querySelector(`.collapsible-pane[data-pane="${pane}"]`);
+    section?.classList.toggle("collapsed", collapsed);
+    const toggle = document.querySelector(`[data-pane-toggle="${pane}"]`);
+    if (toggle) {
+      toggle.textContent = collapsed ? "Expand" : "Collapse";
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      toggle.onclick = () => setPaneCollapsed(pane, !state.paneCollapsed[pane]);
+    }
   }
-  if (showAll) {
-    showAll.classList.toggle("selected", selected.id === "portfolio");
-    showAll.onclick = () => selectDemonstrator("portfolio");
+  for (const id of ["matrixAllSites", "siteMapShowAll"]) {
+    const button = document.getElementById(id);
+    if (button) {
+      button.classList.toggle("selected", selectedId === "portfolio");
+      button.onclick = () => selectDemonstrator("portfolio");
+    }
   }
 }
 
@@ -1595,12 +1622,6 @@ function renderModelMatrix() {
   }
   if (!state.modelMatrix) {
     container.innerHTML = `
-      <div class="model-matrix-head">
-        <div>
-          <p class="panel-kicker">Demonstrators and models</p>
-          <h3>CADS model matrix</h3>
-        </div>
-      </div>
       <div class="empty-state">Model matrix unavailable${state.modelMatrixError ? `: ${escapeHTML(state.modelMatrixError)}` : ""}.</div>
     `;
     return;
@@ -1615,14 +1636,6 @@ function renderModelMatrix() {
   const categories = Array.isArray(state.modelMatrix.categories) ? state.modelMatrix.categories : [];
 
   container.innerHTML = `
-    <div class="model-matrix-head">
-      <div>
-        <p class="panel-kicker">Demonstrators and models</p>
-        <h3>CADS model matrix</h3>
-        <p class="model-matrix-intro">Pick a demonstrator column, or a cell to focus one model family at that site. Workflow tabs below follow the selection.</p>
-      </div>
-      <button class="demo-all-button${selectedId === "portfolio" ? " selected" : ""}" type="button" data-matrix-site="portfolio">All sites</button>
-    </div>
     <div class="model-matrix-legend" aria-label="Matrix legend">
       <span><b class="mm-mark identified" aria-hidden="true">&#9679;</b> ${escapeHTML(legend.identified || "identified")}</span>
       <span><b class="mm-mark candidate" aria-hidden="true">&#9675;</b> ${escapeHTML(legend.candidate || "candidate or to be decided")}</span>
@@ -1654,6 +1667,7 @@ function renderModelMatrix() {
     button.addEventListener("click", () => {
       const siteId = button.dataset.matrixSite || "portfolio";
       const modelId = button.dataset.matrixModel || "";
+      expandDetailsPane();
       if (modelId) {
         selectMatrixCell(siteId, modelId);
       } else {
@@ -1915,13 +1929,21 @@ function renderCouplingBadges(badges) {
     .join("");
 }
 
-function renderWorkflows() {
-  const grid = document.getElementById("workflowGrid");
-  const context = document.getElementById("workflowContext");
+function workflowSiteLabel(workflow) {
+  const siteId = workflowSiteId(workflow);
+  if (!siteId || siteId === "portfolio") {
+    return "All sites";
+  }
+  const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
+  return demo ? demo.shortLabel || demo.label : siteId;
+}
+
+// The always-visible summary above the runs rail and output panel.
+function renderSelectedWorkflow() {
+  const title = document.getElementById("selectedWorkflowTitle");
+  const summary = document.getElementById("selectedWorkflowSummary");
   const launchButton = document.getElementById("launchSelectedWorkflow");
   const selected = selectedWorkflow();
-  const workflows = visibleWorkflows();
-  const demo = selectedDemonstrator();
   const remoteEnabled = Boolean(state.config?.remoteEnabled);
   const selectedPending = Boolean(selected && state.pendingWorkflows.has(selected.path));
 
@@ -1934,6 +1956,64 @@ function renderWorkflows() {
       }
     };
   }
+  if (title) {
+    title.textContent = selected ? workflowLabel(selected) : "No workflow selected";
+  }
+  if (!summary) {
+    return;
+  }
+  if (!selected) {
+    summary.innerHTML = '<div class="empty-state">Pick a workflow in the Details pane or a matrix cell.</div>';
+    return;
+  }
+
+  const description = workflowDescription(selected);
+  const selectedMeta = [
+    formatWorkflowCategory(workflowCategory(selected)),
+    `${selected.stepCount} step${selected.stepCount === 1 ? "" : "s"}`,
+    workflowMaxRuntimeLabel(selected),
+  ].filter(Boolean).join(" | ");
+  const coupling = workflowCouplingInfo(selected);
+  const mapping = workflowMatrixMapping(selected);
+  const candidate = mapping ? matrixCandidateById(mapping.candidate) : null;
+  summary.innerHTML = `
+    <div class="selected-workflow-meta">
+      <span class="workflow-context-site">${escapeHTML(workflowSiteLabel(selected))}</span>
+      ${selectedMeta ? `<em>${escapeHTML(selectedMeta)}</em>` : ""}
+    </div>
+    ${description ? `<p class="selected-workflow-description">${escapeHTML(description)}</p>` : ""}
+    ${coupling.label ? `
+      <div class="workflow-coupling-line">
+        <span class="workflow-line-label">FMU coupling:</span>
+        <span>${escapeHTML(coupling.label)}</span>
+        <span class="coupling-badge-row">${renderCouplingBadges(coupling.badges)}</span>
+      </div>
+    ` : ""}
+    ${mapping ? `
+      <div class="workflow-matrix-line">
+        <span class="workflow-line-label">Model matrix:</span>
+        <span class="matrix-map-chip">${escapeHTML(workflowMatrixLabel(selected))}</span>
+        ${candidate ? `<span>${escapeHTML(candidate.title || "")}${candidate.chain ? ` &middot; <code>${escapeHTML(candidate.chain)}</code>` : ""}</span>` : ""}
+        <span class="workflow-model-muted">draft mapping</span>
+      </div>
+    ` : ""}
+    ${renderWorkflowModelOverview(selected)}
+  `;
+
+  for (const button of summary.querySelectorAll("[data-select-workflow-model]")) {
+    button.addEventListener("click", () => {
+      toggleWorkflowModel(Number(button.dataset.selectWorkflowModel));
+    });
+  }
+}
+
+function renderWorkflows() {
+  const grid = document.getElementById("workflowGrid");
+  const context = document.getElementById("workflowContext");
+  const workflows = visibleWorkflows();
+  const demo = selectedDemonstrator();
+
+  renderSelectedWorkflow();
 
   if (state.workflows.length === 0) {
     grid.innerHTML = '<div class="empty-state">No launchable repo workflows were found under <code>workflows/</code>.</div>';
@@ -1944,47 +2024,12 @@ function renderWorkflows() {
   }
 
   if (context) {
-    const description = workflowDescription(selected);
-    const selectedMeta = selected
-      ? [
-          formatWorkflowCategory(workflowCategory(selected)),
-          `${selected.stepCount} step${selected.stepCount === 1 ? "" : "s"}`,
-          workflowMaxRuntimeLabel(selected),
-        ].filter(Boolean).join(" | ")
-      : "";
     const focusMatches = hasMatrixFocus() ? workflows.filter(workflowMatchesMatrixFocus).length : 0;
-    const coupling = workflowCouplingInfo(selected);
-    const mapping = workflowMatrixMapping(selected);
-    const candidate = mapping ? matrixCandidateById(mapping.candidate) : null;
     context.innerHTML = `
       <span class="workflow-context-site">${escapeHTML(demo.shortLabel || demo.label)}</span>
       <span>${escapeHTML(demo.id === "portfolio" ? "Showing every repo workflow." : `Showing workflows mapped to ${demo.label}.`)}</span>
       ${renderMatrixFocusChips()}
       ${hasMatrixFocus() ? `<span class="matrix-focus-count">${focusMatches} of ${workflows.length} highlighted</span>` : ""}
-      ${selected ? `
-        <span class="workflow-context-break" aria-hidden="true"></span>
-        <div class="workflow-selected-description">
-          <strong>${escapeHTML(workflowLabel(selected))}</strong>
-          ${selectedMeta ? `<em>${escapeHTML(selectedMeta)}</em>` : ""}
-          ${description ? `<span>${escapeHTML(description)}</span>` : ""}
-          ${coupling.label ? `
-            <div class="workflow-coupling-line">
-              <span class="workflow-line-label">FMU coupling:</span>
-              <span>${escapeHTML(coupling.label)}</span>
-              <span class="coupling-badge-row">${renderCouplingBadges(coupling.badges)}</span>
-            </div>
-          ` : ""}
-          ${mapping ? `
-            <div class="workflow-matrix-line">
-              <span class="workflow-line-label">Model matrix:</span>
-              <span class="matrix-map-chip">${escapeHTML(workflowMatrixLabel(selected))}</span>
-              ${candidate ? `<span>${escapeHTML(candidate.title || "")}${candidate.chain ? ` &middot; <code>${escapeHTML(candidate.chain)}</code>` : ""}</span>` : ""}
-              <span class="workflow-model-muted">draft mapping</span>
-            </div>
-          ` : ""}
-          ${renderWorkflowModelOverview(selected)}
-        </div>
-      ` : ""}
     `;
 
     for (const button of context.querySelectorAll("[data-clear-focus]")) {
@@ -1994,11 +2039,6 @@ function renderWorkflows() {
         } else {
           setCandidateFocus("");
         }
-      });
-    }
-    for (const button of context.querySelectorAll("[data-select-workflow-model]")) {
-      button.addEventListener("click", () => {
-        toggleWorkflowModel(Number(button.dataset.selectWorkflowModel));
       });
     }
   }

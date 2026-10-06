@@ -618,14 +618,6 @@ h2 {
   font-weight: 750;
 }
 
-/* Forces the description onto its own line: its max-width would otherwise let
-   it share a line with the short site chip. */
-.workflow-context-break {
-  flex: 0 0 100%;
-  height: 0;
-  margin-bottom: -8px;
-}
-
 .workflow-selected-description {
   flex: 1 0 100%;
   display: grid;
@@ -2055,25 +2047,6 @@ h2 {
   min-width: 0;
 }
 
-.model-matrix-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.model-matrix-head h3 {
-  margin: 0;
-  font-size: 1.18rem;
-  color: var(--ink);
-}
-
-.model-matrix-intro {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.84rem;
-}
-
 .model-matrix-legend {
   display: flex;
   flex-wrap: wrap;
@@ -2437,50 +2410,98 @@ h2 {
   font-size: 0.72rem;
 }
 
-/* ---- Site map (secondary pane) ---- */
+/* ---- Collapsible panes (matrix, site map, workflow details) ---- */
 
-.site-map-pane {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+.collapsible-pane {
+  padding: 16px 20px;
 }
 
-.site-map-head {
+.pane-head {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  margin-bottom: 10px;
 }
 
-.site-map-head .panel-kicker {
+.pane-title {
+  min-width: 0;
+}
+
+.pane-title .panel-kicker {
   margin-bottom: 2px;
   font-size: 0.68rem;
 }
 
-.site-map-head h3 {
+.pane-title h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 0.98rem;
+  font-size: 1.12rem;
 }
 
-.site-map-actions {
+.pane-hint {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pane-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 8px;
   align-items: center;
 }
 
-.site-map-toggle {
+.pane-toggle {
   width: auto;
+  min-width: 86px;
   padding: 7px 12px;
 }
 
-.site-map-pane.collapsed .site-map-head {
-  margin-bottom: 0;
+.pane-body {
+  margin-top: 14px;
 }
 
-.site-map-pane.collapsed #siteMapBody {
+.collapsible-pane.collapsed .pane-body {
   display: none;
+}
+
+/* ---- Selected workflow summary ---- */
+
+.panel-selected-workflow {
+  padding: 18px 20px;
+}
+
+.panel-selected-workflow .panel-head {
+  margin-bottom: 10px;
+}
+
+.selected-workflow-summary {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.selected-workflow-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.selected-workflow-meta em {
+  color: var(--accent-deep);
+  font-style: normal;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.selected-workflow-description {
+  max-width: 72rem;
+  margin: 0;
 }
 
 /* ---- Workflow coupling and matrix mapping ---- */
@@ -2595,6 +2616,10 @@ h2 {
     overflow-x: auto;
   }
 
+  .workflow-toolbar {
+    align-items: stretch;
+  }
+
   .model-matrix {
     min-width: 900px;
   }
@@ -2675,9 +2700,13 @@ h2 {
 }
 
 @media (max-width: 640px) {
-  .model-matrix-head,
-  .site-map-head {
+  .pane-head {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pane-actions {
+    justify-content: flex-end;
   }
 
   .page-shell {
