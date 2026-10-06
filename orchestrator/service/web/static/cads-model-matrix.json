@@ -5,92 +5,577 @@
     "candidate": "candidate or to be decided"
   },
   "sites": [
-    { "id": "vsmc", "label": "VSMC" },
-    { "id": "cheylas", "label": "Cheylas" },
-    { "id": "la-rance", "label": "La Rance" },
-    { "id": "alqueva", "label": "Alqueva" },
-    { "id": "vilarinho", "label": "Vilarinho" }
+    {
+      "id": "vsmc",
+      "label": "VSMC",
+      "partners": [
+        "EDF",
+        "UPC",
+        "HESSO",
+        "AH",
+        "KAIZEN"
+      ]
+    },
+    {
+      "id": "cheylas",
+      "label": "Cheylas",
+      "partners": [
+        "EDF",
+        "UPC",
+        "KAIZEN",
+        "AH",
+        "NORCE"
+      ]
+    },
+    {
+      "id": "la-rance",
+      "label": "La Rance",
+      "partners": [
+        "EDF",
+        "GEF",
+        "AH",
+        "HESSO",
+        "SENER"
+      ]
+    },
+    {
+      "id": "alqueva",
+      "label": "Alqueva",
+      "partners": [
+        "EDPP",
+        "EDPN",
+        "INESC",
+        "GEF",
+        "UPC",
+        "NORCE",
+        "HESSO"
+      ]
+    },
+    {
+      "id": "vilarinho",
+      "label": "Vilarinho",
+      "partners": [
+        "EDPP",
+        "EDPN",
+        "GEF",
+        "INPG",
+        "UPC"
+      ]
+    }
   ],
   "categories": [
-    { "id": "physical", "label": "Physical" },
-    { "id": "virtual-sensors", "label": "Virtual sensors" },
-    { "id": "degradation", "label": "Degradation" },
-    { "id": "optimization", "label": "Optimization" },
-    { "id": "decision-support", "label": "Decision support" }
+    {
+      "id": "physical",
+      "label": "Physical"
+    },
+    {
+      "id": "virtual-sensors",
+      "label": "Virtual sensors"
+    },
+    {
+      "id": "degradation",
+      "label": "Degradation"
+    },
+    {
+      "id": "optimization",
+      "label": "Optimization"
+    },
+    {
+      "id": "decision-support",
+      "label": "Decision support"
+    }
   ],
   "models": [
-    { "id": "M1", "name": "Runner stress reduced-order model", "owners": ["UPC", "AH", "KAIZEN"], "category": "physical",
-      "sites": { "vsmc": "identified", "cheylas": "identified", "alqueva": "identified" }, "workflows": ["W1"],
-      "demo_fmus": ["RunnerStressFmi3", "StartSequenceWearReplica"] },
-    { "id": "M2", "name": "MIV load lookup table (LES)", "owners": ["INPG", "GEF"], "category": "physical",
-      "sites": { "vilarinho": "identified" }, "workflows": ["W4"],
-      "demo_fmus": ["MIVRegulationReplica", "MIVFatigueReplica"] },
-    { "id": "M3", "name": "1D dense-fluid plant model", "owners": ["UPC", "HESSO"], "category": "physical",
-      "sites": {}, "workflows": ["W5"], "demo_fmus": [], "note": "RheEnergise demonstrator; scope to be decided" },
-    { "id": "M4", "name": "Plant / governor models (Simsen, HYG3)", "owners": ["UPC", "GEF", "EDF"], "category": "physical",
-      "sites": { "vsmc": "candidate", "cheylas": "candidate", "alqueva": "candidate", "vilarinho": "candidate" }, "workflows": ["W3", "W4"],
-      "demo_fmus": ["FastServiceControllerReplica"] },
-    { "id": "M5", "name": "Sediment transport and biofouling", "owners": ["AH", "SENER"], "category": "virtual-sensors",
-      "sites": { "cheylas": "identified", "la-rance": "identified" }, "workflows": ["W2"],
-      "demo_fmus": ["SedimentExposureFmi3", "CorrosionBiofoulingReplica", "RunnerSedimentWearReplica"] },
-    { "id": "M6", "name": "Runner stress data fusion / estimators", "owners": ["UPC", "AH"], "category": "virtual-sensors",
-      "sites": { "cheylas": "identified", "alqueva": "identified" }, "workflows": ["W1"],
-      "demo_fmus": ["ConditionMonitoringReplica"] },
-    { "id": "M7", "name": "IoT edge condition indicators", "owners": ["NORCE"], "category": "virtual-sensors",
-      "sites": { "cheylas": "identified" }, "workflows": ["W1"],
-      "demo_fmus": ["IoTIndicatorFmi3"] },
-    { "id": "M8", "name": "Component degradation, health, RUL", "owners": ["AH", "NORCE", "UPC", "EDF"], "category": "degradation",
-      "sites": { "vsmc": "identified", "cheylas": "identified", "la-rance": "identified", "alqueva": "identified", "vilarinho": "identified" }, "workflows": ["W1", "W2", "W3", "W4", "W6"],
-      "demo_fmus": ["RulFmi3", "PredictiveMaintenanceReplica", "CleaningIntervalReplica"] },
-    { "id": "M9", "name": "Battery degradation", "owners": ["NORCE"], "category": "degradation",
-      "sites": { "la-rance": "identified", "alqueva": "identified" }, "workflows": ["W3"],
-      "demo_fmus": ["BatteryDegradationFmi3", "BESSSizingReplica"] },
-    { "id": "M10", "name": "Energy management PSP + BESS + PV", "owners": ["INESC"], "category": "optimization",
-      "sites": { "alqueva": "identified" }, "workflows": ["W6"],
-      "demo_fmus": ["EmsDispatchFmi3", "HybridEMSReplica"] },
-    { "id": "M11", "name": "Energy management, cascade units", "owners": ["EDF", "HESSO", "KAIZEN"], "category": "optimization",
-      "sites": { "vsmc": "identified" }, "workflows": ["W6"],
-      "demo_fmus": ["HydroCascadeDispatchReplica", "HSCFlexibilityReplica"] },
-    { "id": "M12", "name": "Energy management, dense fluid", "owners": ["HESSO"], "category": "optimization",
-      "sites": {}, "workflows": ["W5", "W6"], "demo_fmus": [], "note": "RheEnergise demonstrator; scope to be decided" },
-    { "id": "M13", "name": "Ageing-aware control framework", "owners": ["HESSO", "UPC", "NORCE", "AH"], "category": "decision-support",
-      "sites": { "vsmc": "candidate", "cheylas": "candidate", "alqueva": "candidate", "vilarinho": "candidate" }, "workflows": ["W7"],
-      "demo_fmus": [] },
-    { "id": "M14", "name": "Degradation cost vs. market revenue", "owners": ["NORCE"], "category": "decision-support",
-      "sites": { "vsmc": "identified", "cheylas": "identified", "la-rance": "candidate", "alqueva": "identified", "vilarinho": "candidate" }, "workflows": ["W6"],
-      "demo_fmus": ["SustainabilityCBAReplica", "KPIAssessmentReplica"] }
+    {
+      "id": "M1",
+      "name": "Runner stress reduced-order model",
+      "owners": [
+        "UPC",
+        "AH",
+        "KAIZEN"
+      ],
+      "category": "physical",
+      "sites": {
+        "vsmc": "identified",
+        "cheylas": "identified",
+        "alqueva": "identified"
+      },
+      "workflows": [
+        "W1"
+      ],
+      "demo_fmus": [
+        "RunnerStressFmi3",
+        "StartSequenceWearReplica"
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "MIV load lookup table (LES)",
+      "owners": [
+        "INPG",
+        "GEF"
+      ],
+      "category": "physical",
+      "sites": {
+        "vilarinho": "identified"
+      },
+      "workflows": [
+        "W4"
+      ],
+      "demo_fmus": [
+        "MIVRegulationReplica",
+        "MIVFatigueReplica"
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "1D dense-fluid plant model",
+      "owners": [
+        "UPC",
+        "HESSO"
+      ],
+      "category": "physical",
+      "sites": {},
+      "workflows": [
+        "W5"
+      ],
+      "demo_fmus": [],
+      "note": "RheEnergise demonstrator; scope to be decided"
+    },
+    {
+      "id": "M4",
+      "name": "Plant / governor models (Simsen, HYG3)",
+      "owners": [
+        "UPC",
+        "GEF",
+        "EDF"
+      ],
+      "category": "physical",
+      "sites": {
+        "vsmc": "candidate",
+        "cheylas": "candidate",
+        "alqueva": "candidate",
+        "vilarinho": "candidate"
+      },
+      "workflows": [
+        "W3",
+        "W4"
+      ],
+      "demo_fmus": [
+        "FastServiceControllerReplica"
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Sediment transport and biofouling",
+      "owners": [
+        "AH",
+        "SENER"
+      ],
+      "category": "virtual-sensors",
+      "sites": {
+        "cheylas": "identified",
+        "la-rance": "identified"
+      },
+      "workflows": [
+        "W2"
+      ],
+      "demo_fmus": [
+        "SedimentExposureFmi3",
+        "CorrosionBiofoulingReplica",
+        "RunnerSedimentWearReplica"
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Runner stress data fusion / estimators",
+      "owners": [
+        "UPC",
+        "AH"
+      ],
+      "category": "virtual-sensors",
+      "sites": {
+        "cheylas": "identified",
+        "alqueva": "identified"
+      },
+      "workflows": [
+        "W1"
+      ],
+      "demo_fmus": [
+        "ConditionMonitoringReplica"
+      ]
+    },
+    {
+      "id": "M7",
+      "name": "IoT edge condition indicators",
+      "owners": [
+        "NORCE"
+      ],
+      "category": "virtual-sensors",
+      "sites": {
+        "cheylas": "identified"
+      },
+      "workflows": [
+        "W1"
+      ],
+      "demo_fmus": [
+        "IoTIndicatorFmi3"
+      ]
+    },
+    {
+      "id": "M8",
+      "name": "Component degradation, health, RUL",
+      "owners": [
+        "AH",
+        "NORCE",
+        "UPC",
+        "EDF"
+      ],
+      "category": "degradation",
+      "sites": {
+        "vsmc": "identified",
+        "cheylas": "identified",
+        "la-rance": "identified",
+        "alqueva": "identified",
+        "vilarinho": "identified"
+      },
+      "workflows": [
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "W6"
+      ],
+      "demo_fmus": [
+        "RulFmi3",
+        "PredictiveMaintenanceReplica",
+        "CleaningIntervalReplica"
+      ]
+    },
+    {
+      "id": "M9",
+      "name": "Battery degradation",
+      "owners": [
+        "NORCE"
+      ],
+      "category": "degradation",
+      "sites": {
+        "la-rance": "identified",
+        "alqueva": "identified"
+      },
+      "workflows": [
+        "W3"
+      ],
+      "demo_fmus": [
+        "BatteryDegradationFmi3",
+        "BESSSizingReplica"
+      ]
+    },
+    {
+      "id": "M10",
+      "name": "Energy management PSP + BESS + PV",
+      "owners": [
+        "INESC"
+      ],
+      "category": "optimization",
+      "sites": {
+        "alqueva": "identified"
+      },
+      "workflows": [
+        "W6"
+      ],
+      "demo_fmus": [
+        "EmsDispatchFmi3",
+        "HybridEMSReplica"
+      ]
+    },
+    {
+      "id": "M11",
+      "name": "Energy management, cascade units",
+      "owners": [
+        "EDF",
+        "HESSO",
+        "KAIZEN"
+      ],
+      "category": "optimization",
+      "sites": {
+        "vsmc": "identified"
+      },
+      "workflows": [
+        "W6"
+      ],
+      "demo_fmus": [
+        "HydroCascadeDispatchReplica",
+        "HSCFlexibilityReplica"
+      ]
+    },
+    {
+      "id": "M12",
+      "name": "Energy management, dense fluid",
+      "owners": [
+        "HESSO"
+      ],
+      "category": "optimization",
+      "sites": {},
+      "workflows": [
+        "W5",
+        "W6"
+      ],
+      "demo_fmus": [],
+      "note": "RheEnergise demonstrator; scope to be decided"
+    },
+    {
+      "id": "M13",
+      "name": "Ageing-aware control framework",
+      "owners": [
+        "HESSO",
+        "UPC",
+        "NORCE",
+        "AH"
+      ],
+      "category": "decision-support",
+      "sites": {
+        "vsmc": "candidate",
+        "cheylas": "candidate",
+        "alqueva": "candidate",
+        "vilarinho": "candidate"
+      },
+      "workflows": [
+        "W7"
+      ],
+      "demo_fmus": []
+    },
+    {
+      "id": "M14",
+      "name": "Degradation cost vs. market revenue",
+      "owners": [
+        "NORCE"
+      ],
+      "category": "decision-support",
+      "sites": {
+        "vsmc": "identified",
+        "cheylas": "identified",
+        "la-rance": "candidate",
+        "alqueva": "identified",
+        "vilarinho": "candidate"
+      },
+      "workflows": [
+        "W6"
+      ],
+      "demo_fmus": [
+        "SustainabilityCBAReplica",
+        "KPIAssessmentReplica"
+      ]
+    }
   ],
   "workflows": [
-    { "id": "W1", "title": "Runner fatigue → RUL", "chain": "M1 M6 M7 → M8" },
-    { "id": "W2", "title": "Sediment → erosion degradation", "chain": "M5 → M8" },
-    { "id": "W3", "title": "Hybrid plant and battery health", "chain": "M4 M9 → M8" },
-    { "id": "W4", "title": "MIV valve fatigue → control decision", "chain": "M2 M4 → M8" },
-    { "id": "W5", "title": "Dense-fluid transients → dispatch", "chain": "M3 → M12" },
-    { "id": "W6", "title": "Energy management → informed decision", "chain": "M10/M11/M12 + M8 → M14" },
-    { "id": "W7", "title": "Ageing-aware control", "chain": "consumes W1–W6 outputs → M13" }
+    {
+      "id": "W1",
+      "title": "Runner fatigue → RUL",
+      "chain": "M1 M6 M7 → M8"
+    },
+    {
+      "id": "W2",
+      "title": "Sediment → erosion degradation",
+      "chain": "M5 → M8"
+    },
+    {
+      "id": "W3",
+      "title": "Hybrid plant and battery health",
+      "chain": "M4 M9 → M8"
+    },
+    {
+      "id": "W4",
+      "title": "MIV valve fatigue → control decision",
+      "chain": "M2 M4 → M8"
+    },
+    {
+      "id": "W5",
+      "title": "Dense-fluid transients → dispatch",
+      "chain": "M3 → M12"
+    },
+    {
+      "id": "W6",
+      "title": "Energy management → informed decision",
+      "chain": "M10/M11/M12 + M8 → M14"
+    },
+    {
+      "id": "W7",
+      "title": "Ageing-aware control",
+      "chain": "consumes W1–W6 outputs → M13"
+    }
   ],
   "demo_workflows": {
-    "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml": { "candidate": "W3", "models": ["M9", "M10", "M14"] },
-    "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml": { "candidate": "W6", "models": ["M10", "M8", "M14"] },
-    "workflows/demonstrators/alqueva/control/fast_service_controller.yaml": { "candidate": "W3", "models": ["M4", "M8", "M14"] },
-    "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml": { "candidate": "W1", "models": ["M6", "M1", "M8", "M14"] },
-    "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml": { "candidate": "W1", "models": ["M1", "M7", "M8"] },
-    "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml": { "candidate": "W1", "models": ["M6", "M8", "M14"] },
-    "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml": { "candidate": "W2", "models": ["M6", "M5", "M8", "M14"] },
-    "workflows/demonstrators/cheylas/control/fast_dewatering.yaml": { "candidate": "W1", "models": ["M1", "M8", "M14"] },
-    "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml": { "candidate": "W2", "models": ["M5", "M8"] },
-    "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml": { "candidate": "W2", "models": ["M5", "M14"] },
-    "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml": { "candidate": "W2", "models": ["M5", "M8", "M14"] },
-    "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml": { "candidate": "W3", "models": ["M9", "M14"] },
-    "workflows/demonstrators/vilarinho/control/miv_regulation.yaml": { "candidate": "W4", "models": ["M2", "M8", "M14"] },
-    "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml": { "candidate": "W4", "models": ["M6", "M2", "M8", "M14"] },
-    "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml": { "candidate": "W4", "models": ["M2", "M11", "M14"] },
-    "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml": { "candidate": "W6", "models": ["M11", "M1", "M14"] },
-    "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml": { "candidate": "W6", "models": ["M11", "M14"] },
-    "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml": { "candidate": "W1", "models": ["M1", "M8", "M14"] },
-    "workflows/common/condition_monitoring/cads_condition_monitoring.yaml": { "candidate": "W1", "models": ["M6", "M8"] },
-    "workflows/common/decision_support/degradation_cost_benefit.yaml": { "candidate": "W6", "models": ["M6", "M8", "M14"] },
-    "workflows/common/kpi/demo_kpi_assessment.yaml": { "candidate": "W6", "models": ["M14"] },
-    "workflows/common/sustainability/sustainability_cba.yaml": { "candidate": "W6", "models": ["M14"] }
-  }
+    "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml": {
+      "candidate": "W3",
+      "models": [
+        "M9",
+        "M10",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml": {
+      "candidate": "W6",
+      "models": [
+        "M10",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/alqueva/control/fast_service_controller.yaml": {
+      "candidate": "W3",
+      "models": [
+        "M4",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M6",
+        "M1",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M1",
+        "M7",
+        "M8"
+      ]
+    },
+    "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M6",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml": {
+      "candidate": "W2",
+      "models": [
+        "M6",
+        "M5",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/cheylas/control/fast_dewatering.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M1",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml": {
+      "candidate": "W2",
+      "models": [
+        "M5",
+        "M8"
+      ]
+    },
+    "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml": {
+      "candidate": "W2",
+      "models": [
+        "M5",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml": {
+      "candidate": "W2",
+      "models": [
+        "M5",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml": {
+      "candidate": "W3",
+      "models": [
+        "M9",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/vilarinho/control/miv_regulation.yaml": {
+      "candidate": "W4",
+      "models": [
+        "M2",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml": {
+      "candidate": "W4",
+      "models": [
+        "M6",
+        "M2",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml": {
+      "candidate": "W4",
+      "models": [
+        "M2",
+        "M11",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml": {
+      "candidate": "W6",
+      "models": [
+        "M11",
+        "M1",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml": {
+      "candidate": "W6",
+      "models": [
+        "M11",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M1",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/common/condition_monitoring/cads_condition_monitoring.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M6",
+        "M8"
+      ]
+    },
+    "workflows/common/decision_support/degradation_cost_benefit.yaml": {
+      "candidate": "W6",
+      "models": [
+        "M6",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/common/kpi/demo_kpi_assessment.yaml": {
+      "candidate": "W6",
+      "models": [
+        "M14"
+      ]
+    },
+    "workflows/common/sustainability/sustainability_cba.yaml": {
+      "candidate": "W6",
+      "models": [
+        "M14"
+      ]
+    }
+  },
+  "partners_source": "D3.5 Table 2, demonstrator-to-partner access matrix"
 }
