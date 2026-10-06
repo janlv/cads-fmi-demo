@@ -92,10 +92,31 @@ surface change.
 ### The runner→dashboard result contract
 
 `cads-workflow-runner` prints the whole `map[step]map[output]value` result as
-JSON on stdout. The dashboard does **not** read a database or artifact store: it
-shells out to `argo` and recovers results by parsing that JSON back out of pod
-logs (`extractRunResultsFromLogs` in `remote.go`). So anything that pollutes
-runner stdout, or changes the result shape, breaks run-result display.
+JSON on stdout, **also on failure** (then with exit code 1, or 130 when
+cancelled). Two pseudo-steps are reserved: `_synthetic_case` (fixture echo) and
+`_run` (status, failed step, wall/simulated time, workflow sha256, per-FMU
+identity and statistics; built by `workflow/runinfo.go`). Step names starting
+with `_` are rejected. The dashboard does **not** read a database or artifact
+store: it shells out to `argo` and recovers results by parsing that JSON back
+out of pod logs (`extractRunResultsFromLogs` in `remote.go`, which prefers the
+object containing `_run`). So anything that pollutes runner stdout, or changes
+the result shape, breaks run-result display. FMU and FMIL diagnostics go to
+stderr only.
+
+### Co-simulation steps
+
+A step with a `cosim:` block (schema in `workflow/cosim.go`, docs in
+`docs/workflows.md`) runs several FMUs together with communication points:
+`scheme: jacobi` (lock-step) or `gauss_seidel` (ping-pong), `connections`
+(`model.var` -> `model.var`), optional condition-driven `events`, flattened
+`model.var` result keys. Each FMU advances with its own DefaultExperiment
+`stepSize` and sub-steps inside the communication step (ARCH-COMP-002); a
+`step_size` on a cosim model is rejected. The master lives in
+`internal/fmi/cosim.cpp` on top of the `FmuInstance` abstraction
+(`fmu_instance.cpp`); the single-FMU path (`runSingle`) uses the same
+abstraction. FMI 3.0 demo FMUs are built with `pythonfmu3` from
+`create_fmu/storhy_fmi3/`; the shared logic there must stay in plain functions
+because pythonfmu3 discovers `class X(Fmi3Slave):` by regex.
 
 ### Repo root discovery
 

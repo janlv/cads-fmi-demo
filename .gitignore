@@ -63,3 +63,6 @@ orchestrator/service/.gocache/
 orchestrator/service/.gomodcache/
 
 .codex
+
+# Golden regression captures of runner output (local only)
+.golden/

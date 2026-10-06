@@ -169,13 +169,114 @@ steps:
   - name: predictive_maintenance
     fmu: fmu/models/PredictiveMaintenanceReplica.fmu
     start_from:
-      input_score: {step: condition_monitoring, output: score}
-      input_risk_index: {step: condition_monitoring, output: risk_index}
-      input_damage_index: {step: condition_monitoring, output: damage_index}
-      input_rul_days: {step: condition_monitoring, output: rul_days}
+      input_score: condition_monitoring.score
+      input_risk_index: condition_monitoring.risk_index
+      input_damage_index: condition_monitoring.damage_index
+      input_rul_days: condition_monitoring.rul_days
 ```
 
 This mirrors the intended final integration style: partner FMUs publish a small
 set of typed outputs, downstream decision-support models consume those outputs,
 and the dashboard presents the latest successful result for the selected site
 and workflow.
+
+## Coupled Co-Simulation Workflows (`cosim`)
+
+Sequential steps hand over final values only. A `cosim` step instead advances
+several FMUs together with communication points, exchanging values over
+declared connections at every point. This is the mechanism behind the FMU
+interaction patterns required by D3.5 ARCH-COMP-003.
+
+```yaml
+steps:
+  - name: battery_ems
+    cosim:
+      scheme: gauss_seidel          # gauss_seidel (sequential, ping-pong) | jacobi (parallel, lock-step)
+      start_time: 0
+      stop_time: 86400
+      communication_step: 900       # master step H
+      models:
+        - name: ems
+          fmu: fmu/models/EmsDispatchFmi3.fmu
+          start_values: {max_power_mw: 20.0}
+        - name: battery
+          fmu: fmu/models/BatteryDegradationFmi3.fmu
+          start_from: {initial_soc_percent: earlier_step.soc_percent}   # optional, as for sequential steps
+      connections:
+        - {from: battery.soc_percent, to: ems.soc_percent}
+        - {from: ems.power_setpoint_mw, to: battery.power_setpoint_mw}
+      events:                       # optional: condition-driven discrete signals
+        - name: low_soc
+          when: battery.soc_percent < 20      # model.variable <op> number; op in < <= > >= == !=
+          set: ems.protection_request         # input or tunable parameter on the target model
+          value: 1                            # driven while the condition holds (default 1)
+          reset: 0                            # driven otherwise (default 0)
+          mode: level                         # level (default) | pulse (one interval after a rising edge)
+      outputs: [battery.soc_percent, ems.revenue_eur]      # default: every output of every model
+      trace: {signals: [battery.soc_percent, ems.power_setpoint_mw], sample_every: 900}
+  - name: kpi_assessment
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_from: {input_rul_days: battery_ems.battery.rul_days}   # cosim results use model.variable keys
+```
+
+Semantics:
+
+- **Step size (ARCH-COMP-002).** Each FMU advances with the `stepSize` declared
+  in its own `modelDescription.xml` DefaultExperiment and sub-steps inside one
+  communication interval. A `step_size` on a cosim model is rejected. For
+  sequential steps the YAML `step_size` is now only a fallback used when the
+  FMU declares none; a warning is printed when both exist and differ.
+- **`jacobi`** advances every model from the values exchanged at the start of
+  the interval, then exchanges (parallel, lock-step).
+- **`gauss_seidel`** advances models in listed order; each model receives the
+  outputs of the models already advanced in the current interval (sequential,
+  ping-pong when the connection graph has a cycle, one-way when it is acyclic).
+- **Events** are evaluated by the master at every communication point on the
+  latest exchanged values. Rising and falling edges are logged into `_run`, a
+  boolean trace signal `events.<name>.active` and an output
+  `events.<name>.count` are added automatically. Models are never skipped or
+  stepped out of order, because FMI requires contiguous communication points;
+  "event-driven" means the receiving model reacts to the pulsed input.
+- **Initialization.** Connected initial values are propagated between
+  `enterInitializationMode` and `exitInitializationMode`.
+- **Results.** A cosim step produces flattened `model.variable` keys plus an
+  optional `trace` block in the same shape as sequential steps, so later steps
+  can reference `cosim_step.model.variable` through `start_from`.
+
+### Run status, timing and provenance (`_run`)
+
+Every runner result carries a reserved pseudo-step `_run`, also when a step
+fails (the completed steps stay in the result, the failing step is named):
+
+| Field | Meaning |
+|---|---|
+| `status`, `error`, `failed_step` | succeeded, failed or cancelled (ARCH-COMP-017) |
+| `started_at`, `finished_at`, `wall_seconds`, `simulated_seconds`, `ratio` | wall-clock time and simulated-to-wall ratio (ARCH-COMP-008); simulated time is in the FMU's own unit |
+| `runner_version`, `workflow.path`, `workflow.sha256` | the runner build and the exact workflow definition executed (ARCH-COMP-012/013) |
+| `steps[].fmus[]` | per FMU: repo path, sha256, FMI version, model name, version, GUID or instantiation token, generation tool, declared and used step, do_step calls (ARCH-COMP-013/018) |
+| `steps[].events[]`, `communication_points`, `terminated_by`, `failed_at` | cosim diagnostics |
+
+### Pattern coverage of the demo workflows
+
+| Workflow | ARCH-COMP-003 pattern | Slide-6 candidate | Models |
+|---|---|---|---|
+| `workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml` | sequential ping-pong (gauss_seidel, cyclic) + one-way FMI 2 tail | W3 / W6 | EmsDispatchFmi3 <-> BatteryDegradationFmi3, then KPIAssessmentReplica |
+| `workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml` | parallel lock-step (jacobi) over a one-way DAG + FMI 2 tail | W1 | RunnerStressFmi3, IoTIndicatorFmi3 -> RulFmi3, then PredictiveMaintenanceReplica |
+| `workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml` | event-driven | W2 | SedimentExposureFmi3 <-> CleaningDecisionFmi3 with a pulsed `trigger` |
+| all 19 existing demonstrator and common workflows | one-way master-slave (sequential hand-over) | W1 to W6 placeholders | FMI 2 replicas |
+
+The FMI 3.0 models under `create_fmu/storhy_fmi3/` are stateful, deterministic
+placeholders with time-compressed ageing so a 24 h run shows visible trends.
+They are not validated engineering models.
+
+## Runtime Positioning
+
+D3.5 Section 6 states that the co-simulation responsibilities do not prescribe
+a particular scheduler, execution library or deployment topology. What partners
+build against is the integration contract: an FMI Co-Simulation FMU, a YAML
+workflow definition, and the result JSON with its `_run` provenance block. The
+Go/FMIL runner in this repository is a replaceable reference implementation of
+that contract, and the workflows above double as its acceptance tests. Argo
+Workflows is used because it is already the scheduler on the Kaizen playground
+and it provides run isolation, deadlines, resource limits, outcome states and
+label-based provenance (ARCH-COMP-006/015/016/017/018).
