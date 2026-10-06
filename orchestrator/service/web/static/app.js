@@ -4673,8 +4673,12 @@ function formatMetric(value) {
   if (!Number.isFinite(numeric)) {
     return String(value);
   }
-  if (Math.abs(numeric) >= 1000 || (Math.abs(numeric) > 0 && Math.abs(numeric) < 0.001)) {
+  const magnitude = Math.abs(numeric);
+  if (magnitude >= 1e9 || (magnitude > 0 && magnitude < 0.001)) {
     return numeric.toExponential(3);
+  }
+  if (magnitude >= 1000) {
+    return numeric.toLocaleString("en-US", { maximumFractionDigits: magnitude >= 10000 ? 0 : 1 });
   }
   return numeric.toFixed(4).replace(/\.?0+$/, "");
 }
