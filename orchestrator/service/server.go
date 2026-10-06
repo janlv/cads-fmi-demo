@@ -34,6 +34,13 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+// localRunErrorResponse carries whatever the runner produced (including `_run`) alongside the error.
+type localRunErrorResponse struct {
+	Error    string                    `json:"error"`
+	Workflow string                    `json:"workflow,omitempty"`
+	Results  map[string]map[string]any `json:"results,omitempty"`
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/" && r.Method == http.MethodGet:
@@ -187,6 +194,10 @@ func (s *Server) handleLocalRun(w http.ResponseWriter, r *http.Request) {
 	results, err := s.Runner.Run(req.Workflow)
 	if err != nil {
 		log.Printf("workflow %s failed: %v", req.Workflow, err)
+		if len(results) > 0 {
+			writeJSON(w, handlerErrorStatus(err), localRunErrorResponse{Error: err.Error(), Workflow: req.Workflow, Results: results})
+			return
+		}
 		writeHandlerError(w, err)
 		return
 	}
@@ -210,6 +221,7 @@ func (s *Server) remoteClient() RemoteClient {
 			RemoteEnabled:       false,
 			PollIntervalSeconds: int(defaultPollInterval / time.Second),
 			Problems:            []string{"remote playground client is not configured"},
+			Version:             ResolvedVersion(),
 		},
 	}
 }
@@ -251,6 +263,10 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
+	writeJSONError(w, handlerErrorStatus(err), err.Error())
+}
+
+func handlerErrorStatus(err error) int {
 	status := http.StatusInternalServerError
 	switch {
 	case errors.Is(err, ErrRemoteUnavailable):
@@ -266,5 +282,5 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	case os.IsNotExist(err):
 		status = http.StatusNotFound
 	}
-	writeJSONError(w, status, err.Error())
+	return status
 }

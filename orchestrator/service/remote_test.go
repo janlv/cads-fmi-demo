@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -206,9 +208,12 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "workflows", "tests"), 0o755); err != nil {
 		t.Fatalf("create test workflows dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "python_chain.yaml"), []byte("steps:\n  - name: producer\n"), 0o644); err != nil {
+	workflowYAML := []byte("metadata:\n  site_id: La Rance\nsteps:\n  - name: producer\n")
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "python_chain.yaml"), workflowYAML, 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
+	sum := sha256.Sum256(workflowYAML)
+	wantSHA := hex.EncodeToString(sum[:])
 
 	client := NewArgoRemoteClient(root, ArgoOptionInputs{
 		ArgoServer:     "argoworkflows.cads.kzslab.dev",
@@ -226,6 +231,7 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	client.now = func() time.Time {
 		return time.Date(2026, 4, 16, 17, 0, 0, 0, time.UTC)
 	}
+	client.hostname = func() (string, error) { return "dev-laptop", nil }
 	client.exec = func(_ context.Context, command string, args ...string) ([]byte, error) {
 		if command != "argo" {
 			t.Fatalf("command = %q, want argo", command)
@@ -267,13 +273,34 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 		if envByName["S3_ENDPOINT"].ValueFrom == nil || envByName["S3_ENDPOINT"].ValueFrom.SecretKeyRef == nil || envByName["S3_ENDPOINT"].ValueFrom.SecretKeyRef.Key != "endpoint" {
 			t.Fatalf("S3_ENDPOINT env = %+v, want endpoint secret ref", envByName["S3_ENDPOINT"])
 		}
-		if !strings.HasPrefix(manifest.Metadata.Name, "cads-python-chain-20260416170000") {
-			t.Fatalf("manifest name = %q, want timestamped workflow name", manifest.Metadata.Name)
+		if manifest.Metadata.Name != "" || manifest.Metadata.GenerateName != "cads-python-chain-" {
+			t.Fatalf("manifest metadata = %+v, want generateName cads-python-chain- and no name", manifest.Metadata)
+		}
+		if manifest.Spec.ActiveDeadlineSeconds != defaultMaxRuntimeSeconds {
+			t.Fatalf("activeDeadlineSeconds = %d, want default %d", manifest.Spec.ActiveDeadlineSeconds, defaultMaxRuntimeSeconds)
+		}
+		if container.Resources == nil ||
+			container.Resources.Requests["cpu"] != "250m" || container.Resources.Requests["memory"] != "256Mi" ||
+			container.Resources.Limits["cpu"] != "1" || container.Resources.Limits["memory"] != "1Gi" {
+			t.Fatalf("container.Resources = %+v, want default requests/limits", container.Resources)
+		}
+		labels := manifest.Metadata.Labels
+		if labels[labelManagedBy] != "cads-dashboard" || labels[labelWorkflow] != "python_chain" ||
+			labels[labelSite] != "La-Rance" || labels[labelWorkflowSHA] != wantSHA[:12] {
+			t.Fatalf("labels = %+v, want provenance labels", labels)
+		}
+		annotations := manifest.Metadata.Annotations
+		if annotations[annotationWorkflowPath] != "workflows/tests/python_chain.yaml" ||
+			annotations[annotationWorkflowSHA256] != wantSHA ||
+			annotations[annotationVersion] == "" ||
+			annotations[annotationSubmittedFrom] != "dev-laptop" {
+			t.Fatalf("annotations = %+v, want provenance annotations", annotations)
 		}
 
 		return []byte(`{
 		  "metadata": {
-		    "name": "cads-python-chain-20260416170000",
+		    "name": "cads-python-chain-x7k2p",
+		    "generateName": "cads-python-chain-",
 		    "creationTimestamp": "2026-04-16T17:00:00Z"
 		  },
 		  "spec": {
@@ -300,7 +327,7 @@ func TestArgoRemoteClientSubmitWorkflowBuildsConfiguredManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitWorkflow() error = %v", err)
 	}
-	if run.Name != "cads-python-chain-20260416170000" || run.WorkflowPath != "workflows/tests/python_chain.yaml" {
+	if run.Name != "cads-python-chain-x7k2p" || run.WorkflowPath != "workflows/tests/python_chain.yaml" {
 		t.Fatalf("run = %+v, want normalized submitted run", run)
 	}
 }
@@ -355,5 +382,288 @@ func TestArgoRemoteClientRunArgoRedactsTokenFromErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "<redacted>") {
 		t.Fatalf("runArgo() error = %v, want redaction marker", err)
+	}
+}
+
+func TestResolveRunLimitsUsesWorkflowLimitsAndCeiling(t *testing.T) {
+	cfg := ArgoConfig{
+		MaxRuntimeSeconds:        900,
+		MaxRuntimeCeilingSeconds: 3600,
+		DefaultResources: RunResources{
+			Requests: map[string]string{"cpu": "250m", "memory": "256Mi"},
+			Limits:   map[string]string{"cpu": "1", "memory": "1Gi"},
+		},
+	}
+
+	deadline, resources := resolveRunLimits(cfg, nil)
+	if deadline != 900 || resources.Requests["cpu"] != "250m" || resources.Limits["memory"] != "1Gi" {
+		t.Fatalf("defaults = %d %+v, want 900 and default resources", deadline, resources)
+	}
+
+	deadline, resources = resolveRunLimits(cfg, &WorkflowLimits{MaxRuntimeSeconds: 300, CPU: "500m", Memory: "512Mi"})
+	if deadline != 300 {
+		t.Fatalf("deadline = %d, want per-workflow 300", deadline)
+	}
+	if resources.Requests["cpu"] != "500m" || resources.Limits["cpu"] != "500m" ||
+		resources.Requests["memory"] != "512Mi" || resources.Limits["memory"] != "512Mi" {
+		t.Fatalf("resources = %+v, want per-workflow cpu/memory as request and limit", resources)
+	}
+	if cfg.DefaultResources.Requests["cpu"] != "250m" {
+		t.Fatalf("resolveRunLimits mutated the config defaults: %+v", cfg.DefaultResources)
+	}
+
+	deadline, _ = resolveRunLimits(cfg, &WorkflowLimits{MaxRuntimeSeconds: 7200})
+	if deadline != 3600 {
+		t.Fatalf("deadline = %d, want clamped to ceiling 3600", deadline)
+	}
+}
+
+func TestSubmitWorkflowAppliesPerWorkflowLimits(t *testing.T) {
+	root := writeDashboardRepoFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "limited.yaml"), []byte(`
+metadata:
+  limits: {max_runtime_seconds: 120, cpu: "2", memory: 2Gi}
+steps:
+  - name: producer
+`), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "bad_limits.yaml"), []byte(`
+metadata:
+  limits: {cpu: lots}
+steps:
+  - name: producer
+`), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	client := NewArgoRemoteClient(root, ArgoOptionInputs{}, func(key string) string {
+		if key == "ARGO_TOKEN" {
+			return "token"
+		}
+		return ""
+	})
+	client.argoCmd = "argo"
+	client.problems = nil
+	var manifest hostedWorkflowManifest
+	client.exec = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			t.Fatalf("read manifest: %v", err)
+		}
+		if err := yaml.Unmarshal(data, &manifest); err != nil {
+			t.Fatalf("unmarshal manifest: %v", err)
+		}
+		return []byte(`{"metadata":{"name":"cads-limited-abcde","creationTimestamp":"2026-04-16T17:00:00Z"},
+		  "spec":{"activeDeadlineSeconds":120,"templates":[{"name":"run-workflow","container":{"args":["--workflow","workflows/tests/limited.yaml"]}}]},
+		  "status":{"phase":"Pending"}}`), nil
+	}
+
+	run, err := client.SubmitWorkflow(context.Background(), "workflows/tests/limited.yaml")
+	if err != nil {
+		t.Fatalf("SubmitWorkflow() error = %v", err)
+	}
+	if manifest.Spec.ActiveDeadlineSeconds != 120 {
+		t.Fatalf("activeDeadlineSeconds = %d, want 120", manifest.Spec.ActiveDeadlineSeconds)
+	}
+	res := manifest.Spec.Templates[0].Container.Resources
+	if res == nil || res.Requests["cpu"] != "2" || res.Limits["memory"] != "2Gi" || res.Requests["memory"] != "2Gi" {
+		t.Fatalf("resources = %+v, want per-workflow cpu 2 / memory 2Gi", res)
+	}
+	if run.DeadlineSeconds != 120 {
+		t.Fatalf("run.DeadlineSeconds = %d, want 120", run.DeadlineSeconds)
+	}
+
+	if _, err := client.SubmitWorkflow(context.Background(), "workflows/tests/bad_limits.yaml"); err == nil || !strings.Contains(err.Error(), "limits.cpu") {
+		t.Fatalf("SubmitWorkflow(bad limits) error = %v, want limits.cpu rejection", err)
+	}
+}
+
+func TestNormalizeArgoWorkflowReadsProvenance(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	payload := []byte(`{
+	  "metadata": {
+	    "name": "cads-cleaning-interval-q8z4m",
+	    "creationTimestamp": "2026-10-06T11:00:00Z",
+	    "labels": {
+	      "app.kubernetes.io/managed-by": "cads-dashboard",
+	      "cads.norceresearch.no/workflow": "cleaning_interval",
+	      "cads.norceresearch.no/site": "la_rance",
+	      "cads.norceresearch.no/workflow-sha": "0123456789ab"
+	    },
+	    "annotations": {
+	      "cads.norceresearch.no/workflow-path": "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml",
+	      "cads.norceresearch.no/workflow-sha256": "0123456789abcdef",
+	      "cads.norceresearch.no/dashboard-version": "v1.2.3-dirty",
+	      "cads.norceresearch.no/submitted-from": "dev-laptop"
+	    }
+	  },
+	  "spec": {
+	    "activeDeadlineSeconds": 300,
+	    "templates": [{
+	      "name": "run-workflow",
+	      "container": {
+	        "image": "ghcr.io/example/cads:test",
+	        "args": ["--json-output", "--workflow", "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml"],
+	        "resources": {"requests": {"cpu": "250m", "memory": "256Mi"}, "limits": {"cpu": "1", "memory": "1Gi"}}
+	      }
+	    }]
+	  },
+	  "status": {
+	    "phase": "Failed",
+	    "startedAt": "2026-10-06T11:00:01Z",
+	    "finishedAt": "2026-10-06T11:05:01Z",
+	    "message": "Step exceeded its deadline"
+	  }
+	}`)
+
+	run, err := parseArgoWorkflow(".", payload, now)
+	if err != nil || run == nil {
+		t.Fatalf("parseArgoWorkflow() = %+v, %v", run, err)
+	}
+	if run.DeadlineSeconds != 300 || !run.DeadlineExceeded {
+		t.Fatalf("deadline = %d exceeded=%v, want 300 and exceeded", run.DeadlineSeconds, run.DeadlineExceeded)
+	}
+	if run.Resources == nil || run.Resources.Requests["cpu"] != "250m" || run.Resources.Limits["memory"] != "1Gi" {
+		t.Fatalf("resources = %+v, want container resources", run.Resources)
+	}
+	if run.WorkflowSHA256 != "0123456789abcdef" || run.DashboardVersion != "v1.2.3-dirty" || run.SubmittedFrom != "dev-laptop" {
+		t.Fatalf("provenance = %+v, want annotations", run)
+	}
+	if run.Labels[labelSite] != "la_rance" || run.Labels[labelWorkflowSHA] != "0123456789ab" {
+		t.Fatalf("labels = %+v, want provenance labels", run.Labels)
+	}
+
+	// A succeeded run whose message mentions a deadline is not a deadline kill.
+	succeeded := strings.Replace(string(payload), `"phase": "Failed"`, `"phase": "Succeeded"`, 1)
+	run, _ = parseArgoWorkflow(".", []byte(succeeded), now)
+	if run == nil || run.DeadlineExceeded {
+		t.Fatalf("succeeded run = %+v, want deadlineExceeded false", run)
+	}
+
+	// Without recognisable container args the workflow-path annotation identifies the run.
+	wrapped := strings.Replace(string(payload), `"args": ["--json-output", "--workflow", "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml"],`, `"args": ["run.sh"],`, 1)
+	run, err = parseArgoWorkflow(".", []byte(wrapped), now)
+	if err != nil || run == nil || run.WorkflowPath != "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml" {
+		t.Fatalf("annotation fallback run = %+v, %v; want workflow path from annotation", run, err)
+	}
+}
+
+func newResultsTestClient(t *testing.T, phase string, message string, logs string, logsErr error) *ArgoRemoteClient {
+	t.Helper()
+	client := &ArgoRemoteClient{
+		workDir: ".",
+		argoCmd: "argo",
+		config:  ArgoConfig{Namespace: "playground", ArgoServer: "argo", Token: "token"},
+		now:     func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) },
+	}
+	client.exec = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "get":
+			return []byte(`{"metadata":{"name":"cads-run-abc12","creationTimestamp":"2026-10-06T11:00:00Z"},
+			  "spec":{"templates":[{"name":"run-workflow","container":{"args":["--workflow","workflows/tests/cosim_fail.yaml"]}}]},
+			  "status":{"phase":"` + phase + `","message":"` + message + `"}}`), nil
+		case "logs":
+			if logsErr != nil {
+				return nil, logsErr
+			}
+			return []byte(logs), nil
+		}
+		t.Fatalf("unexpected argo call %v", args)
+		return nil, nil
+	}
+	return client
+}
+
+func TestGetRunResultsFailedRunWithRunInfo(t *testing.T) {
+	logs := `cads-run-abc12: [workflow] Running workflows/tests/cosim_fail.yaml
+cads-run-abc12: {"first":{"x":1},"_run":{"status":"failed","error":"variable ems.missing not found","failed_step":"coupled","steps":[]}}
+cads-run-abc12: time="2026-10-06T11:00:05Z" level=info msg="sub-process exited" argo=true error="exit status 1"
+`
+	client := newResultsTestClient(t, "Failed", "Error (exit code 1)", logs, nil)
+	results, err := client.GetRunResults(context.Background(), "cads-run-abc12")
+	if err != nil {
+		t.Fatalf("GetRunResults() error = %v", err)
+	}
+	if results.Phase != "Failed" || results.Status != "failed" || !results.Partial ||
+		results.Error != "variable ems.missing not found" || results.FailedStep != "coupled" {
+		t.Fatalf("results = %+v, want failed partial results from _run", results)
+	}
+	if results.StepResults["first"]["x"] != float64(1) {
+		t.Fatalf("StepResults = %+v, want partial step values", results.StepResults)
+	}
+}
+
+func TestGetRunResultsFailedRunWithoutLogs(t *testing.T) {
+	for name, tc := range map[string]struct {
+		logs string
+		err  error
+	}{
+		"no json":     {logs: "cads-run-abc12: killed\n"},
+		"logs failed": {err: errors.New("pod deleted")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := newResultsTestClient(t, "Failed", "Step exceeded its deadline", tc.logs, tc.err)
+			results, err := client.GetRunResults(context.Background(), "cads-run-abc12")
+			if err != nil {
+				t.Fatalf("GetRunResults() error = %v", err)
+			}
+			if !results.Partial || results.Error != "Step exceeded its deadline" || results.Status != "failed" ||
+				results.StepResults == nil || len(results.StepResults) != 0 {
+				t.Fatalf("results = %+v, want empty partial result with run message", results)
+			}
+		})
+	}
+}
+
+func TestGetRunResultsRunningIsUnavailable(t *testing.T) {
+	client := newResultsTestClient(t, "Running", "", "", nil)
+	if _, err := client.GetRunResults(context.Background(), "cads-run-abc12"); !errors.Is(err, ErrRunResultsUnavailable) {
+		t.Fatalf("GetRunResults() error = %v, want ErrRunResultsUnavailable", err)
+	}
+	for _, phase := range []string{"Succeeded", "failed", "Error"} {
+		if !resultsPhaseAllowed(phase) {
+			t.Fatalf("resultsPhaseAllowed(%q) = false", phase)
+		}
+	}
+	for _, phase := range []string{"Running", "Pending", ""} {
+		if resultsPhaseAllowed(phase) {
+			t.Fatalf("resultsPhaseAllowed(%q) = true", phase)
+		}
+	}
+}
+
+func TestGetRunResultsSucceededStatusFromRunInfo(t *testing.T) {
+	client := newResultsTestClient(t, "Succeeded", "", `{"step":{"y":2},"_run":{"status":"succeeded"}}`, nil)
+	results, err := client.GetRunResults(context.Background(), "cads-run-abc12")
+	if err != nil {
+		t.Fatalf("GetRunResults() error = %v", err)
+	}
+	if results.Status != "succeeded" || results.Partial || results.Error != "" {
+		t.Fatalf("results = %+v, want succeeded non-partial", results)
+	}
+}
+
+func TestExtractRunResultsPrefersRunInfoCandidate(t *testing.T) {
+	logs := []byte(`pod: {"stray":{"debug":1}}
+pod: [workflow] Running
+pod: {"real":{"value":3},"_run":{"status":"succeeded"}}
+pod: {"later_stray":{"debug":2}}
+`)
+	results, err := extractRunResultsFromLogs(logs)
+	if err != nil {
+		t.Fatalf("extractRunResultsFromLogs() error = %v", err)
+	}
+	if _, ok := results["_run"]; !ok || results["real"]["value"] != float64(3) {
+		t.Fatalf("results = %+v, want candidate with _run", results)
+	}
+
+	balanced, err := extractBalancedJSONObject([]byte(`{"a":{"x":1}} noise {"b":{"y":2},"_run":{"status":"failed"}}`))
+	if err != nil || balanced["_run"] == nil {
+		t.Fatalf("extractBalancedJSONObject() = %+v, %v; want _run candidate", balanced, err)
+	}
+	tail, err := extractJSONTail([]byte(`noise {"a":{"x":1}} {"b":{"y":2},"_run":{"status":"failed"}}`))
+	if err != nil || tail["_run"] == nil {
+		t.Fatalf("extractJSONTail() = %+v, %v; want _run candidate", tail, err)
 	}
 }

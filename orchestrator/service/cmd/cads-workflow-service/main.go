@@ -21,6 +21,8 @@ func main() {
 	var argoServiceAccount string
 	var remoteImage string
 	var kubeconfig string
+	var maxRuntimeSeconds int64
+	var showVersion bool
 
 	flag.StringVar(&workflow, "workflow", "", "Run the workflow once and exit")
 	flag.BoolVar(&serve, "serve", false, "Start the HTTP service")
@@ -31,7 +33,14 @@ func main() {
 	flag.StringVar(&argoServiceAccount, "argo-service-account", "", "Hosted Argo service account (default ARGO_SERVICE_ACCOUNT or playground-storhy-playground-pg-admin)")
 	flag.StringVar(&remoteImage, "remote-image", "", "Hosted workflow image (default CADS_WORKFLOW_IMAGE or ghcr.io/janlv/cads-fmi-demo:playground)")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Optional kubeconfig used when ARGO_TOKEN is not set")
+	flag.Int64Var(&maxRuntimeSeconds, "max-runtime-seconds", 0, "Default hosted run deadline in seconds when a workflow sets no limits.max_runtime_seconds (default CADS_MAX_RUNTIME_SECONDS or 900; capped by CADS_MAX_RUNTIME_CEILING_SECONDS, default 3600)")
+	flag.BoolVar(&showVersion, "version", false, "Print the service version and exit")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println(svc.ResolvedVersion())
+		return
+	}
 
 	runner, err := svc.NewRunner(workdir)
 	if err != nil {
@@ -39,14 +48,16 @@ func main() {
 	}
 
 	if workflow != "" {
-		results, err := runner.Run(workflow)
-		if err != nil {
-			log.Fatal(err)
+		results, runErr := runner.Run(workflow)
+		if results != nil {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(results); err != nil {
+				log.Fatal(err)
+			}
 		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(results); err != nil {
-			log.Fatal(err)
+		if runErr != nil {
+			log.Fatal(runErr)
 		}
 		if !serve {
 			return
@@ -60,12 +71,14 @@ func main() {
 			ServiceAccount: argoServiceAccount,
 			Image:          remoteImage,
 			Kubeconfig:     kubeconfig,
+
+			MaxRuntimeSeconds: maxRuntimeSeconds,
 		}, os.Getenv)
 		server := &svc.Server{
 			Runner: runner,
 			Remote: remote,
 		}
-		fmt.Printf("[service] listening on %s (workdir %s)\n", addr, runner.WorkDir)
+		fmt.Printf("[service] listening on %s (workdir %s, version %s)\n", addr, runner.WorkDir, svc.ResolvedVersion())
 		log.Fatal(http.ListenAndServe(addr, server))
 	}
 

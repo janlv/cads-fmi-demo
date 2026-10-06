@@ -123,6 +123,10 @@ stage_platform_resources() {
     fi
 }
 
+cads_build_version() {
+    git -C "$ROOT_DIR" describe --always --dirty 2>/dev/null || echo dev
+}
+
 build_go_binaries() {
     log_step "Building Go workflow binaries"
     mkdir -p "$ROOT_DIR/bin" "$LOCAL_GO_BUILD_CACHE" "$LOCAL_GO_MOD_CACHE"
@@ -140,10 +144,14 @@ build_go_binaries() {
         "GOCACHE=${GOCACHE:-$LOCAL_GO_BUILD_CACHE}"
         "GOMODCACHE=${GOMODCACHE:-$LOCAL_GO_MOD_CACHE}"
     )
+    local cads_version
+    cads_version="$(cads_build_version)"
+    local version_ldflags="-X github.com/norceresearch/cads-fmi-demo/orchestrator/service.Version=${cads_version}"
+    log_info "Stamping binaries with version ${cads_version}"
     (
         cd "$ROOT_DIR/orchestrator/service"
-        run_with_logged_output env "${runner_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
-        run_with_logged_output env "${service_env[@]}" go build -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
+        run_with_logged_output env "${runner_env[@]}" go build -ldflags "$version_ldflags" -o "$ROOT_DIR/bin/cads-workflow-runner" ./cmd/cads-workflow-runner
+        run_with_logged_output env "${service_env[@]}" go build -ldflags "$version_ldflags" -o "$ROOT_DIR/bin/cads-workflow-service" ./cmd/cads-workflow-service
     )
 }
 
@@ -165,6 +173,7 @@ build_container_image() {
     build_args+=(
         --build-arg "CADS_CERTS_SHA=$certs_sha" \
         --build-arg "GOLANG_VERSION=$CADS_GO_VERSION" \
+        --build-arg "CADS_VERSION=$(cads_build_version)" \
         -t "$IMAGE" "$ROOT_DIR"
     )
     log_stream_cmd "Building container image $IMAGE (${CONTAINER_TOOL}${CONTAINER_PLATFORM:+, $CONTAINER_PLATFORM})" "$CONTAINER_TOOL" "${build_args[@]}"

@@ -250,6 +250,10 @@ metadata:
   result_family: storhy_mock
   description: VSMC cascade dispatch replica workflow.
   tags: [cascade, dispatch]
+  limits:
+    max_runtime_seconds: 300
+    cpu: 500m
+    memory: 512Mi
 steps:
   - name: dispatch
     fmu: fmu/models/HydroCascadeDispatchReplica.fmu
@@ -288,6 +292,19 @@ steps:
 		workflows[0].Models[1].Inputs[0].SourceStep != "dispatch" ||
 		workflows[0].Models[1].Inputs[0].SourceOutput != "risk_index" {
 		t.Fatalf("ListWorkflows() models = %+v, want parsed model chain", workflows[0].Models)
+	}
+	if limits := workflows[0].Metadata.Limits; limits == nil || limits.MaxRuntimeSeconds != 300 || limits.CPU != "500m" || limits.Memory != "512Mi" {
+		t.Fatalf("Metadata.Limits = %+v, want parsed limits", workflows[0].Metadata.Limits)
+	}
+	if len(workflows[0].SHA256) != 64 || len(workflows[0].Problems) != 0 {
+		t.Fatalf("SHA256 = %q problems = %v, want hex digest and no problems", workflows[0].SHA256, workflows[0].Problems)
+	}
+	if workflows[0].Models[0].Kind != "fmu" {
+		t.Fatalf("Models[0].Kind = %q, want fmu", workflows[0].Models[0].Kind)
+	}
+	metadata, digest, err := readWorkflowDocument(root, workflows[0].Path)
+	if err != nil || digest != workflows[0].SHA256 || metadata.SiteID != "vsmc" {
+		t.Fatalf("readWorkflowDocument() = %+v, %q, %v; want same digest and metadata", metadata, digest, err)
 	}
 	resolvedTestWorkflow, err := ResolveLaunchWorkflow(root, filepath.Join("workflows", "tests", "calculate_aecis.yaml"))
 	if err != nil || resolvedTestWorkflow != "workflows/tests/calculate_aecis.yaml" {
@@ -337,4 +354,88 @@ steps:
 		t.Fatalf("write ae_event_statistics workflow: %v", err)
 	}
 	return root
+}
+
+func TestListWorkflowsDescribesCoSimSteps(t *testing.T) {
+	root := writeDashboardRepoFixture(t)
+	dir := filepath.Join(root, "workflows", "demonstrators", "alqueva", "hybrid")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "battery_ems_cosim.yaml"), []byte(`
+metadata:
+  display_name: Battery and EMS co-simulation
+  site_id: alqueva
+steps:
+  - name: battery_ems
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 86400
+      communication_step: 900
+      models:
+        - name: battery
+          fmu: fmu/models/BatteryDegradationFmi3.fmu
+          start_values: {capacity_kwh: 2000}
+          start_from: {initial_soc: prep.soc_percent}
+          input_series: {csv: data/ambient.csv}
+        - name: ems
+          fmu: fmu/models/EmsDispatchFmi3.fmu
+      connections:
+        - {from: battery.soc_percent, to: ems.soc_percent}
+        - {from: ems.power_setpoint_mw, to: battery.power_setpoint_mw}
+      events:
+        - {name: low_soc, when: battery.soc_percent < 20, set: ems.protection_request}
+      outputs: [battery.soc_percent, ems.revenue_eur]
+  - name: kpi
+    fmu: fmu/models/KPIAssessmentReplica.fmu
+    start_from: {input_rul: battery_ems.battery.rul_days}
+  - name: broken
+    cosim:
+      scheme: euler
+      models: [{name: a, fmu: fmu/models/A.fmu}]
+`), 0o644); err != nil {
+		t.Fatalf("write cosim workflow: %v", err)
+	}
+
+	workflows, err := ListWorkflows(root)
+	if err != nil {
+		t.Fatalf("ListWorkflows() error = %v", err)
+	}
+	if len(workflows) != 1 || len(workflows[0].Models) != 3 {
+		t.Fatalf("ListWorkflows() = %+v, want one workflow with three catalog entries", workflows)
+	}
+	cosimStep := workflows[0].Models[0]
+	if cosimStep.Kind != "cosim" || cosimStep.Label != "Battery Ems" || cosimStep.FMU != "" || cosimStep.CoSim == nil || len(cosimStep.Problems) != 0 {
+		t.Fatalf("cosim step = %+v, want valid cosim entry", cosimStep)
+	}
+	cosim := cosimStep.CoSim
+	if cosim.Scheme != "gauss_seidel" || cosim.CommunicationStep == nil || *cosim.CommunicationStep != 900 {
+		t.Fatalf("cosim = %+v, want scheme and timing", cosim)
+	}
+	if len(cosim.Connections) != 2 || cosim.Connections[0].FromModel != "battery" || cosim.Connections[0].ToVariable != "soc_percent" {
+		t.Fatalf("connections = %+v, want two split connections", cosim.Connections)
+	}
+	if strings.Join(cosim.Patterns, ",") != "sequential,bidirectional,event-driven" {
+		t.Fatalf("patterns = %v, want sequential,bidirectional,event-driven", cosim.Patterns)
+	}
+	if len(cosim.Events) != 1 || cosim.Events[0].Mode != "level" || cosim.Events[0].Set != "ems.protection_request" {
+		t.Fatalf("events = %+v, want low_soc level event", cosim.Events)
+	}
+	if len(cosim.Models) != 2 || cosim.Models[0].InputSeries != "data/ambient.csv" || cosim.Models[0].Label != "Battery Degradation Fmi3" ||
+		strings.Join(cosim.Models[0].Outputs, ",") != "soc_percent" {
+		t.Fatalf("cosim models = %+v, want member summaries", cosim.Models)
+	}
+	if strings.Join(cosimStep.Outputs, ",") != "battery.soc_percent,ems.revenue_eur" ||
+		len(cosimStep.Inputs) != 1 || cosimStep.Inputs[0].Name != "battery.initial_soc" || cosimStep.Inputs[0].SourceStep != "prep" {
+		t.Fatalf("cosim step io = %+v / %+v, want flattened outputs and prefixed inputs", cosimStep.Outputs, cosimStep.Inputs)
+	}
+	tail := workflows[0].Models[1]
+	if tail.Kind != "fmu" || tail.Inputs[0].SourceStep != "battery_ems" || tail.Inputs[0].SourceOutput != "battery.rul_days" {
+		t.Fatalf("tail = %+v, want dotted start_from resolution", tail)
+	}
+	broken := workflows[0].Models[2]
+	if broken.Kind != "cosim" || len(broken.Problems) == 0 {
+		t.Fatalf("broken = %+v, want problems instead of a listing failure", broken)
+	}
 }
