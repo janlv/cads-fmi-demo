@@ -104,8 +104,7 @@
         "W1"
       ],
       "demo_fmus": [
-        "RunnerStressFmi3",
-        "StartSequenceWearReplica"
+        "RunnerStressFmi3"
       ]
     },
     {
@@ -122,10 +121,7 @@
       "workflows": [
         "W4"
       ],
-      "demo_fmus": [
-        "MIVRegulationReplica",
-        "MIVFatigueReplica"
-      ]
+      "demo_fmus": []
     },
     {
       "id": "M3",
@@ -161,9 +157,7 @@
         "W3",
         "W4"
       ],
-      "demo_fmus": [
-        "FastServiceControllerReplica"
-      ]
+      "demo_fmus": []
     },
     {
       "id": "M5",
@@ -181,9 +175,7 @@
         "W2"
       ],
       "demo_fmus": [
-        "SedimentExposureFmi3",
-        "CorrosionBiofoulingReplica",
-        "RunnerSedimentWearReplica"
+        "SedimentExposureFmi3"
       ]
     },
     {
@@ -201,9 +193,7 @@
       "workflows": [
         "W1"
       ],
-      "demo_fmus": [
-        "ConditionMonitoringReplica"
-      ]
+      "demo_fmus": []
     },
     {
       "id": "M7",
@@ -247,9 +237,7 @@
         "W6"
       ],
       "demo_fmus": [
-        "RulFmi3",
-        "PredictiveMaintenanceReplica",
-        "CleaningIntervalReplica"
+        "RulFmi3"
       ]
     },
     {
@@ -267,8 +255,7 @@
         "W3"
       ],
       "demo_fmus": [
-        "BatteryDegradationFmi3",
-        "BESSSizingReplica"
+        "BatteryDegradationFmi3"
       ]
     },
     {
@@ -285,8 +272,7 @@
         "W6"
       ],
       "demo_fmus": [
-        "EmsDispatchFmi3",
-        "HybridEMSReplica"
+        "EmsDispatchFmi3"
       ]
     },
     {
@@ -304,10 +290,7 @@
       "workflows": [
         "W6"
       ],
-      "demo_fmus": [
-        "HydroCascadeDispatchReplica",
-        "HSCFlexibilityReplica"
-      ]
+      "demo_fmus": []
     },
     {
       "id": "M12",
@@ -363,8 +346,7 @@
         "W6"
       ],
       "demo_fmus": [
-        "SustainabilityCBAReplica",
-        "KPIAssessmentReplica"
+        "DegradationCostFmi3"
       ]
     }
   ],
@@ -406,6 +388,22 @@
     }
   ],
   "demo_workflows": {
+    "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml": {
+      "candidate": "W1",
+      "models": [
+        "M1",
+        "M7",
+        "M8",
+        "M14"
+      ]
+    },
+    "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml": {
+      "candidate": "W2",
+      "models": [
+        "M5",
+        "M8"
+      ]
+    },
     "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml": {
       "candidate": "W3",
       "models": [
@@ -413,169 +411,14 @@
         "M10",
         "M14"
       ]
-    },
-    "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml": {
-      "candidate": "W6",
-      "models": [
-        "M10",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/alqueva/control/fast_service_controller.yaml": {
-      "candidate": "W3",
-      "models": [
-        "M4",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml": {
-      "candidate": "W1",
-      "models": [
-        "M6",
-        "M1",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml": {
-      "candidate": "W1",
-      "models": [
-        "M1",
-        "M7",
-        "M8"
-      ]
-    },
-    "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml": {
-      "candidate": "W1",
-      "models": [
-        "M6",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml": {
-      "candidate": "W2",
-      "models": [
-        "M6",
-        "M5",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/cheylas/control/fast_dewatering.yaml": {
-      "candidate": "W1",
-      "models": [
-        "M1",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml": {
-      "candidate": "W2",
-      "models": [
-        "M5",
-        "M8"
-      ]
-    },
-    "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml": {
-      "candidate": "W2",
-      "models": [
-        "M5",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml": {
-      "candidate": "W2",
-      "models": [
-        "M5",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml": {
-      "candidate": "W3",
-      "models": [
-        "M9",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/vilarinho/control/miv_regulation.yaml": {
-      "candidate": "W4",
-      "models": [
-        "M2",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml": {
-      "candidate": "W4",
-      "models": [
-        "M6",
-        "M2",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml": {
-      "candidate": "W4",
-      "models": [
-        "M2",
-        "M11",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml": {
-      "candidate": "W6",
-      "models": [
-        "M11",
-        "M1",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml": {
-      "candidate": "W6",
-      "models": [
-        "M11",
-        "M14"
-      ]
-    },
-    "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml": {
-      "candidate": "W1",
-      "models": [
-        "M1",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/common/condition_monitoring/cads_condition_monitoring.yaml": {
-      "candidate": "W1",
-      "models": [
-        "M6",
-        "M8"
-      ]
-    },
-    "workflows/common/decision_support/degradation_cost_benefit.yaml": {
-      "candidate": "W6",
-      "models": [
-        "M6",
-        "M8",
-        "M14"
-      ]
-    },
-    "workflows/common/kpi/demo_kpi_assessment.yaml": {
-      "candidate": "W6",
-      "models": [
-        "M14"
-      ]
-    },
-    "workflows/common/sustainability/sustainability_cba.yaml": {
-      "candidate": "W6",
-      "models": [
-        "M14"
-      ]
     }
   },
-  "partners_source": "D3.5 Table 2, demonstrator-to-partner access matrix"
+  "partners_source": "D3.5 Table 2, demonstrator-to-partner access matrix",
+  "demo_scope": {
+    "sites": [
+      "cheylas",
+      "alqueva"
+    ],
+    "note": "Demo scope for the Oct 2026 consortium meeting: two demonstrators, one FMU per model family. Other sites are shown for the consortium picture only."
+  }
 }

@@ -2313,6 +2313,47 @@ h2 {
   font-size: 0.72rem;
 }
 
+/* ---- Demo scope: sites outside it stay clickable but are dimmed ---- */
+
+.demo-scope-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: rgba(5, 66, 235, 0.06);
+  color: var(--accent-deep);
+  font-size: 0.76rem;
+}
+
+.model-matrix thead th.out-of-scope .mm-site-button:not(.selected) {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.model-matrix thead th.out-of-scope small {
+  font-style: italic;
+}
+
+.mm-cell.out-of-scope .mm-cell-button {
+  opacity: 0.38;
+}
+
+.demo-marker.out-of-scope:not(.selected),
+.demo-map-label.out-of-scope:not(.selected) {
+  opacity: 0.45;
+}
+
+.out-of-scope-chip {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
 /* ---- Navigation tabs (model matrix, site map, workflow details) ---- */
 
 .nav-area {

@@ -5,11 +5,12 @@ metadata:
   result_family: storhy_mock
   description: >-
     Jacobi (parallel lock-step) co-simulation of three FMI 3.0 FMUs with a one-way coupling graph:
-    a runner duty-cycle model feeds load to an IoT vibration indicator and stress to a Miner-rule
-    RUL model, which also reads the condition indicator. The IoT model sub-steps at 5 minutes inside
-    the 15-minute communication step. An FMI 2.0 predictive-maintenance replica then reads the
-    damage and RUL. Deterministic placeholder models, not validated physics.
-  tags: [cheylas, maintenance, rul, iot, fmi3, cosim, jacobi, lock-step, one-way]
+    a runner duty-cycle model (M1) feeds load to an IoT vibration indicator (M7) and stress to a
+    Miner-rule RUL model (M8), which also reads the condition indicator. The IoT model sub-steps at
+    5 minutes inside the 15-minute communication step. A degradation-cost model (M14) then weighs
+    the consumed runner life against the value of the generated energy. Deterministic placeholder
+    models, not validated physics.
+  tags: [cheylas, maintenance, rul, iot, degradation-cost, fmi3, cosim, jacobi, lock-step, one-way]
   limits: {max_runtime_seconds: 300}
 synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
 steps:
@@ -34,6 +35,7 @@ steps:
         - {from: iot.condition_indicator, to: rul.condition_indicator}
       outputs:
         - runner.start_stop_count
+        - runner.energy_mwh
         - iot.vibration_rms_mm_s
         - iot.condition_indicator
         - rul.damage_index
@@ -44,20 +46,19 @@ steps:
         signals:
           - runner.load_pu
           - runner.stress_amplitude_mpa
+          - runner.energy_mwh
           - iot.vibration_rms_mm_s
           - iot.condition_indicator
           - rul.damage_index
           - rul.rul_days
         sample_every: 900
-  - name: predictive_maintenance
-    fmu: fmu/models/PredictiveMaintenanceReplica.fmu
-    start_time: 0.0
-    stop_time: 24.0
-    step_size: 1.0
-    start_values: {site_id: 2, scenario_id: 3, profile_id: 3}
+  - name: degradation_cost
+    fmu: fmu/models/DegradationCostFmi3.fmu
+    start_time: 0
+    stop_time: 86400
     start_from:
-      input_damage_index: runner_health.rul.damage_index
-      input_rul_days: runner_health.rul.rul_days
-      input_risk_index: runner_health.iot.condition_indicator
-    outputs: [score, confidence, risk_index, status_code, recommendation_code, damage_index, rul_days, availability_delta_percent, opex_delta_eur]
+      rul_days: runner_health.rul.rul_days
+      damage_rate_per_day: runner_health.rul.damage_rate_per_day
+      energy_mwh: runner_health.runner.energy_mwh
+    outputs: [degradation_cost_eur, gross_revenue_eur, net_benefit_eur, benefit_cost_ratio, status_code, recommendation_code]
     result: data/storhy/cheylas/maintenance/runner_rul_lockstep_result.json

@@ -1,0 +1,61 @@
+metadata:
+  display_name: Cheylas Sediment Erosion Events (FMI 3.0)
+  site_id: cheylas
+  category: monitoring
+  result_family: storhy_mock
+  description: >-
+    Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model (M5) on
+    a pump/turbine cycling and dewatering profile feeds its exposure to a Miner-rule RUL model (M8)
+    as the condition indicator. The master raises a high_exposure event when exposure exceeds 0.8
+    and pulses the sediment model's own cleaning trigger for one 15-minute interval; the cleaning
+    resets exposure and adds cost and downtime. Deterministic placeholder models, not validated
+    physics.
+  tags: [cheylas, monitoring, sediment, erosion, cleaning, rul, fmi3, cosim, event-driven, gauss-seidel]
+  limits: {max_runtime_seconds: 300}
+synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
+steps:
+  - name: sediment_erosion
+    cosim:
+      scheme: gauss_seidel
+      start_time: 0
+      stop_time: 86400
+      communication_step: 900
+      models:
+        - name: sediment
+          fmu: fmu/models/SedimentExposureFmi3.fmu
+          start_values:
+            profile_mode: 1
+            cycles_per_day: 8.0
+            exposure_rate_per_g_l_h: 0.16
+            initial_exposure: 0.3
+            min_cleaning_interval_h: 4.0
+            cleaning_cost_eur: 18000.0
+        - name: rul
+          fmu: fmu/models/RulFmi3.fmu
+          start_values: {stress_amplitude_mpa: 55.0, initial_damage: 0.3, demo_acceleration: 100.0}
+      connections:
+        - {from: sediment.sediment_exposure, to: rul.condition_indicator}
+      events:
+        - name: high_exposure
+          when: sediment.sediment_exposure > 0.8
+          set: sediment.cleaning_trigger
+          value: 1
+          reset: 0
+          mode: pulse
+      outputs:
+        - sediment.sediment_exposure
+        - sediment.cleaning_count
+        - sediment.cumulative_cleaning_cost_eur
+        - sediment.downtime_h
+        - rul.damage_index
+        - rul.rul_days
+        - rul.status_code
+      trace:
+        signals:
+          - sediment.sediment_exposure
+          - sediment.sediment_concentration_g_l
+          - sediment.cleaning_count
+          - rul.damage_index
+          - rul.rul_days
+        sample_every: 900
+    result: data/storhy/cheylas/monitoring/sediment_erosion_events_result.json

@@ -1,6 +1,6 @@
-"""FMI 3.0 co-simulation FMU CleaningDecisionFmi3 (deterministic placeholder, not validated physics).
+"""FMI 3.0 co-simulation FMU DegradationCostFmi3 (deterministic placeholder, not validated physics).
 
-Equations and variables: see CleaningDecisionFmi3 in storhy_fmi3_models.py.
+Equations and variables: see DegradationCostFmi3 in storhy_fmi3_models.py.
 """
 
 from pythonfmu3 import Fmi3Slave
@@ -8,10 +8,10 @@ from pythonfmu3 import Fmi3Slave
 from storhy_fmi3_common import initialize_model, setup_experiment, setup_model, step_model
 
 
-class CleaningDecisionFmi3(Fmi3Slave):
+class DegradationCostFmi3(Fmi3Slave):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        setup_model(self, "CleaningDecisionFmi3")
+        setup_model(self, "DegradationCostFmi3")
 
     def setup_experiment(self, start_time):
         setup_experiment(self, start_time)

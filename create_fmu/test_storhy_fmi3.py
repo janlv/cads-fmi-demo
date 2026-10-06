@@ -151,27 +151,68 @@ def run_jacobi():
     return models, run_cosim(models, connections, "jacobi", signals)
 
 
-def run_event():
-    models = {
-        "sediment": ModelRunner("SedimentExposureFmi3"),
-        "cleaning": ModelRunner("CleaningDecisionFmi3"),
+SEDIMENT_W2 = {
+    "profile_mode": 1,
+    "cycles_per_day": 8.0,
+    "exposure_rate_per_g_l_h": 0.16,
+    "initial_exposure": 0.3,
+}
+RUL_W2 = {"stress_amplitude_mpa": 55.0, "initial_damage": 0.3, "demo_acceleration": 100.0}
+W2_CONNECTIONS = [("sediment.sediment_exposure", "rul.condition_indicator")]
+
+
+def _w2_models():
+    return {
+        "sediment": ModelRunner("SedimentExposureFmi3", SEDIMENT_W2),
+        "rul": ModelRunner("RulFmi3", RUL_W2),
     }
-    connections = [
-        ("sediment.sediment_exposure", "cleaning.sediment_exposure"),
-        ("cleaning.cleaning_count", "sediment.cleanings_done"),
-    ]
+
+
+def run_event():
+    """W2: Cheylas sediment exposure -> RUL with a pulsed cleaning event on the same model."""
+    models = _w2_models()
     events = [
-        ("high_exposure", lambda m: m["sediment"].get("sediment_exposure") > 0.8, "cleaning.trigger", "pulse"),
+        (
+            "high_exposure",
+            lambda m: m["sediment"].get("sediment_exposure") > 0.8,
+            "sediment.cleaning_trigger",
+            "pulse",
+        ),
     ]
     signals = [
         "sediment.sediment_exposure",
-        "sediment.tidal_head_m",
+        "sediment.head_m",
         "sediment.sediment_concentration_g_l",
-        "cleaning.cleaning_count",
-        "cleaning.cleaning_active",
-        "cleaning.cumulative_cost_eur",
+        "sediment.cleaning_count",
+        "sediment.cumulative_cleaning_cost_eur",
+        "sediment.downtime_h",
+        "rul.damage_index",
+        "rul.rul_days",
+        "rul.status_code",
     ]
-    return models, run_cosim(models, connections, "gauss_seidel", signals, events)
+    return models, run_cosim(models, W2_CONNECTIONS, "gauss_seidel", signals, events)
+
+
+def run_cost(inputs, overrides=None):
+    """Sequential DegradationCostFmi3 step over one day with constant inputs."""
+    params = dict(overrides or {})
+    params.update(inputs)
+    model = ModelRunner("DegradationCostFmi3", params)
+    names = [
+        "degradation_cost_eur",
+        "degradation_cost_rate_eur_per_day",
+        "gross_revenue_eur",
+        "net_benefit_eur",
+        "benefit_cost_ratio",
+        "status_code",
+        "recommendation_code",
+    ]
+    trace = {name: [model.get(name)] for name in names}
+    for k in range(POINTS):
+        model.advance((k + 1) * H)
+        for name in names:
+            trace[name].append(model.get(name))
+    return model, trace
 
 
 def _assert_finite(test, trace):
@@ -289,33 +330,112 @@ class EventTests(unittest.TestCase):
 
     def test_cleanings_reset_exposure(self):
         models, trace = run_event()
-        count = trace["cleaning.cleaning_count"][-1]
+        count = trace["sediment.cleaning_count"][-1]
         self.assertGreaterEqual(count, 2)
         self.assertLessEqual(count, 4)
-        self.assertGreaterEqual(trace["_events"]["high_exposure"]["count"], 2)
+        self.assertEqual(trace["_events"]["high_exposure"]["count"], count)
         exposure = trace["sediment.sediment_exposure"]
-        drops = sum(1 for a, b in zip(exposure, exposure[1:]) if b < a - 0.3)
-        self.assertEqual(drops, count)
-        self.assertAlmostEqual(trace["cleaning.cumulative_cost_eur"][-1], 18000.0 * count)
-        self.assertGreater(models["cleaning"].get("downtime_h"), 0.0)
+        drops = [(a, b) for a, b in zip(exposure, exposure[1:]) if b < a - 0.3]
+        self.assertEqual(len(drops), count)
+        for before, after in drops:
+            self.assertGreater(before, 0.8)
+            self.assertLess(after, 0.3)
+        self.assertAlmostEqual(trace["sediment.cumulative_cleaning_cost_eur"][-1], 18000.0 * count)
+        self.assertAlmostEqual(trace["sediment.downtime_h"][-1], 2.0 * count)
+        self.assertLessEqual(models["sediment"].get("hours_since_cleaning"), 24.0)
+        # Cycling profile: Cheylas-like head around 260 m.
+        for head in trace["sediment.head_m"]:
+            self.assertGreater(head, 250.0)
+            self.assertLess(head, 270.0)
 
-    def test_event_drives_cleaning(self):
-        # Without the event, the routine threshold (1.0) alone fires later/less.
-        models = {
-            "sediment": ModelRunner("SedimentExposureFmi3"),
-            "cleaning": ModelRunner("CleaningDecisionFmi3"),
-        }
-        connections = [
-            ("sediment.sediment_exposure", "cleaning.sediment_exposure"),
-            ("cleaning.cleaning_count", "sediment.cleanings_done"),
-        ]
-        no_event = run_cosim(models, connections, "gauss_seidel", ["cleaning.cleaning_count"])
-        _, with_event = run_event()
-        first_clean = lambda series: next(i for i, v in enumerate(series) if v > 0)  # noqa: E731
-        self.assertLess(
-            first_clean(with_event["cleaning.cleaning_count"]),
-            first_clean(no_event["cleaning.cleaning_count"]),
-        )
+    def test_exposure_drives_rul(self):
+        models, trace = run_event()
+        damage = trace["rul.damage_index"]
+        for a, b in zip(damage, damage[1:]):
+            self.assertGreaterEqual(b, a)
+        self.assertGreater(damage[-1], RUL_W2["initial_damage"] + 0.05)
+        uncoupled = ModelRunner("RulFmi3", RUL_W2)
+        uncoupled.advance(STOP)
+        self.assertGreater(models["rul"].get("damage_index"), uncoupled.get("damage_index"))
+
+    def test_no_event_no_cleaning(self):
+        models = _w2_models()
+        trace = run_cosim(models, W2_CONNECTIONS, "gauss_seidel", ["sediment.cleaning_count", "sediment.sediment_exposure"])
+        self.assertEqual(trace["sediment.cleaning_count"][-1], 0)
+        exposure = trace["sediment.sediment_exposure"]
+        for a, b in zip(exposure, exposure[1:]):
+            self.assertGreaterEqual(b, a)
+
+    def test_min_interval_limits_held_trigger(self):
+        sediment = ModelRunner("SedimentExposureFmi3", {"cleaning_trigger": True})
+        sediment.advance(STOP)
+        # Held for 24 h with a 4 h minimum interval: cleanings at 0, 4, ..., 20 h.
+        self.assertEqual(sediment.get("cleaning_count"), 6)
+
+    def test_tidal_profile_still_available(self):
+        sediment = ModelRunner("SedimentExposureFmi3")
+        heads = []
+        for k in range(POINTS):
+            sediment.advance((k + 1) * H)
+            heads.append(sediment.get("head_m"))
+        self.assertLess(min(heads), 2.0)
+        self.assertGreater(max(heads), 8.0)
+
+
+class RunnerEnergyTests(unittest.TestCase):
+    def test_energy_monotone_and_only_in_turbine_mode(self):
+        models, _ = run_jacobi()
+        runner = ModelRunner("RunnerStressFmi3", {"flow_demand_pu": 0.75})
+        energy = [runner.get("energy_mwh")]
+        modes = [runner.get("operating_mode")]
+        for k in range(POINTS):
+            runner.advance((k + 1) * H)
+            energy.append(runner.get("energy_mwh"))
+            modes.append(runner.get("operating_mode"))
+        self.assertEqual(energy[0], 0.0)
+        for i, (a, b) in enumerate(zip(energy, energy[1:])):
+            self.assertGreaterEqual(b, a)
+            if modes[i] != 1:
+                self.assertEqual(b, a)
+        # 12 h generating at roughly 0.6-0.75 pu of 240 MW.
+        self.assertGreater(energy[-1], 1000.0)
+        self.assertLess(energy[-1], 12.0 * 240.0 * 1.1)
+        self.assertAlmostEqual(models["runner"].get("energy_mwh"), energy[-1])
+
+
+class DegradationCostTests(unittest.TestCase):
+    def test_fatigue_cost_and_balance(self):
+        model, trace = run_cost({"rul_days": 300.0, "damage_rate_per_day": 0.002, "energy_mwh": 1500.0})
+        cost = trace["degradation_cost_eur"]
+        for a, b in zip(cost, cost[1:]):
+            self.assertGreaterEqual(b, a)
+        self.assertAlmostEqual(cost[-1], 2.0e6 * 0.002, places=6)
+        self.assertAlmostEqual(model.get("degradation_cost_rate_eur_per_day"), 2.0e6 * 0.002, places=6)
+        self.assertAlmostEqual(model.get("gross_revenue_eur"), 1500.0 * 60.0)
+        for gross, c, net in zip(trace["gross_revenue_eur"], cost, trace["net_benefit_eur"]):
+            self.assertAlmostEqual(net, gross - c)
+        self.assertAlmostEqual(model.get("benefit_cost_ratio"), 90000.0 / 4000.0)
+        self.assertEqual(model.get("status_code"), 1)
+        self.assertEqual(model.get("recommendation_code"), 0)
+
+    def test_soh_fade_charged_once(self):
+        model, trace = run_cost({"rul_days": 2000.0, "soh_percent": 97.0, "revenue_eur": 5000.0})
+        cost = trace["degradation_cost_eur"]
+        self.assertEqual(cost[0], 0.0)
+        self.assertAlmostEqual(cost[1], 2.0e6 * 0.03)
+        self.assertAlmostEqual(cost[-1], 2.0e6 * 0.03)
+        self.assertAlmostEqual(model.get("gross_revenue_eur"), 5000.0)
+        self.assertLess(model.get("benefit_cost_ratio"), 1.0)
+        self.assertEqual(model.get("status_code"), 0)
+        self.assertEqual(model.get("recommendation_code"), 1)
+
+    def test_thresholds(self):
+        cases = [(1000.0, 0), (364.0, 1), (89.0, 2)]
+        for rul, status in cases:
+            with self.subTest(rul=rul):
+                model, _ = run_cost({"rul_days": rul, "damage_rate_per_day": 0.001, "energy_mwh": 1000.0})
+                self.assertEqual(model.get("status_code"), status)
+                self.assertEqual(model.get("recommendation_code"), 2 if status == 2 else 0)
 
 
 @unittest.skipUnless(HAVE_PYTHONFMU3, "pythonfmu3 is not installed")

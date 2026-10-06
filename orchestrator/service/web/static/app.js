@@ -32,34 +32,12 @@ const state = {
 const SIMULINK_WORKFLOW_PATH = "workflows/tests/calculate_aecis.yaml";
 const AE_STATS_WORKFLOW_PATH = "workflows/tests/ae_event_statistics.yaml";
 const PYTHON_CHAIN_WORKFLOW_PATH = "workflows/tests/python_chain.yaml";
-const VSMC_WORKFLOW_PATHS = [
-  "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml",
-  "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml",
-  "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml",
-];
-const CHEYLAS_WORKFLOW_PATHS = [
-  "workflows/demonstrators/cheylas/control/fast_dewatering.yaml",
-  "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml",
-  "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml",
-  "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
-];
-const LA_RANCE_WORKFLOW_PATHS = [
-  "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml",
-  "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml",
-  "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml",
-  "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml",
-];
-const ALQUEVA_WORKFLOW_PATHS = [
-  "workflows/demonstrators/alqueva/control/fast_service_controller.yaml",
-  "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml",
-  "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml",
-  "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
-];
-const VILARINHO_WORKFLOW_PATHS = [
-  "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml",
-  "workflows/demonstrators/vilarinho/control/miv_regulation.yaml",
-  "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml",
-];
+const CHEYLAS_RUNNER_RUL_PATH = "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml";
+const CHEYLAS_SEDIMENT_EROSION_PATH = "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml";
+const ALQUEVA_BATTERY_EMS_PATH = "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml";
+// The demo scope: two demonstrators, three workflows (other sites have none).
+const CHEYLAS_WORKFLOW_PATHS = [CHEYLAS_RUNNER_RUL_PATH, CHEYLAS_SEDIMENT_EROSION_PATH];
+const ALQUEVA_WORKFLOW_PATHS = [ALQUEVA_BATTERY_EMS_PATH];
 const CIVECTOR_LABELS = ["Mean", "RMS", "Peak-to-Peak", "Skewness", "Kurtosis"];
 const SIMULINK_RESULT_RETRY_MS = 15_000;
 const AECIS_TREND_WINDOW_SECONDS = 2.5;
@@ -74,284 +52,117 @@ const NAV_TABS = ["matrix", "details", "map"];
 const NAV_TAB_STORAGE_KEY = "cads:navTab";
 const MODEL_MATRIX_URL = "/static/cads-model-matrix.json";
 const SEQUENTIAL_COUPLING_LABEL = "Sequential one-way hand-over (final values between steps)";
-const STORHY_DEFAULT_SUMMARY = ["score", "kpi_score", "risk_index", "confidence", "rul_days", "availability_delta_percent", "flexibility_delta_percent", "value_delta_eur"];
-const STORHY_KPI_RISK_CHART = {
-  title: "KPI And Risk",
-  description: "Final KPI score and risk index over the simulated operating window.",
-  step: "kpi_assessment",
-  signals: [
-    { key: "kpi_score", label: "KPI score" },
-    { key: "risk_index", label: "Risk index" },
+// Fallback summary for a STOR-HY workflow without its own dashboard config.
+const STORHY_DEFAULT_SUMMARY = ["rul_days", "damage_index", "net_benefit_eur", "benefit_cost_ratio", "status_code", "recommendation_code"];
+// Tail step shared by the W1 and W3 workflows: the FMI 3 degradation-cost model (M14).
+const DEGRADATION_COST_STEP = "degradation_cost";
+const DEGRADATION_COST_SUMMARY = [
+  { key: "net_benefit_eur", step: DEGRADATION_COST_STEP },
+  { key: "benefit_cost_ratio", step: DEGRADATION_COST_STEP },
+];
+const DEGRADATION_COST_VALUES = {
+  title: "Degradation Cost Versus Revenue",
+  description: "Final values from the degradation-cost model.",
+  values: [
+    { key: "gross_revenue_eur", step: DEGRADATION_COST_STEP },
+    { key: "degradation_cost_eur", step: DEGRADATION_COST_STEP },
+    { key: "net_benefit_eur", step: DEGRADATION_COST_STEP },
   ],
 };
-const STORHY_MAINTENANCE_CHART = {
-  title: "Damage And RUL",
-  description: "Damage index and remaining useful life from the maintenance model.",
-  signals: [
-    { key: "damage_index", label: "Damage index" },
-    { key: "risk_index", label: "Risk index" },
-    { key: "rul_days", label: "RUL days" },
-  ],
-};
-const STORHY_BENEFIT_VALUES = {
-  title: "Benefits",
-  description: "Snapshot benefit indicators from the latest model step that emitted each value.",
-  values: ["value_delta_eur", "opex_delta_eur", "co2_delta_tonnes", "availability_delta_percent", "flexibility_delta_percent"],
-};
-const STORHY_RISK_VALUES = {
-  title: "Risk Indicators",
-  description: "Latest risk, health, and decision-support indicators.",
-  values: ["risk_index", "damage_index", "corrosion_index", "biofouling_index", "sediment_exposure", "confidence"],
+const DEGRADATION_COST_DECISION = {
+  status: { key: "status_code", step: DEGRADATION_COST_STEP },
+  recommendation: { key: "recommendation_code", step: DEGRADATION_COST_STEP },
 };
 const STORHY_DASHBOARD_CONFIG = {
-  "workflows/common/condition_monitoring/cads_condition_monitoring.yaml": {
-    summary: ["score", "confidence", "risk_index", "damage_index", "rul_days", "availability_delta_percent", "recommendation_code"],
-    charts: [
-      {
-        title: "Condition Indicators",
-        description: "Sensor-derived risk, damage, RUL, and sediment indicators.",
-        step: "condition_monitoring",
-        signals: ["risk_index", "damage_index", "rul_days", "sediment_exposure"],
-      },
-      { ...STORHY_MAINTENANCE_CHART, step: "predictive_maintenance" },
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/common/decision_support/degradation_cost_benefit.yaml": {
-    summary: ["score", "kpi_score", "risk_index", "rul_days", "value_delta_eur", "opex_delta_eur", "co2_delta_tonnes"],
-    charts: [
-      {
-        title: "Cost Benefit Trend",
-        description: "Sustainability CBA score, risk, and value delta.",
-        step: "sustainability_cba",
-        signals: ["kpi_score", "risk_index", "value_delta_eur"],
-      },
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/common/kpi/demo_kpi_assessment.yaml": {
-    summary: ["kpi_score", "score", "risk_index", "status_code", "recommendation_code", "confidence"],
-    charts: [STORHY_KPI_RISK_CHART],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/common/sustainability/sustainability_cba.yaml": {
-    summary: ["kpi_score", "value_delta_eur", "opex_delta_eur", "co2_delta_tonnes", "availability_delta_percent", "risk_index"],
-    charts: [
-      {
-        title: "Sustainability Trend",
-        description: "KPI score, risk, and value delta from the sustainability CBA model.",
-        step: "sustainability_cba",
-        signals: ["kpi_score", "risk_index", "value_delta_eur"],
-      },
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/vsmc/dispatch/cascade_dispatch.yaml": {
-    summary: ["score", "kpi_score", "risk_index", "power_mw", "reservoir_level_m", "flexibility_delta_percent", "value_delta_eur", "rul_days"],
-    charts: [
-      {
-        title: "Power And Reservoir",
-        description: "Cascade dispatch power output and reservoir operating level.",
-        step: "hydro_cascade_dispatch",
-        signals: ["power_mw", "reservoir_level_m"],
-      },
-      {
-        title: "Flexibility And Risk",
-        description: "Flexibility gain and dispatch risk over the operating window.",
-        step: "hydro_cascade_dispatch",
-        signals: ["flexibility_delta_percent", "risk_index"],
-      },
-      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/vsmc/dispatch/hsc_flexibility.yaml": {
-    summary: ["kpi_score", "flexibility_delta_percent", "power_mw", "value_delta_eur", "co2_delta_tonnes", "risk_index"],
-    charts: [
-      {
-        title: "HSC Power And Flexibility",
-        description: "Hydraulic short-circuit power response, flexibility gain, and risk.",
-        step: "hsc_flexibility",
-        signals: ["power_mw", "flexibility_delta_percent", "risk_index"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/vsmc/maintenance/soft_start_wear.yaml": {
-    summary: ["score", "damage_index", "rul_days", "availability_delta_percent", "risk_index", "recommendation_code"],
-    charts: [
-      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES, STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/cheylas/control/fast_dewatering.yaml": {
-    summary: ["score", "damage_index", "rul_days", "risk_index", "availability_delta_percent", "recommendation_code"],
-    charts: [
-      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/cheylas/maintenance/predictive_maintenance.yaml": {
-    summary: ["score", "risk_index", "damage_index", "rul_days", "status_code", "recommendation_code"],
-    charts: [
-      {
-        title: "Observed Condition",
-        description: "Condition-monitoring risk, damage, and RUL trace.",
-        step: "condition_monitoring",
-        signals: ["risk_index", "damage_index", "rul_days"],
-      },
-      { ...STORHY_MAINTENANCE_CHART, step: "predictive_maintenance" },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/cheylas/monitoring/sediment_runner_wear.yaml": {
-    summary: ["score", "sediment_exposure", "damage_index", "rul_days", "risk_index", "confidence"],
-    charts: [
-      {
-        title: "Sediment Exposure And Damage",
-        description: "Sediment exposure, runner damage, risk, and RUL from the runner wear model.",
-        step: "runner_sediment_wear",
-        signals: ["sediment_exposure", "damage_index", "risk_index", "rul_days"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/la_rance/harsh_fluid/corrosion_biofouling.yaml": {
-    summary: ["score", "corrosion_index", "biofouling_index", "risk_index", "confidence", "rul_days"],
-    charts: [
-      {
-        title: "Corrosion And Biofouling",
-        description: "Harsh-fluid corrosion, biofouling, risk, and RUL indicators.",
-        step: "corrosion_biofouling",
-        signals: ["corrosion_index", "biofouling_index", "risk_index", "rul_days"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml": {
-    summary: ["score", "corrosion_index", "biofouling_index", "risk_index", "value_delta_eur", "recommendation_code"],
-    charts: [
-      {
-        title: "Cleaning Drivers",
-        description: "Biofouling, risk, and RUL indicators used by the cleaning interval model.",
-        step: "cleaning_interval",
-        signals: ["biofouling_index", "risk_index", "rul_days"],
-      },
-      {
-        title: "Corrosion And Biofouling",
-        description: "Upstream harsh-fluid indicators before cleaning interval assessment.",
-        step: "corrosion_biofouling",
-        signals: ["corrosion_index", "biofouling_index", "risk_index"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES, STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/la_rance/hybrid/bess_sizing.yaml": {
-    summary: ["kpi_score", "soc_percent", "power_mw", "value_delta_eur", "co2_delta_tonnes", "risk_index", "flexibility_delta_percent"],
-    charts: [
-      {
-        title: "BESS State And Flexibility",
-        description: "Battery state of charge, flexibility contribution, and risk.",
-        step: "bess_sizing",
-        signals: ["soc_percent", "flexibility_delta_percent", "risk_index"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/alqueva/hybrid/hybrid_ems.yaml": {
-    summary: ["score", "soc_percent", "power_mw", "flexibility_delta_percent", "value_delta_eur", "risk_index", "rul_days"],
-    charts: [
-      {
-        title: "Hybrid EMS Response",
-        description: "Battery state of charge, power output, flexibility, and risk.",
-        step: "hybrid_ems",
-        signals: ["soc_percent", "power_mw", "flexibility_delta_percent", "risk_index"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/alqueva/control/fast_service_controller.yaml": {
-    summary: ["score", "power_mw", "flexibility_delta_percent", "availability_delta_percent", "risk_index", "rul_days"],
-    charts: [
-      {
-        title: "Fast Service Response",
-        description: "Power response, flexibility, fatigue damage, and risk.",
-        step: "fast_service_controller",
-        signals: ["power_mw", "flexibility_delta_percent", "damage_index", "risk_index"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES, STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/alqueva/maintenance/runner_fatigue.yaml": {
-    summary: ["score", "damage_index", "rul_days", "availability_delta_percent", "risk_index", "recommendation_code"],
-    charts: [
-      { ...STORHY_MAINTENANCE_CHART, step: "start_sequence_wear" },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/vilarinho/control/miv_regulation.yaml": {
-    summary: ["score", "valve_opening_percent", "power_mw", "risk_index", "damage_index", "availability_delta_percent"],
-    charts: [
-      {
-        title: "MIV Regulation",
-        description: "Main inlet valve opening, power response, and risk.",
-        step: "miv_regulation",
-        signals: ["valve_opening_percent", "power_mw", "risk_index"],
-      },
-      { ...STORHY_MAINTENANCE_CHART, step: "miv_fatigue" },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/vilarinho/monitoring/miv_fatigue.yaml": {
-    summary: ["score", "valve_opening_percent", "damage_index", "rul_days", "risk_index", "confidence"],
-    charts: [
-      {
-        title: "Condition Monitoring",
-        description: "Condition-monitoring risk, damage, and RUL indicators.",
-        step: "condition_monitoring",
-        signals: ["risk_index", "damage_index", "rul_days"],
-      },
-      { ...STORHY_MAINTENANCE_CHART, step: "miv_fatigue" },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/vilarinho/control/hsc_miv_comparison.yaml": {
-    summary: ["kpi_score", "valve_opening_percent", "power_mw", "flexibility_delta_percent", "value_delta_eur", "co2_delta_tonnes", "risk_index"],
-    charts: [
-      {
-        title: "HSC Flexibility Response",
-        description: "Hydraulic short-circuit power, flexibility, and risk after MIV regulation.",
-        step: "hsc_flexibility",
-        signals: ["power_mw", "flexibility_delta_percent", "risk_index"],
-      },
-      STORHY_KPI_RISK_CHART,
-    ],
-    valueBlocks: [STORHY_BENEFIT_VALUES, STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml": {
+  [CHEYLAS_RUNNER_RUL_PATH]: {
     summary: [
-      "battery.soc_percent",
+      "rul.rul_days",
+      "rul.damage_index",
+      "iot.condition_indicator",
+      ...DEGRADATION_COST_SUMMARY,
+    ],
+    ...DEGRADATION_COST_DECISION,
+    charts: [
+      {
+        title: "Lock-step Inputs",
+        description: "Jacobi lock-step: runner load and the IoT condition indicator are exchanged at the same communication point.",
+        step: "runner_health",
+        signals: ["runner.load_pu", "iot.condition_indicator"],
+      },
+      {
+        title: "Stress And Vibration",
+        description: "Runner stress amplitude and the vibration level observed by the IoT model.",
+        step: "runner_health",
+        signals: ["runner.stress_amplitude_mpa", "iot.vibration_rms_mm_s"],
+      },
+      {
+        title: "Damage",
+        description: "Accumulated damage index computed by the RUL model.",
+        step: "runner_health",
+        signals: ["rul.damage_index"],
+      },
+      {
+        title: "Runner Remaining Life",
+        description: "Remaining useful life from the coupled RUL model.",
+        step: "runner_health",
+        signals: ["rul.rul_days"],
+      },
+      {
+        title: "Energy",
+        description: "Energy produced by the runner over the simulated window.",
+        step: "runner_health",
+        signals: ["runner.energy_mwh"],
+      },
+    ],
+    valueBlocks: [DEGRADATION_COST_VALUES],
+  },
+  [CHEYLAS_SEDIMENT_EROSION_PATH]: {
+    summary: [
+      "sediment.cleaning_count",
+      "sediment.cumulative_cleaning_cost_eur",
+      "rul.damage_index",
+      "rul.rul_days",
+      "events.high_exposure.count",
+    ],
+    status: { key: "rul.status_code" },
+    charts: [
+      {
+        title: "Exposure Versus Threshold",
+        description: "Sediment exposure against the event threshold; the event flag is 1 while the cleaning trigger is raised.",
+        step: "sediment_erosion",
+        signals: ["sediment.sediment_exposure", "events.high_exposure.active"],
+        eventThreshold: { step: "sediment_erosion", event: "high_exposure" },
+      },
+      {
+        title: "Sediment Concentration",
+        description: "Suspended sediment concentration from the sediment model.",
+        step: "sediment_erosion",
+        signals: ["sediment.sediment_concentration_g_l"],
+      },
+      {
+        title: "Event-driven Cleanings",
+        description: "Cleanings triggered by the high-exposure event.",
+        step: "sediment_erosion",
+        signals: ["sediment.cleaning_count", "events.high_exposure.active"],
+      },
+      {
+        title: "Damage And RUL",
+        description: "Erosion damage and remaining useful life from the coupled RUL model.",
+        step: "sediment_erosion",
+        signals: ["rul.damage_index", "rul.rul_days"],
+      },
+    ],
+    valueBlocks: [],
+  },
+  [ALQUEVA_BATTERY_EMS_PATH]: {
+    summary: [
       "battery.soh_percent",
       "battery.rul_days",
       "battery.cycle_count",
       "ems.revenue_eur",
-      "kpi_score",
-      "risk_index",
-      "recommendation_code",
+      ...DEGRADATION_COST_SUMMARY,
     ],
+    ...DEGRADATION_COST_DECISION,
     charts: [
       {
         title: "Battery SoC And SoH",
@@ -383,95 +194,8 @@ const STORHY_DASHBOARD_CONFIG = {
         step: "battery_ems",
         signals: ["battery.rul_days"],
       },
-      STORHY_KPI_RISK_CHART,
     ],
-    valueBlocks: [STORHY_BENEFIT_VALUES],
-  },
-  "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml": {
-    summary: [
-      "rul.rul_days",
-      "rul.damage_index",
-      "rul.status_code",
-      "iot.condition_indicator",
-      "iot.vibration_rms_mm_s",
-      "runner.start_stop_count",
-      "runner.stress_amplitude_mpa",
-      "recommendation_code",
-    ],
-    statusKey: "rul.status_code",
-    charts: [
-      {
-        title: "Lock-step Runner Load",
-        description: "Jacobi lock-step: the runner load is published to the IoT and RUL models at the same communication point.",
-        step: "runner_health",
-        signals: ["runner.load_pu"],
-      },
-      {
-        title: "Stress And Vibration",
-        description: "Runner stress amplitude and the vibration level observed by the IoT model.",
-        step: "runner_health",
-        signals: ["runner.stress_amplitude_mpa", "iot.vibration_rms_mm_s"],
-      },
-      {
-        title: "Condition And Damage",
-        description: "IoT condition indicator and the accumulated damage index computed by the RUL model.",
-        step: "runner_health",
-        signals: ["iot.condition_indicator", "rul.damage_index"],
-      },
-      {
-        title: "Runner Remaining Life",
-        description: "Remaining useful life from the coupled RUL model.",
-        step: "runner_health",
-        signals: ["rul.rul_days"],
-      },
-      { ...STORHY_MAINTENANCE_CHART, step: "predictive_maintenance" },
-    ],
-    valueBlocks: [STORHY_RISK_VALUES],
-  },
-  "workflows/demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml": {
-    summary: [
-      "sediment.sediment_exposure",
-      "events.high_exposure.count",
-      "cleaning.cleaning_count",
-      "cleaning.cumulative_cost_eur",
-      "cleaning.downtime_h",
-      "sediment.tidal_head_m",
-      "sediment.sediment_concentration_g_l",
-    ],
-    charts: [
-      {
-        title: "Exposure Versus Threshold",
-        description: "Sediment exposure against the event threshold; the event flag is 1 while the cleaning trigger is raised.",
-        step: "sediment_cleaning",
-        signals: ["sediment.sediment_exposure", "events.high_exposure.active"],
-        eventThreshold: { step: "sediment_cleaning", event: "high_exposure" },
-      },
-      {
-        title: "Tidal Head",
-        description: "Tidal head driving sediment transport through the turbines.",
-        step: "sediment_cleaning",
-        signals: ["sediment.tidal_head_m"],
-      },
-      {
-        title: "Sediment Concentration",
-        description: "Suspended sediment concentration from the sediment model.",
-        step: "sediment_cleaning",
-        signals: ["sediment.sediment_concentration_g_l"],
-      },
-      {
-        title: "Cleaning Decisions",
-        description: "Cleanings triggered by the high-exposure event and the downtime they cost.",
-        step: "sediment_cleaning",
-        signals: ["cleaning.cleaning_count", "cleaning.downtime_h", "events.high_exposure.active"],
-      },
-      {
-        title: "Cumulative Cleaning Cost",
-        description: "Cost accumulated by the cleaning model.",
-        step: "sediment_cleaning",
-        signals: ["cleaning.cumulative_cost_eur"],
-      },
-    ],
-    valueBlocks: [],
+    valueBlocks: [DEGRADATION_COST_VALUES],
   },
 };
 const DEMONSTRATORS = [
@@ -482,13 +206,13 @@ const DEMONSTRATORS = [
     location: "France and Portugal",
     operator: "STOR-HY consortium",
     country: "Europe",
-    focus: "Portfolio view for CADS workflow templates across the STOR-HY demonstrator set.",
-    capacity: "Five CADS demonstrator sites",
+    focus: "Two demonstrators in the demo scope: Cheylas and Alqueva. The other CADS sites are shown for the consortium picture.",
+    capacity: "Five CADS sites, two in the demo scope",
     workflowPaths: [],
     facts: [
-      "Pumped-storage hydropower and tidal-storage use cases",
-      "Condition monitoring, co-simulation, and decision support",
-      "Model matrix and site map filter the workflow tabs by demonstrator",
+      "Two demonstrators in the demo scope: Cheylas and Alqueva",
+      "One FMI 3.0 placeholder FMU per model family",
+      "Lock-step, event-driven and ping-pong co-simulation, each followed by a degradation-cost step",
     ],
   },
   {
@@ -505,7 +229,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Vouglans - Saut Mortier - Coiselet",
     focus: "Cascade optimisation and variable-speed tandem pumping.",
     capacity: "362 MW generation + 72 MW storage",
-    workflowPaths: VSMC_WORKFLOW_PATHS,
+    workflowPaths: [],
     facts: [
       "Three reservoirs in cascade",
       "Three Francis turbines and one pump turbine",
@@ -530,7 +254,7 @@ const DEMONSTRATORS = [
     facts: [
       "Two reservoirs and two pump turbines",
       "Sediment-laden fluid and frequent cycling",
-      "Mapped to sediment wear, maintenance, and control workflows",
+      "Runner RUL lock-step and sediment erosion workflows in the demo",
     ],
   },
   {
@@ -548,7 +272,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Tidal power station",
     focus: "Saltwater operation, corrosion, anti-fouling, and low tidal-head cycling.",
     capacity: "240 MW generation",
-    workflowPaths: LA_RANCE_WORKFLOW_PATHS,
+    workflowPaths: [],
     facts: [
       "Large-scale tidal power station",
       "24 bulb turbines",
@@ -591,7 +315,7 @@ const DEMONSTRATORS = [
     mapSubtitle: "Dam and hydropower plant",
     focus: "Main inlet valve control, hydraulic short-circuit operation, and multistage pumping.",
     capacity: "146 MW generation + 70 MW storage",
-    workflowPaths: VILARINHO_WORKFLOW_PATHS,
+    workflowPaths: [],
     facts: [
       "Two reservoirs",
       "One multistage pump and one Francis turbine",
@@ -1410,7 +1134,7 @@ function renderDemoMapLabel(demo, isSelected) {
   const subtitle = demo.mapSubtitle ? `<span class="demo-map-label-subtitle">${escapeHTML(demo.mapSubtitle)}</span>` : "";
   return `
     <button
-      class="demo-map-label${alignClass}${isSelected ? " selected" : ""}"
+      class="demo-map-label${alignClass}${isSelected ? " selected" : ""}${siteInDemoScope(demo.id) ? "" : " out-of-scope"}"
       type="button"
       style="--x:${position.x}%; --y:${position.y}%"
       data-demo-id="${escapeHTML(demo.id)}"
@@ -1426,7 +1150,7 @@ function renderDemoMarker(demo, isSelected) {
   const position = demonstratorMapPosition(demo);
   return `
     <button
-      class="demo-marker${isSelected ? " selected" : ""}"
+      class="demo-marker${isSelected ? " selected" : ""}${siteInDemoScope(demo.id) ? "" : " out-of-scope"}"
       type="button"
       style="--x:${position.x}%; --y:${position.y}%"
       data-demo-id="${escapeHTML(demo.id)}"
@@ -1582,6 +1306,7 @@ function renderModelMatrix() {
   const categories = Array.isArray(state.modelMatrix.categories) ? state.modelMatrix.categories : [];
 
   container.innerHTML = `
+    ${state.modelMatrix.demo_scope?.note ? `<p class="demo-scope-note">${escapeHTML(state.modelMatrix.demo_scope.note)}</p>` : ""}
     <div class="model-matrix-legend" aria-label="Matrix legend">
       <span><b class="mm-mark identified" aria-hidden="true">&#9679;</b> ${escapeHTML(legend.identified || "identified")}</span>
       <span><b class="mm-mark candidate" aria-hidden="true">&#9675;</b> ${escapeHTML(legend.candidate || "candidate or to be decided")}</span>
@@ -1628,11 +1353,23 @@ function renderModelMatrix() {
   }
 }
 
+// Sites outside matrix.demo_scope.sites stay clickable but are drawn dimmed.
+function demoScopeSites() {
+  const sites = state.modelMatrix?.demo_scope?.sites;
+  return Array.isArray(sites) && sites.length > 0 ? sites : null;
+}
+
+function siteInDemoScope(siteId) {
+  const sites = demoScopeSites();
+  return !sites || sites.includes(siteId);
+}
+
 function renderMatrixSiteHeader(site, isSelected) {
   const demo = DEMONSTRATORS.find((entry) => entry.id === site.id);
   const count = demo ? workflowsForDemonstrator(demo).length : 0;
+  const inScope = siteInDemoScope(site.id);
   return `
-    <th scope="col" class="mm-site-col${isSelected ? " selected" : ""}">
+    <th scope="col" class="mm-site-col${isSelected ? " selected" : ""}${inScope ? "" : " out-of-scope"}">
       <button
         class="mm-site-button${isSelected ? " selected" : ""}"
         type="button"
@@ -1641,7 +1378,7 @@ function renderMatrixSiteHeader(site, isSelected) {
         title="Show ${escapeHTML(demo?.label || site.label)} workflows"
       >
         <span>${escapeHTML(site.label || site.id)}</span>
-        <small>${count} workflow${count === 1 ? "" : "s"}</small>
+        <small>${inScope ? `${count} workflow${count === 1 ? "" : "s"}` : "not in this demo"}</small>
       </button>
     </th>
   `;
@@ -1699,7 +1436,7 @@ function renderMatrixCell(model, site, status, isSelectedSite) {
   const statusText = status === "identified" ? "identified" : status === "candidate" ? "candidate or to be decided" : "not planned";
   const isFocused = isSelectedSite && state.modelFocus === model.id;
   return `
-    <td class="mm-cell${isSelectedSite ? " selected" : ""}${status ? ` ${escapeHTML(status)}` : ""}">
+    <td class="mm-cell${isSelectedSite ? " selected" : ""}${status ? ` ${escapeHTML(status)}` : ""}${siteInDemoScope(site.id) ? "" : " out-of-scope"}">
       <button
         class="mm-cell-button${isFocused ? " focused" : ""}"
         type="button"
@@ -2210,14 +1947,16 @@ function renderDetailsDemoCard() {
   const latestRun = latestRunFor(workflows.map((workflow) => workflow.path));
   card.innerHTML = `
     <header class="details-card-head">
-      <p class="panel-kicker">Demonstrator</p>
+      <p class="panel-kicker">Demonstrator ${!isPortfolio && !siteInDemoScope(demo.id) ? '<span class="out-of-scope-chip">not in this demo</span>' : ""}</p>
       <h3>${escapeHTML(demo.label)}</h3>
     </header>
     <p class="details-sub">${escapeHTML([demo.operator, demo.location].filter(Boolean).join(" | "))}</p>
     <p class="details-text">${escapeHTML(demo.focus || "")}</p>
     <dl class="details-facts">
       <div><dt>Capacity</dt><dd>${escapeHTML(demo.capacity || "n/a")}</dd></div>
-      <div><dt>Mapped workflows</dt><dd>${workflows.length}</dd></div>
+      <div><dt>Mapped workflows</dt><dd>${escapeHTML(isPortfolio && demoScopeSites()
+        ? `${workflows.length} workflow${workflows.length === 1 ? "" : "s"} across ${demoScopeSites().length} demo sites`
+        : String(workflows.length))}</dd></div>
       ${isPortfolio ? `<div><dt>Model families</dt><dd>${matrixModels().length}</dd></div>` : ""}
     </dl>
     ${(demo.facts || []).length > 0 ? `<ul class="demo-facts">${demo.facts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join("")}</ul>` : ""}
@@ -3138,12 +2877,16 @@ function renderStorhyStepChain(payload, modelStepEntries) {
 }
 
 function renderStorhyDecisionGrid(modelStepEntries, summaryStep, dashboardConfig) {
-  const statusValue = dashboardConfig.statusKey
-    ? findStorhyMetricValue(modelStepEntries, dashboardConfig.statusKey)?.value
+  // config.status / config.recommendation are {key, step?} specs; without them
+  // the summary step's own status_code / recommendation_code are used.
+  const statusValue = dashboardConfig.status
+    ? findStorhyMetricValue(modelStepEntries, dashboardConfig.status.key, dashboardConfig.status.step || "")?.value
     : summaryStep?.status_code;
-  const recommendationValue = summaryStep?.recommendation_code !== undefined
-    ? summaryStep.recommendation_code
-    : findStorhyMetricValue(modelStepEntries, "recommendation_code")?.value;
+  const recommendationValue = dashboardConfig.recommendation
+    ? findStorhyMetricValue(modelStepEntries, dashboardConfig.recommendation.key, dashboardConfig.recommendation.step || "")?.value
+    : summaryStep?.recommendation_code !== undefined
+      ? summaryStep.recommendation_code
+      : findStorhyMetricValue(modelStepEntries, "recommendation_code")?.value;
   const cards = [];
   if (statusValue !== undefined && statusValue !== null) {
     const status = storhyStatus(statusValue);
@@ -3172,12 +2915,12 @@ function storhyDashboardConfig(workflow) {
   return STORHY_DASHBOARD_CONFIG[workflow?.path] || {
     summary: STORHY_DEFAULT_SUMMARY,
     charts: [],
-    valueBlocks: [STORHY_RISK_VALUES, STORHY_BENEFIT_VALUES],
+    valueBlocks: [],
   };
 }
 
 function preferredStorhySummaryStep(stepEntries) {
-  const preferredNames = ["kpi_assessment", "sustainability_cba", "predictive_maintenance"];
+  const preferredNames = [DEGRADATION_COST_STEP];
   for (const name of preferredNames) {
     const entry = stepEntries.find(([stepName]) => stepName === name);
     if (entry) {
@@ -3245,10 +2988,16 @@ function storhyMetricLabel(key) {
 
 function storhyBaseMetricLabel(key) {
   const labels = {
-    availability_delta_percent: "Availability delta",
+    benefit_cost_ratio: "Benefit-cost ratio",
+    cumulative_cleaning_cost_eur: "Cumulative cleaning cost",
+    degradation_cost_eur: "Degradation cost",
+    energy_mwh: "Energy",
+    gross_revenue_eur: "Gross revenue",
+    head_m: "Head",
+    hours_since_cleaning: "Hours since cleaning",
+    net_benefit_eur: "Net benefit",
     cleaning_count: "Cleanings",
     condition_indicator: "Condition indicator",
-    cumulative_cost_eur: "Cumulative cost",
     cycle_count: "Cycle count",
     downtime_h: "Downtime",
     load_pu: "Load",
@@ -3260,27 +3009,17 @@ function storhyBaseMetricLabel(key) {
     soh_percent: "State of health",
     start_stop_count: "Start-stop count",
     stress_amplitude_mpa: "Stress amplitude",
-    tidal_head_m: "Tidal head",
     vibration_rms_mm_s: "Vibration RMS",
-    biofouling_index: "Biofouling index",
-    co2_delta_tonnes: "CO2 delta",
     confidence: "Confidence",
-    corrosion_index: "Corrosion index",
     damage_index: "Damage index",
-    flexibility_delta_percent: "Flexibility delta",
-    kpi_score: "KPI score",
-    opex_delta_eur: "OPEX delta",
     power_mw: "Power",
     recommendation_code: "Recommendation",
-    reservoir_level_m: "Reservoir level",
     risk_index: "Risk index",
     rul_days: "RUL days",
     score: "Score",
     sediment_exposure: "Sediment exposure",
     soc_percent: "State of charge",
     status_code: "Status",
-    valve_opening_percent: "Valve opening",
-    value_delta_eur: "Value delta",
   };
   return labels[key] || formatWorkflowCategory(key);
 }
@@ -3349,8 +3088,12 @@ function formatStorhyMetric(key, value) {
   if (name.endsWith("rul_days")) {
     return `${formatMetric(numeric)} days`;
   }
+  if (name.endsWith("_ratio")) {
+    return `${formatMetric(numeric)}×`;
+  }
   const units = [
     ["_mm_s", "mm/s"],
+    ["_mwh", "MWh"],
     ["_g_l", "g/L"],
     ["_mpa", "MPa"],
     ["_mw", "MW"],
@@ -3366,40 +3109,36 @@ function formatStorhyMetric(key, value) {
   return formatMetric(numeric);
 }
 
+// Codes published by the degradation-cost (and RUL) FMUs: 0 ok, 1 warning, 2 alarm.
 function storhyStatus(code) {
   switch (Number(code)) {
     case 2:
       return {
-        label: "Action needed",
-        description: "The replica chain estimates high operational or asset risk.",
+        label: "Alarm",
+        description: "Degradation or its cost is outside the acceptable demo range.",
       };
     case 1:
       return {
-        label: "Watch",
-        description: "The model chain flags a moderate risk level worth monitoring.",
+        label: "Warning",
+        description: "Degradation is rising; worth watching before the next operating campaign.",
       };
     default:
       return {
-        label: "On track",
+        label: "OK",
         description: "The current operating envelope is inside the nominal demo range.",
       };
   }
 }
 
+// 0 continue, 1 reduce cycling, 2 schedule maintenance (degradation-cost model).
 function storhyRecommendation(code) {
   switch (Number(code)) {
     case 1:
-      return { label: "Inspect high-risk component", description: "Prioritise condition data review before the next operating campaign." };
+      return { label: "Reduce cycling to limit degradation cost", description: "Degradation cost is eating into revenue; fewer cycles or starts would improve the net benefit." };
     case 2:
-      return { label: "Optimise dispatch schedule", description: "Review the proposed dispatch envelope against value and flexibility targets." };
-    case 3:
-      return { label: "Reduce cycling or review fatigue", description: "Check start-stop exposure and fatigue margins for the active unit." };
-    case 4:
-      return { label: "Review cleaning or coating interval", description: "Harsh-fluid indicators suggest maintenance timing should be revisited." };
-    case 5:
-      return { label: "Review economics before rollout", description: "Benefits are uncertain relative to the assumed operating scenario." };
+      return { label: "Schedule maintenance / inspection", description: "Damage or cost has reached the level where an inspection should be planned." };
     default:
-      return { label: "Continue current operating envelope", description: "No immediate intervention is recommended by the replica model chain." };
+      return { label: "Continue current operating envelope", description: "Revenue covers the degradation cost; no intervention is recommended." };
   }
 }
 
@@ -3415,13 +3154,10 @@ function preferredStorhyTrace(stepEntries) {
 
 function buildStorhyTraceSeries(trace) {
   const preferredSignals = [
-    "score",
-    "risk_index",
-    "kpi_score",
-    "availability_delta_percent",
-    "flexibility_delta_percent",
     "damage_index",
     "rul_days",
+    "net_benefit_eur",
+    "degradation_cost_eur",
     "power_mw",
   ];
   const availableSignals = preferredSignals.filter((name) => Array.isArray(trace?.signals?.[name]));
@@ -3613,7 +3349,7 @@ function storhyValueScaleType(key) {
   if (key.endsWith("_percent")) {
     return "percent";
   }
-  if (key.endsWith("_index") || key.endsWith("confidence") || key.endsWith("sediment_exposure") || key.endsWith("condition_indicator")) {
+  if (key.endsWith("_index") || key.endsWith("_ratio") || key.endsWith("confidence") || key.endsWith("sediment_exposure") || key.endsWith("condition_indicator")) {
     return "ratio";
   }
   return "absolute";

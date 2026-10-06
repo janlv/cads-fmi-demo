@@ -333,6 +333,18 @@ func writeDashboardRepoFixture(t *testing.T) string {
 	if err := os.Mkdir(filepath.Join(root, "workflows", "tests"), 0o755); err != nil {
 		t.Fatalf("create test workflows dir: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "workflows", "archive", "common"), 0o755); err != nil {
+		t.Fatalf("create archive workflows dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "workflows", "archive", "common", "retired.yaml"), []byte(`
+metadata:
+  display_name: Retired replica workflow
+steps:
+  - name: retired
+    fmu: fmu/models/Retired.fmu
+`), 0o644); err != nil {
+		t.Fatalf("write archived workflow: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "workflows", "tests", "python_chain.yaml"), []byte(`
 steps:
   - name: producer

@@ -4,11 +4,12 @@ metadata:
   category: hybrid
   result_family: storhy_mock
   description: >-
-    Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS and a BESS degradation model,
-    both FMI 3.0 FMUs exchanging state of charge and power set-point every 15 minutes; the battery
-    sub-steps at its own 5-minute step. An FMI 2.0 KPI replica then reads the coupled results.
-    Deterministic placeholder models, not validated physics.
-  tags: [alqueva, hybrid, bess, ems, fmi3, cosim, gauss-seidel, ping-pong]
+    Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS (M10) and a BESS degradation model
+    (M9), both FMI 3.0 FMUs exchanging state of charge and power set-point every 15 minutes; the
+    battery sub-steps at its own 5-minute step. A degradation-cost model (M14) then weighs the
+    battery capacity fade against the arbitrage revenue. Deterministic placeholder models, not
+    validated physics.
+  tags: [alqueva, hybrid, bess, ems, degradation-cost, fmi3, cosim, gauss-seidel, ping-pong]
   limits: {max_runtime_seconds: 300}
 synthetic_case: data/storhy/synthetic/alqueva_hybrid_flexibility.yaml
 steps:
@@ -45,14 +46,13 @@ steps:
           - battery.soh_percent
           - ems.revenue_eur
         sample_every: 900
-  - name: kpi_assessment
-    fmu: fmu/models/KPIAssessmentReplica.fmu
-    start_time: 0.0
-    stop_time: 24.0
-    step_size: 1.0
-    start_values: {site_id: 4, scenario_id: 3, profile_id: 1}
+  - name: degradation_cost
+    fmu: fmu/models/DegradationCostFmi3.fmu
+    start_time: 0
+    stop_time: 86400
     start_from:
-      input_rul_days: battery_ems.battery.rul_days
-      input_value_delta_eur: battery_ems.ems.revenue_eur
-    outputs: [score, confidence, risk_index, status_code, recommendation_code, kpi_score, value_delta_eur, rul_days]
+      rul_days: battery_ems.battery.rul_days
+      soh_percent: battery_ems.battery.soh_percent
+      revenue_eur: battery_ems.ems.revenue_eur
+    outputs: [degradation_cost_eur, gross_revenue_eur, net_benefit_eur, benefit_cost_ratio, status_code, recommendation_code]
     result: data/storhy/alqueva/hybrid/battery_ems_cosim_result.json

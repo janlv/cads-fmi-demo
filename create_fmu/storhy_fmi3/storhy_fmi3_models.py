@@ -221,10 +221,17 @@ def _runner_evaluate(v, t, transition):
 def runner_init(v, start_time):
     v["_prev_mode"] = runner_mode_at(start_time)
     v["_start_stop_count"] = 0
+    v["_energy"] = 0.0
+    v["energy_mwh"] = 0.0
     _runner_evaluate(v, start_time, False)
 
 
 def runner_step(v, t, dt):
+    # Settle the interval that just ended with the load and mode published at
+    # its start; only turbine (generating) operation counts as generated energy.
+    if v["operating_mode"] == RUNNER_MODE_GENERATING:
+        v["_energy"] += max(0.0, float(v["load_pu"])) * v["rated_power_mw"] * dt / HOUR_S
+    v["energy_mwh"] = v["_energy"]
     mode = runner_mode_at(t + dt)
     transition = mode != v["_prev_mode"]
     if transition:
@@ -315,7 +322,10 @@ def rul_init(v, start_time):
 
 def rul_step(v, t, dt):
     rate = rul_damage_rate_per_day(v)
-    v["_damage"] = min(1.0, v["_damage"] + rate * dt / DAY_S)
+    # demo_acceleration compresses time for the accumulated damage only; the
+    # reported rate and the RUL stay at real (un-accelerated) rates.
+    accel = max(float(v["demo_acceleration"]), 0.0)
+    v["_damage"] = min(1.0, v["_damage"] + rate * accel * dt / DAY_S)
     v["_rate"] = rate
     alpha = 1.0 - math.exp(-dt / max(v["rate_smoothing_s"], 1e-6))
     v["_smoothed_rate"] += alpha * (rate - v["_smoothed_rate"])
@@ -324,10 +334,27 @@ def rul_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# SedimentExposureFmi3: tidal sediment exposure reset by cleanings (La Rance)
+# SedimentExposureFmi3: sediment exposure with cleaning accounting (La Rance
+# tidal profile or Cheylas cycling/dewatering profile)
 # ---------------------------------------------------------------------------
 
+SEDIMENT_PROFILE_TIDAL = 0
+SEDIMENT_PROFILE_CYCLING = 1
+CYCLING_MEAN_HEAD_M = 260.0
+CYCLING_HEAD_SWING_M = 6.0
+
+
 def _sediment_hydraulics(v, t):
+    if int(v["profile_mode"]) == SEDIMENT_PROFILE_CYCLING:
+        hour = float(t) / HOUR_S
+        cycles = max(float(v["cycles_per_day"]), 0.0)
+        # Each pump/turbine/dewatering cycle stirs up sediment (|sin| bursts),
+        # modulated by a slower daily inflow swing.
+        cycling = 1.0 + 0.9 * abs(math.sin(2.0 * math.pi * hour * cycles / 48.0))
+        daily = 1.0 + 0.25 * math.sin(2.0 * math.pi * hour / 24.0)
+        conc = v["base_concentration_g_l"] * cycling * daily
+        head = CYCLING_MEAN_HEAD_M + CYCLING_HEAD_SWING_M * math.sin(2.0 * math.pi * hour / 24.0)
+        return head, conc
     phase = 2.0 * math.pi * float(t) / M2_TIDE_PERIOD_S
     head = v["mean_head_m"] + v["tidal_amplitude_m"] * math.sin(phase)
     # Concentration peaks at maximum tidal flow (maximum |d head / dt|).
@@ -337,60 +364,103 @@ def _sediment_hydraulics(v, t):
 
 def _sediment_outputs(v, t):
     head, conc = _sediment_hydraulics(v, t)
-    v["tidal_head_m"] = head
+    v["head_m"] = head
     v["sediment_concentration_g_l"] = conc
     v["sediment_exposure"] = v["_exposure"]
+    v["cleaning_count"] = int(v["_count"])
+    v["cumulative_cleaning_cost_eur"] = v["_cost"]
+    v["downtime_h"] = v["_downtime"]
+    v["hours_since_cleaning"] = max(0.0, (float(t) - v["_last_clean"]) / HOUR_S)
 
 
 def sediment_init(v, start_time):
     v["_exposure"] = max(0.0, float(v["initial_exposure"]))
-    v["_last_cleanings"] = int(v["cleanings_done"])
+    v["_count"] = 0
+    v["_cost"] = 0.0
+    v["_downtime"] = 0.0
+    v["_last_clean"] = float(start_time) - v["initial_hours_since_cleaning"] * HOUR_S
     _sediment_outputs(v, start_time)
 
 
 def sediment_step(v, t, dt):
-    done = int(v["cleanings_done"])
-    if done > v["_last_cleanings"]:
-        v["_exposure"] *= clamp(v["cleaning_residual_fraction"], 0.0, 1.0) ** (done - v["_last_cleanings"])
-    v["_last_cleanings"] = done
+    # A cleaning request is honoured at the start of the interval when the
+    # minimum interval since the previous cleaning has elapsed, so a trigger
+    # held over several sub-steps cleans only once.
+    since_h = (float(t) - v["_last_clean"]) / HOUR_S
+    if bool(v["cleaning_trigger"]) and since_h >= v["min_cleaning_interval_h"] - 1e-9:
+        v["_exposure"] = max(0.0, float(v["post_cleaning_exposure"]))
+        v["_count"] += 1
+        v["_cost"] += v["cleaning_cost_eur"]
+        v["_downtime"] += max(0.0, float(v["downtime_per_cleaning_h"]))
+        v["_last_clean"] = float(t)
     _, conc = _sediment_hydraulics(v, t + 0.5 * dt)
     v["_exposure"] += v["exposure_rate_per_g_l_h"] * conc * dt / HOUR_S
     _sediment_outputs(v, t + dt)
 
 
 # ---------------------------------------------------------------------------
-# CleaningDecisionFmi3: threshold/trigger cleaning with minimum interval (La Rance)
+# DegradationCostFmi3: degradation cost versus market revenue (M14)
 # ---------------------------------------------------------------------------
 
-def _cleaning_outputs(v, t):
-    v["cleaning_count"] = int(v["_count"])
-    v["cumulative_cost_eur"] = v["_cost"]
-    v["downtime_h"] = v["_downtime"]
-    v["hours_since_cleaning"] = max(0.0, (float(t) - v["_last_clean"]) / HOUR_S)
-    v["cleaning_active"] = bool(float(t) < v["_active_until"])
+COST_STATUS_OK = 0
+COST_STATUS_WARNING = 1
+COST_STATUS_ALARM = 2
+COST_RECOMMEND_CONTINUE = 0
+COST_RECOMMEND_REDUCE_CYCLING = 1
+COST_RECOMMEND_MAINTENANCE = 2
+COST_BCR_CAP = 1000.0
 
 
-def cleaning_init(v, start_time):
-    v["_count"] = 0
+def _soh_fade(v):
+    return clamp((100.0 - float(v["soh_percent"])) / 100.0, 0.0, 1.0)
+
+
+def _cost_outputs(v):
+    v["degradation_cost_eur"] = v["_cost"]
+    v["degradation_cost_rate_eur_per_day"] = v["_cost_rate"]
+    gross = float(v["revenue_eur"]) + float(v["energy_mwh"]) * v["price_eur_mwh"]
+    v["gross_revenue_eur"] = gross
+    v["net_benefit_eur"] = gross - v["_cost"]
+    if v["_cost"] > 0.0:
+        ratio = min(gross / v["_cost"], COST_BCR_CAP)
+    else:
+        ratio = COST_BCR_CAP if gross > 0.0 else 0.0
+    v["benefit_cost_ratio"] = ratio
+    rul = float(v["rul_days"])
+    if rul < v["rul_alarm_days"]:
+        status = COST_STATUS_ALARM
+    elif rul < v["rul_warning_days"]:
+        status = COST_STATUS_WARNING
+    else:
+        status = COST_STATUS_OK
+    v["status_code"] = status
+    if status == COST_STATUS_ALARM:
+        recommendation = COST_RECOMMEND_MAINTENANCE
+    elif v["_cost"] > 0.0 and ratio < 1.0:
+        recommendation = COST_RECOMMEND_REDUCE_CYCLING
+    else:
+        recommendation = COST_RECOMMEND_CONTINUE
+    v["recommendation_code"] = recommendation
+
+
+def cost_init(v, start_time):
     v["_cost"] = 0.0
-    v["_downtime"] = 0.0
-    v["_last_clean"] = float(start_time) - v["initial_hours_since_cleaning"] * HOUR_S
-    v["_active_until"] = float(start_time) - 1.0
-    _cleaning_outputs(v, start_time)
+    v["_cost_rate"] = 0.0
+    # Capacity fade is charged relative to a new asset (100 % SoH), so a fade
+    # already present in the input is charged in the first step.
+    v["_charged_fade"] = 0.0
+    _cost_outputs(v)
 
 
-def cleaning_step(v, t, dt):
-    t_end = t + dt
-    if v["_active_until"] > t:
-        v["_downtime"] += (min(t_end, v["_active_until"]) - t) / HOUR_S
-    wants = v["sediment_exposure"] > v["exposure_threshold"] or bool(v["trigger"])
-    since_h = (t_end - v["_last_clean"]) / HOUR_S
-    if wants and since_h >= v["min_interval_h"] and t_end >= v["_active_until"]:
-        v["_count"] += 1
-        v["_cost"] += v["cost_per_cleaning_eur"]
-        v["_last_clean"] = t_end
-        v["_active_until"] = t_end + v["cleaning_duration_h"] * HOUR_S
-    _cleaning_outputs(v, t_end)
+def cost_step(v, t, dt):
+    damage = max(0.0, float(v["damage_rate_per_day"])) * dt / DAY_S
+    fade = _soh_fade(v)
+    damage += max(0.0, fade - v["_charged_fade"])
+    v["_charged_fade"] = max(v["_charged_fade"], fade)
+    increment = v["asset_value_eur"] * damage
+    v["_cost"] += increment
+    v["_cost_rate"] = increment * DAY_S / dt if dt > 0.0 else 0.0
+    _cost_outputs(v)
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +537,7 @@ MODEL_SPECS = {
             "stress_pumping_mpa": (FLOAT64, 55.0, "Stress amplitude while pumping [MPa]"),
             "stress_standstill_mpa": (FLOAT64, 5.0, "Residual stress amplitude at standstill [MPa]"),
             "transient_stress_mpa": (FLOAT64, 35.0, "Extra stress in an interval with a mode change [MPa]"),
+            "rated_power_mw": (FLOAT64, 240.0, "Rated turbine power, scales generated energy [MW]"),
         },
         "inputs": {
             "flow_demand_pu": (FLOAT64, 0.7, "Turbine flow demand from dispatch [pu]"),
@@ -476,6 +547,7 @@ MODEL_SPECS = {
             "operating_mode": (INT32, 0, "0 standstill, 1 generating, 2 pumping"),
             "stress_amplitude_mpa": (FLOAT64, 0.0, "Runner blade stress amplitude [MPa]"),
             "start_stop_count": (INT32, 0, "Mode changes since start [-]"),
+            "energy_mwh": (FLOAT64, 0.0, "Cumulative energy generated in turbine mode [MWh]"),
         },
         "init": runner_init,
         "step": runner_step,
@@ -514,6 +586,12 @@ MODEL_SPECS = {
             "condition_gain": (FLOAT64, 1.5, "Damage multiplier per unit condition indicator [-]"),
             "design_damage_rate_per_day": (FLOAT64, 0.0015, "Design damage rate, RUL floor [1/d]"),
             "rate_smoothing_s": (FLOAT64, 21600.0, "Smoothing time constant for the planning rate [s]"),
+            "demo_acceleration": (
+                FLOAT64,
+                1.0,
+                "Demo time-compression factor applied to accumulated damage only; the damage rate and "
+                "RUL are reported at real (un-accelerated) rates [-]",
+            ),
         },
         "inputs": {
             "stress_amplitude_mpa": (FLOAT64, 0.0, "Stress amplitude from the runner model [MPa]"),
@@ -530,52 +608,67 @@ MODEL_SPECS = {
     },
     "SedimentExposureFmi3": {
         "step_size": 300.0,
-        "description": "La Rance sediment: tidal head, concentration and cumulative exposure reset by cleanings. "
-        + PLACEHOLDER_NOTE,
+        "description": "Sediment exposure (La Rance tidal or Cheylas cycling profile) with cleaning accounting: "
+        "a cleaning trigger resets exposure and adds cost and downtime. " + PLACEHOLDER_NOTE,
         "parameters": {
-            "mean_head_m": (FLOAT64, 5.0, "Mean head across the barrage [m]"),
-            "tidal_amplitude_m": (FLOAT64, 4.0, "M2 tidal head amplitude [m]"),
-            "base_concentration_g_l": (FLOAT64, 0.4, "Slack-water sediment concentration [g/L]"),
-            "peak_concentration_g_l": (FLOAT64, 1.2, "Extra concentration at peak tidal flow [g/L]"),
+            "profile_mode": (INT32, 0, "0 tidal (La Rance), 1 pump/turbine cycling and dewatering (Cheylas)"),
+            "cycles_per_day": (FLOAT64, 8.0, "Operating cycles per day in cycling mode [1/d]"),
+            "mean_head_m": (FLOAT64, 5.0, "Mean head across the barrage, tidal mode [m]"),
+            "tidal_amplitude_m": (FLOAT64, 4.0, "M2 tidal head amplitude, tidal mode [m]"),
+            "base_concentration_g_l": (FLOAT64, 0.4, "Base suspended sediment concentration [g/L]"),
+            "peak_concentration_g_l": (FLOAT64, 1.2, "Extra concentration at peak tidal flow, tidal mode [g/L]"),
             "exposure_rate_per_g_l_h": (FLOAT64, 0.1, "Exposure gained per g/L per hour [1/(g/L h)]"),
             "initial_exposure": (FLOAT64, 0.3, "Exposure at start [-]"),
-            "cleaning_residual_fraction": (FLOAT64, 0.1, "Exposure fraction left after one cleaning [-]"),
+            "post_cleaning_exposure": (FLOAT64, 0.05, "Exposure left right after a cleaning [-]"),
+            "cleaning_cost_eur": (FLOAT64, 18000.0, "Cost of one cleaning [EUR]"),
+            "min_cleaning_interval_h": (FLOAT64, 4.0, "Minimum time between cleanings [h]"),
+            "downtime_per_cleaning_h": (FLOAT64, 2.0, "Unit downtime per cleaning [h]"),
+            "initial_hours_since_cleaning": (FLOAT64, 24.0, "Hours since the last cleaning at start [h]"),
         },
         "inputs": {
-            "cleanings_done": (INT32, 0, "Cleanings completed, from the cleaning model [-]"),
+            "cleaning_trigger": (BOOLEAN, False, "Cleaning request, e.g. pulsed by a master event [-]"),
         },
         "outputs": {
-            "tidal_head_m": (FLOAT64, 0.0, "Tidal head [m]"),
+            "head_m": (FLOAT64, 0.0, "Hydraulic head [m]"),
             "sediment_concentration_g_l": (FLOAT64, 0.0, "Suspended sediment concentration [g/L]"),
-            "sediment_exposure": (FLOAT64, 0.0, "Cumulative exposure since last cleaning [-]"),
+            "sediment_exposure": (FLOAT64, 0.0, "Cumulative exposure since the last cleaning [-]"),
+            "cleaning_count": (INT32, 0, "Cleanings performed since start [-]"),
+            "cumulative_cleaning_cost_eur": (FLOAT64, 0.0, "Cumulative cleaning cost [EUR]"),
+            "downtime_h": (FLOAT64, 0.0, "Cumulative cleaning downtime [h]"),
+            "hours_since_cleaning": (FLOAT64, 0.0, "Hours since the last cleaning [h]"),
         },
         "init": sediment_init,
         "step": sediment_step,
     },
-    "CleaningDecisionFmi3": {
+    "DegradationCostFmi3": {
         "step_size": 900.0,
-        "description": "La Rance cleaning: fires on exposure threshold or external trigger with a minimum "
-        "interval. " + PLACEHOLDER_NOTE,
+        "description": "Degradation cost versus market revenue: values consumed asset life against gross "
+        "revenue and flags RUL thresholds. " + PLACEHOLDER_NOTE,
         "parameters": {
-            "exposure_threshold": (FLOAT64, 1.0, "Routine cleaning threshold on exposure [-]"),
-            "min_interval_h": (FLOAT64, 4.0, "Minimum time between cleanings [h]"),
-            "cleaning_duration_h": (FLOAT64, 2.0, "Duration of one cleaning [h]"),
-            "cost_per_cleaning_eur": (FLOAT64, 18000.0, "Cost of one cleaning [EUR]"),
-            "initial_hours_since_cleaning": (FLOAT64, 24.0, "Hours since the last cleaning at start [h]"),
+            "asset_value_eur": (FLOAT64, 2.0e6, "Replacement value of the degrading asset [EUR]"),
+            "price_eur_mwh": (FLOAT64, 60.0, "Price used to value energy_mwh [EUR/MWh]"),
+            "planning_horizon_days": (FLOAT64, 365.0, "Planning horizon for the decision (informative) [d]"),
+            "rul_warning_days": (FLOAT64, 365.0, "Warning when RUL falls below [d]"),
+            "rul_alarm_days": (FLOAT64, 90.0, "Alarm when RUL falls below [d]"),
         },
         "inputs": {
-            "sediment_exposure": (FLOAT64, 0.0, "Exposure from the sediment model [-]"),
-            "trigger": (BOOLEAN, False, "External cleaning request (event-driven) [-]"),
+            "rul_days": (FLOAT64, 1000.0, "Remaining useful life from a health model [d]"),
+            "damage_rate_per_day": (FLOAT64, 0.0, "Fatigue damage rate, fraction of life per day [1/d]"),
+            "soh_percent": (FLOAT64, 100.0, "State of health; fade below 100 % is charged as consumed life [%]"),
+            "revenue_eur": (FLOAT64, 0.0, "Cumulative market revenue supplied directly, e.g. by the EMS [EUR]"),
+            "energy_mwh": (FLOAT64, 0.0, "Cumulative generated energy, valued at price_eur_mwh [MWh]"),
         },
         "outputs": {
-            "cleaning_count": (INT32, 0, "Cleanings started since start [-]"),
-            "cumulative_cost_eur": (FLOAT64, 0.0, "Cumulative cleaning cost [EUR]"),
-            "downtime_h": (FLOAT64, 0.0, "Cumulative cleaning downtime [h]"),
-            "hours_since_cleaning": (FLOAT64, 0.0, "Hours since the last cleaning started [h]"),
-            "cleaning_active": (BOOLEAN, False, "True while a cleaning is in progress [-]"),
+            "degradation_cost_eur": (FLOAT64, 0.0, "Cumulative cost of consumed asset life [EUR]"),
+            "degradation_cost_rate_eur_per_day": (FLOAT64, 0.0, "Degradation cost rate over the last step [EUR/d]"),
+            "gross_revenue_eur": (FLOAT64, 0.0, "revenue_eur + energy_mwh * price_eur_mwh [EUR]"),
+            "net_benefit_eur": (FLOAT64, 0.0, "gross_revenue_eur - degradation_cost_eur [EUR]"),
+            "benefit_cost_ratio": (FLOAT64, 0.0, "gross_revenue_eur / degradation_cost_eur, capped at 1000 [-]"),
+            "status_code": (INT32, 0, "0 ok, 1 warning (RUL < warning), 2 alarm (RUL < alarm)"),
+            "recommendation_code": (INT32, 0, "0 continue, 1 reduce cycling, 2 schedule maintenance"),
         },
-        "init": cleaning_init,
-        "step": cleaning_step,
+        "init": cost_init,
+        "step": cost_step,
     },
 }
 

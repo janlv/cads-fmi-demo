@@ -188,7 +188,9 @@ func ListWorkflows(root string) ([]WorkflowSummary, error) {
 			return err
 		}
 		if entry.IsDir() {
-			if entry.Name() == "tests" && file != workflowsRoot {
+			// workflows/tests holds runtime test workflows and workflows/archive the retired
+			// pre-matrix replica workflows; neither is part of the dashboard catalog.
+			if (entry.Name() == "tests" || entry.Name() == "archive") && file != workflowsRoot {
 				return filepath.SkipDir
 			}
 			return nil

@@ -134,6 +134,10 @@ requires only a service rebuild. The browser never talks to Argo directly; it
 uses `/api/config`, `/api/workflows`, `/api/runs[/{name}[/results]]` served by
 `server.go`, plus `POST /run` for local in-process execution.
 
+`workflows/tests/` and `workflows/archive/` are skipped by the catalog: the
+former holds runtime test workflows, the latter the retired pre-matrix FMI 2
+replica workflows kept for regression. The demo scope (two demonstrators, one
+FMU per model family) is declared in `web/static/cads-model-matrix.json`.
 Workflows appear in the UI from their YAML `metadata` block (`display_name`,
 `site_id`, `category`, `result_family`, `description`, `tags`) — see
 `ListWorkflows` in `workflows.go`. A new workflow for an existing site only

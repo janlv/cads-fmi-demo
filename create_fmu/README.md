@@ -41,15 +41,20 @@ the equations have a plausible shape so coupling is visible in the dashboard,
 but parameters are illustrative and nothing here is calibrated against plant
 data.
 
-| FMU (`fmu/models/<Class>.fmu`) | stepSize [s] | coupled inputs | outputs |
-|---|---|---|---|
-| `EmsDispatchFmi3` | 900 | `soc_percent` | `power_setpoint_mw`, `price_eur_mwh`, `mode`, `revenue_eur` |
-| `BatteryDegradationFmi3` | 300 | `power_setpoint_mw`, `ambient_temp_c` | `soc_percent`, `soh_percent`, `rul_days`, `cycle_count`, `power_actual_mw`, `cell_temp_c` |
-| `RunnerStressFmi3` | 900 | `flow_demand_pu` | `load_pu`, `operating_mode`, `stress_amplitude_mpa`, `start_stop_count` |
-| `IoTIndicatorFmi3` | 300 | `load_pu` | `vibration_rms_mm_s`, `condition_indicator` |
-| `RulFmi3` | 900 | `stress_amplitude_mpa`, `condition_indicator` | `damage_index`, `rul_days`, `damage_rate_per_day`, `status_code` |
-| `SedimentExposureFmi3` | 300 | `cleanings_done` | `tidal_head_m`, `sediment_concentration_g_l`, `sediment_exposure` |
-| `CleaningDecisionFmi3` | 900 | `sediment_exposure`, `trigger` | `cleaning_count`, `cumulative_cost_eur`, `downtime_h`, `hours_since_cleaning`, `cleaning_active` |
+One FMU per model family of the Task 3.3 matrix:
+
+| Family | FMU (`fmu/models/<Class>.fmu`) | stepSize [s] | inputs | outputs |
+|---|---|---|---|---|
+| M10 | `EmsDispatchFmi3` | 900 | `soc_percent` | `power_setpoint_mw`, `price_eur_mwh`, `mode`, `revenue_eur` |
+| M9 | `BatteryDegradationFmi3` | 300 | `power_setpoint_mw`, `ambient_temp_c` | `soc_percent`, `soh_percent`, `rul_days`, `cycle_count`, `power_actual_mw`, `cell_temp_c` |
+| M1 | `RunnerStressFmi3` | 900 | `flow_demand_pu` | `load_pu`, `operating_mode`, `stress_amplitude_mpa`, `start_stop_count`, `energy_mwh` |
+| M7 | `IoTIndicatorFmi3` | 300 | `load_pu` | `vibration_rms_mm_s`, `condition_indicator` |
+| M8 | `RulFmi3` | 900 | `stress_amplitude_mpa`, `condition_indicator` | `damage_index`, `rul_days`, `damage_rate_per_day`, `status_code` |
+| M5 | `SedimentExposureFmi3` | 300 | `cleaning_trigger` (Boolean) | `head_m`, `sediment_concentration_g_l`, `sediment_exposure`, `cleaning_count`, `cumulative_cleaning_cost_eur`, `downtime_h`, `hours_since_cleaning` |
+| M14 | `DegradationCostFmi3` | 900 | `rul_days`, `damage_rate_per_day`, `soh_percent`, `revenue_eur`, `energy_mwh` | `degradation_cost_eur`, `degradation_cost_rate_eur_per_day`, `gross_revenue_eur`, `net_benefit_eur`, `benefit_cost_ratio`, `status_code`, `recommendation_code` |
+
+`CleaningDecisionFmi3` was retired; its cleaning accounting (minimum interval,
+cost, downtime, count) now lives in `SedimentExposureFmi3`.
 
 Every FMU declares a `DefaultExperiment` (0 to 86400 s, the stepSize above),
 one `independent` variable `time`, `causality="input"` variables with explicit
@@ -66,7 +71,26 @@ Acceleration and simplifications worth knowing before quoting numbers:
   `rul_days` divides it back out and reports the real-rate estimate.
 - `RulFmi3` uses a Basquin S-N curve with Miner's rule and a conservative
   planning rate (never below the design rate or the worst smoothed rate seen),
-  so its RUL estimate only falls.
+  so its RUL estimate only falls. `demo_acceleration` (default 1) multiplies
+  the accumulated damage only; `damage_rate_per_day` and `rul_days` stay at
+  real rates.
+- `RunnerStressFmi3.energy_mwh` integrates `load_pu * rated_power_mw`
+  (default 240 MW) over turbine-mode intervals only.
+- `SedimentExposureFmi3.profile_mode` selects the La Rance tidal profile (0)
+  or the Cheylas pump/turbine cycling and dewatering profile (1, head around
+  260 m, `cycles_per_day` sediment bursts). A true `cleaning_trigger` resets
+  exposure to `post_cleaning_exposure` at most once per
+  `min_cleaning_interval_h` and adds `cleaning_cost_eur` and
+  `downtime_per_cleaning_h`.
+- `DegradationCostFmi3` charges `asset_value_eur` times the consumed life:
+  `damage_rate_per_day * dt / 86400` plus any capacity fade
+  `(100 - soh_percent) / 100` not yet charged (relative to a new asset). Gross
+  revenue is `revenue_eur + energy_mwh * price_eur_mwh`. `status_code` flags
+  `rul_days` below `rul_warning_days` (1) or `rul_alarm_days` (2);
+  `recommendation_code` is 2 (schedule maintenance) on alarm, 1 (reduce
+  cycling) when `benefit_cost_ratio < 1`, else 0. `planning_horizon_days` is
+  informative only. Because the battery fade is time-compressed, the Alqueva
+  cost is deliberately exaggerated.
 - Prices, tides, operating schedules and vibration "noise" are synthetic
   deterministic functions of time, so every run is reproducible.
 
