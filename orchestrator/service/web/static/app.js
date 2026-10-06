@@ -7,6 +7,11 @@ const state = {
   selectedRunName: "",
   selectedDemonstratorId: "portfolio",
   runsRailCollapsed: false,
+  siteMapCollapsed: false,
+  modelMatrix: null,
+  modelMatrixError: "",
+  modelFocus: "",
+  candidateFocus: "",
   simulinkResult: null,
   simulinkResultsCache: new Map(),
   aeStatsResult: null,
@@ -62,6 +67,9 @@ const COSIM_MODEL_LABELS = { ems: "EMS", iot: "IoT", rul: "RUL" };
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const SELECTED_DEMONSTRATOR_STORAGE_KEY = "cads:selectedDemonstratorId";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
+const SITE_MAP_COLLAPSED_STORAGE_KEY = "cads:siteMapCollapsed";
+const MODEL_MATRIX_URL = "/static/cads-model-matrix.json";
+const SEQUENTIAL_COUPLING_LABEL = "Sequential one-way hand-over (final values between steps)";
 const STORHY_DEFAULT_SUMMARY = ["score", "kpi_score", "risk_index", "confidence", "rul_days", "availability_delta_percent", "flexibility_delta_percent", "value_delta_eur"];
 const STORHY_KPI_RISK_CHART = {
   title: "KPI And Risk",
@@ -467,16 +475,16 @@ const DEMONSTRATORS = [
     id: "portfolio",
     label: "All demonstrators",
     shortLabel: "All sites",
-    location: "France, Portugal and the United Kingdom",
+    location: "France and Portugal",
     operator: "STOR-HY consortium",
     country: "Europe",
     focus: "Portfolio view for CADS workflow templates across the STOR-HY demonstrator set.",
-    capacity: "Six pilot sites",
+    capacity: "Five CADS demonstrator sites",
     workflowPaths: [],
     facts: [
       "Pumped-storage hydropower and tidal-storage use cases",
       "Condition monitoring, co-simulation, and decision support",
-      "Clickable map filters the workflow tabs by demonstrator context",
+      "Model matrix and site map filter the workflow tabs by demonstrator",
     ],
   },
   {
@@ -586,27 +594,6 @@ const DEMONSTRATORS = [
       "Main inlet valve and hydraulic short-circuit operation",
     ],
   },
-  {
-    id: "rheenergise",
-    label: "RheEnergise demonstrator",
-    shortLabel: "RheEnergise",
-    location: "Devon, United Kingdom",
-    operator: "RheEnergise",
-    country: "United Kingdom",
-    mapX: 42.5,
-    mapY: 17.6,
-    mapLabelX: 40.6,
-    mapLabelY: 14.9,
-    mapLabelAlign: "right",
-    mapSubtitle: "Scope to be decided",
-    focus: "Scope to be decided. No CADS workflow is mapped to this demonstrator yet.",
-    capacity: "Scope to be decided",
-    workflowPaths: [],
-    facts: [
-      "Sixth STOR-HY demonstrator site",
-      "Demonstrator scope and CADS workflows are still to be decided",
-    ],
-  },
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -619,7 +606,9 @@ async function initializeDashboard() {
   try {
     state.selectedDemonstratorId = readPersistedDemonstratorId();
     state.runsRailCollapsed = readPersistedRunsRailCollapsed();
-    state.config = await fetchJSON("/api/config");
+    state.siteMapCollapsed = readPersistedSiteMapCollapsed();
+    const [config] = await Promise.all([fetchJSON("/api/config"), loadModelMatrix()]);
+    state.config = config;
     renderConfigMeta();
     renderBanner();
     renderDemonstrators();
@@ -639,6 +628,19 @@ async function initializeDashboard() {
     renderWorkflows();
     renderRuns();
     renderWorkflowOutput();
+  }
+}
+
+// The model-by-demonstrator matrix is optional: when it fails to load the
+// dashboard still works, the matrix pane just explains what is missing.
+async function loadModelMatrix() {
+  try {
+    const matrix = await fetchJSON(MODEL_MATRIX_URL);
+    state.modelMatrix = matrix && Array.isArray(matrix.models) ? matrix : null;
+    state.modelMatrixError = state.modelMatrix ? "" : "Model matrix file has no models.";
+  } catch (error) {
+    state.modelMatrix = null;
+    state.modelMatrixError = error.message;
   }
 }
 
@@ -1234,6 +1236,28 @@ function persistRunsRailCollapsed(collapsed) {
   }
 }
 
+function readPersistedSiteMapCollapsed() {
+  try {
+    return window.localStorage?.getItem(SITE_MAP_COLLAPSED_STORAGE_KEY) === "true";
+  } catch (_error) {
+    return false;
+  }
+}
+
+function persistSiteMapCollapsed(collapsed) {
+  try {
+    window.localStorage?.setItem(SITE_MAP_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
+  } catch (_error) {
+    // Local storage can be unavailable in private or embedded browser contexts.
+  }
+}
+
+function setSiteMapCollapsed(collapsed) {
+  state.siteMapCollapsed = Boolean(collapsed);
+  persistSiteMapCollapsed(state.siteMapCollapsed);
+  renderDemonstrators();
+}
+
 function setRunsRailCollapsed(collapsed) {
   state.runsRailCollapsed = Boolean(collapsed);
   persistRunsRailCollapsed(state.runsRailCollapsed);
@@ -1319,15 +1343,10 @@ function renderDemonstrators() {
   }
 
   const selected = selectedDemonstrator();
+  renderModelMatrix();
+  renderSiteMapChrome(selected);
   const demonstratorsWithLocations = DEMONSTRATORS.filter((demo) => Number.isFinite(demo.mapX) && Number.isFinite(demo.mapY));
   map.innerHTML = `
-    <div class="demo-map-head">
-      <div>
-        <p class="panel-kicker">Demonstrators</p>
-        <h3>European Pilot Sites</h3>
-      </div>
-      <button class="demo-all-button${selected.id === "portfolio" ? " selected" : ""}" type="button" data-demo-id="portfolio">Show all</button>
-    </div>
     <div class="demo-map-canvas" role="img" aria-label="Clickable map of STOR-HY demonstrator locations">
       <div class="demo-map-layer">
         <img class="demo-map-image" src="/static/storhy-demonstrators-map.png" alt="">
@@ -1348,6 +1367,23 @@ function renderDemonstrators() {
     button.addEventListener("click", () => {
       selectWorkflow(button.dataset.demoWorkflow);
     });
+  }
+}
+
+function renderSiteMapChrome(selected) {
+  const pane = document.getElementById("siteMapPane");
+  const toggle = document.getElementById("siteMapToggle");
+  const showAll = document.getElementById("siteMapShowAll");
+  const collapsed = state.siteMapCollapsed;
+  pane?.classList.toggle("collapsed", collapsed);
+  if (toggle) {
+    toggle.textContent = collapsed ? "Expand" : "Collapse";
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggle.onclick = () => setSiteMapCollapsed(!state.siteMapCollapsed);
+  }
+  if (showAll) {
+    showAll.classList.toggle("selected", selected.id === "portfolio");
+    showAll.onclick = () => selectDemonstrator("portfolio");
   }
 }
 
@@ -1440,6 +1476,445 @@ function renderDemoWorkflowButton(workflow, isSelected) {
   `;
 }
 
+// ---------------------------------------------------------------------------
+// Model-by-demonstrator matrix (Task 3.3). Static data from
+// cads-model-matrix.json; the matrix is the primary site navigation and maps
+// repo demo workflows onto the consortium's candidate workflows (W1..W7).
+// ---------------------------------------------------------------------------
+
+function matrixModels() {
+  return Array.isArray(state.modelMatrix?.models) ? state.modelMatrix.models : [];
+}
+
+function matrixSites() {
+  return Array.isArray(state.modelMatrix?.sites) ? state.modelMatrix.sites : [];
+}
+
+function matrixCandidateWorkflows() {
+  return Array.isArray(state.modelMatrix?.workflows) ? state.modelMatrix.workflows : [];
+}
+
+function matrixModelById(modelId) {
+  return matrixModels().find((model) => model.id === modelId) || null;
+}
+
+function matrixCandidateById(candidateId) {
+  return matrixCandidateWorkflows().find((candidate) => candidate.id === candidateId) || null;
+}
+
+function matrixCategoryLabel(categoryId) {
+  const categories = Array.isArray(state.modelMatrix?.categories) ? state.modelMatrix.categories : [];
+  return categories.find((category) => category.id === categoryId)?.label || formatWorkflowCategory(categoryId);
+}
+
+function matrixCategoryClass(categoryId) {
+  const slug = String(categoryId || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return slug ? `cat-${slug}` : "cat-unknown";
+}
+
+// Draft mapping of a repo workflow onto a candidate workflow and model families.
+function workflowMatrixMapping(workflow) {
+  const mapping = workflow ? state.modelMatrix?.demo_workflows?.[workflow.path] : null;
+  if (!mapping) {
+    return null;
+  }
+  return {
+    candidate: String(mapping.candidate || ""),
+    models: Array.isArray(mapping.models) ? mapping.models.map(String) : [],
+  };
+}
+
+function workflowMatrixLabel(workflow) {
+  const mapping = workflowMatrixMapping(workflow);
+  if (!mapping) {
+    return "";
+  }
+  const models = mapping.models.join(", ");
+  return [mapping.candidate, models].filter(Boolean).join(" · ");
+}
+
+function hasMatrixFocus() {
+  return Boolean(state.modelFocus || state.candidateFocus);
+}
+
+function workflowMatchesMatrixFocus(workflow) {
+  const mapping = workflowMatrixMapping(workflow);
+  if (!mapping) {
+    return false;
+  }
+  if (state.modelFocus && !mapping.models.includes(state.modelFocus)) {
+    return false;
+  }
+  if (state.candidateFocus && mapping.candidate !== state.candidateFocus) {
+    return false;
+  }
+  return true;
+}
+
+function setModelFocus(modelId) {
+  state.modelFocus = modelId && matrixModelById(modelId) ? modelId : "";
+  renderDemonstrators();
+  renderWorkflows();
+  revealFirstFocusedWorkflowTab();
+}
+
+function setCandidateFocus(candidateId) {
+  state.candidateFocus = candidateId && matrixCandidateById(candidateId) ? candidateId : "";
+  renderDemonstrators();
+  renderWorkflows();
+  revealFirstFocusedWorkflowTab();
+}
+
+// The tab row scrolls horizontally; bring the first highlighted tab into view.
+function revealFirstFocusedWorkflowTab() {
+  const grid = document.getElementById("workflowGrid");
+  const tab = grid?.querySelector(".workflow-tab.focus-match");
+  if (!grid || !tab) {
+    return;
+  }
+  const offset = tab.getBoundingClientRect().left - grid.getBoundingClientRect().left;
+  grid.scrollLeft = Math.max(0, grid.scrollLeft + offset - 8);
+}
+
+function selectMatrixCell(siteId, modelId) {
+  const sameCell = state.modelFocus === modelId && state.selectedDemonstratorId === siteId;
+  state.modelFocus = sameCell ? "" : modelId;
+  if (state.selectedDemonstratorId === siteId) {
+    renderDemonstrators();
+    renderWorkflows();
+  } else {
+    selectDemonstrator(siteId);
+  }
+  revealFirstFocusedWorkflowTab();
+}
+
+function renderModelMatrix() {
+  const container = document.getElementById("modelMatrix");
+  if (!container) {
+    return;
+  }
+  if (!state.modelMatrix) {
+    container.innerHTML = `
+      <div class="model-matrix-head">
+        <div>
+          <p class="panel-kicker">Demonstrators and models</p>
+          <h3>CADS model matrix</h3>
+        </div>
+      </div>
+      <div class="empty-state">Model matrix unavailable${state.modelMatrixError ? `: ${escapeHTML(state.modelMatrixError)}` : ""}.</div>
+    `;
+    return;
+  }
+
+  const selectedId = selectedDemonstrator().id;
+  const sites = matrixSites();
+  const models = matrixModels();
+  const legend = state.modelMatrix.legend || {};
+  const selectedMapping = workflowMatrixMapping(selectedWorkflow());
+  const usedModels = new Set(selectedMapping?.models || []);
+  const categories = Array.isArray(state.modelMatrix.categories) ? state.modelMatrix.categories : [];
+
+  container.innerHTML = `
+    <div class="model-matrix-head">
+      <div>
+        <p class="panel-kicker">Demonstrators and models</p>
+        <h3>CADS model matrix</h3>
+        <p class="model-matrix-intro">Pick a demonstrator column, or a cell to focus one model family at that site. Workflow tabs below follow the selection.</p>
+      </div>
+      <button class="demo-all-button${selectedId === "portfolio" ? " selected" : ""}" type="button" data-matrix-site="portfolio">All sites</button>
+    </div>
+    <div class="model-matrix-legend" aria-label="Matrix legend">
+      <span><b class="mm-mark identified" aria-hidden="true">&#9679;</b> ${escapeHTML(legend.identified || "identified")}</span>
+      <span><b class="mm-mark candidate" aria-hidden="true">&#9675;</b> ${escapeHTML(legend.candidate || "candidate or to be decided")}</span>
+      <span class="mm-legend-sep" aria-hidden="true"></span>
+      ${categories.map((category) => `
+        <span class="mm-cat-legend ${matrixCategoryClass(category.id)}"><i aria-hidden="true"></i>${escapeHTML(category.label || category.id)}</span>
+      `).join("")}
+      ${selectedMapping ? '<span class="mm-used-legend"><i aria-hidden="true"></i>used by selected workflow</span>' : ""}
+    </div>
+    <div class="model-matrix-scroll">
+      <table class="model-matrix">
+        <thead>
+          <tr>
+            <th scope="col" class="mm-model-col">Model family</th>
+            ${sites.map((site) => renderMatrixSiteHeader(site, site.id === selectedId)).join("")}
+            <th scope="col" class="mm-w-col">Workflows</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${models.map((model) => renderMatrixModelRow(model, sites, selectedId, usedModels.has(model.id))).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${renderCandidateWorkflowStrip()}
+    ${state.modelMatrix.source ? `<p class="model-matrix-source">Source: ${escapeHTML(state.modelMatrix.source)}</p>` : ""}
+  `;
+
+  for (const button of container.querySelectorAll("[data-matrix-site]")) {
+    button.addEventListener("click", () => {
+      const siteId = button.dataset.matrixSite || "portfolio";
+      const modelId = button.dataset.matrixModel || "";
+      if (modelId) {
+        selectMatrixCell(siteId, modelId);
+      } else {
+        selectDemonstrator(siteId);
+      }
+    });
+  }
+  for (const button of container.querySelectorAll("[data-candidate-focus]")) {
+    button.addEventListener("click", () => {
+      const candidateId = button.dataset.candidateFocus || "";
+      setCandidateFocus(state.candidateFocus === candidateId ? "" : candidateId);
+    });
+  }
+}
+
+function renderMatrixSiteHeader(site, isSelected) {
+  const demo = DEMONSTRATORS.find((entry) => entry.id === site.id);
+  const count = demo ? workflowsForDemonstrator(demo).length : 0;
+  return `
+    <th scope="col" class="mm-site-col${isSelected ? " selected" : ""}">
+      <button
+        class="mm-site-button${isSelected ? " selected" : ""}"
+        type="button"
+        data-matrix-site="${escapeHTML(site.id)}"
+        aria-pressed="${isSelected ? "true" : "false"}"
+        title="Show ${escapeHTML(demo?.label || site.label)} workflows"
+      >
+        <span>${escapeHTML(site.label || site.id)}</span>
+        <small>${count} workflow${count === 1 ? "" : "s"}</small>
+      </button>
+    </th>
+  `;
+}
+
+function renderMatrixModelRow(model, sites, selectedId, usedBySelectedWorkflow) {
+  const siteMarks = model.sites && typeof model.sites === "object" ? model.sites : {};
+  const hasSites = sites.some((site) => siteMarks[site.id]);
+  const demoFmus = Array.isArray(model.demo_fmus) ? model.demo_fmus.filter(Boolean) : [];
+  const owners = Array.isArray(model.owners) ? model.owners.filter(Boolean) : [];
+  const workflows = Array.isArray(model.workflows) ? model.workflows.filter(Boolean) : [];
+  const isFocused = state.modelFocus === model.id;
+  const rowClasses = [
+    "mm-row",
+    matrixCategoryClass(model.category),
+    usedBySelectedWorkflow ? "used" : "",
+    isFocused ? "focused" : "",
+    hasSites ? "" : "no-site",
+  ].filter(Boolean).join(" ");
+  return `
+    <tr class="${rowClasses}">
+      <th scope="row" class="mm-model-cell">
+        <div class="mm-model">
+          <span class="mm-badge" title="${escapeHTML(matrixCategoryLabel(model.category))}">${escapeHTML(model.id)}</span>
+          <div class="mm-model-text">
+            <span class="mm-model-name">${escapeHTML(model.name || model.id)}</span>
+            <span class="mm-model-sub">
+              ${owners.length > 0 ? `<span class="mm-owners">${escapeHTML(owners.join(", "))}</span>` : ""}
+              ${hasSites ? "" : '<span class="mm-owners">no CADS demonstrator site assigned yet</span>'}
+              ${demoFmus.map((fmu) => `<code class="mm-demo-chip" title="Placeholder FMU in this repo">demo: ${escapeHTML(fmu)}</code>`).join("")}
+            </span>
+          </div>
+        </div>
+      </th>
+      ${sites.map((site) => renderMatrixCell(model, site, siteMarks[site.id], site.id === selectedId)).join("")}
+      <td class="mm-w-cell">
+        ${workflows.map((candidateId) => `
+          <button
+            class="mm-w-chip${state.candidateFocus === candidateId ? " selected" : ""}"
+            type="button"
+            data-candidate-focus="${escapeHTML(candidateId)}"
+            title="${escapeHTML(matrixCandidateById(candidateId)?.title || candidateId)}"
+          >${escapeHTML(candidateId)}</button>
+        `).join("")}
+      </td>
+    </tr>
+  `;
+}
+
+function renderMatrixCell(model, site, status, isSelectedSite) {
+  const mark = status === "identified" ? "&#9679;" : status === "candidate" ? "&#9675;" : "";
+  const statusText = status === "identified" ? "identified" : status === "candidate" ? "candidate or to be decided" : "not planned";
+  const isFocused = isSelectedSite && state.modelFocus === model.id;
+  return `
+    <td class="mm-cell${isSelectedSite ? " selected" : ""}${status ? ` ${escapeHTML(status)}` : ""}">
+      <button
+        class="mm-cell-button${isFocused ? " focused" : ""}"
+        type="button"
+        data-matrix-site="${escapeHTML(site.id)}"
+        data-matrix-model="${escapeHTML(model.id)}"
+        aria-pressed="${isFocused ? "true" : "false"}"
+        aria-label="${escapeHTML(`${model.id} ${model.name || ""} at ${site.label || site.id}: ${statusText}`)}"
+        title="${escapeHTML(`${model.id} at ${site.label || site.id}: ${statusText}`)}"
+      >${mark}</button>
+    </td>
+  `;
+}
+
+function renderCandidateWorkflowStrip() {
+  const candidates = matrixCandidateWorkflows();
+  if (candidates.length === 0) {
+    return "";
+  }
+  const visible = visibleWorkflows();
+  return `
+    <div class="mm-candidates">
+      <div class="mm-candidates-title">Candidate workflows <span>click to highlight the demo workflows mapped to one</span></div>
+      <div class="mm-candidate-row">
+        ${candidates.map((candidate) => {
+          const count = visible.filter((workflow) => workflowMatrixMapping(workflow)?.candidate === candidate.id).length;
+          const isSelected = state.candidateFocus === candidate.id;
+          return `
+            <button
+              class="mm-candidate${isSelected ? " selected" : ""}${count === 0 ? " empty" : ""}"
+              type="button"
+              data-candidate-focus="${escapeHTML(candidate.id)}"
+              aria-pressed="${isSelected ? "true" : "false"}"
+            >
+              <span class="mm-candidate-top">
+                <strong>${escapeHTML(candidate.id)}</strong>
+                <span>${count} demo workflow${count === 1 ? "" : "s"}</span>
+              </span>
+              <span class="mm-candidate-title">${escapeHTML(candidate.title || "")}</span>
+              ${candidate.chain ? `<code>${escapeHTML(candidate.chain)}</code>` : ""}
+            </button>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderMatrixFocusChips() {
+  const chips = [];
+  if (state.modelFocus) {
+    const model = matrixModelById(state.modelFocus);
+    chips.push(`
+      <span class="matrix-focus-chip">
+        Model focus: <strong>${escapeHTML(state.modelFocus)}</strong> ${escapeHTML(model?.name || "")}
+        <button type="button" data-clear-focus="model" aria-label="Clear model focus">&times;</button>
+      </span>
+    `);
+  }
+  if (state.candidateFocus) {
+    const candidate = matrixCandidateById(state.candidateFocus);
+    chips.push(`
+      <span class="matrix-focus-chip">
+        Candidate: <strong>${escapeHTML(state.candidateFocus)}</strong> ${escapeHTML(candidate?.title || "")}
+        <button type="button" data-clear-focus="candidate" aria-label="Clear candidate workflow focus">&times;</button>
+      </span>
+    `);
+  }
+  return chips.join("");
+}
+
+// ---------------------------------------------------------------------------
+// FMU communication pattern per workflow, derived from the catalog cosim block.
+// ---------------------------------------------------------------------------
+
+function rawCosimPatterns(cosim) {
+  if (Array.isArray(cosim?.patterns) && cosim.patterns.length > 0) {
+    return cosim.patterns.map((pattern) => String(pattern || "").toLowerCase()).filter(Boolean);
+  }
+  const scheme = String(cosim?.scheme || "").toLowerCase();
+  const edges = cosimEdges(cosim);
+  const patterns = [];
+  if (scheme === "gauss_seidel") {
+    patterns.push("sequential");
+  } else if (scheme === "jacobi") {
+    patterns.push("parallel");
+  }
+  if (edges.some((edge) => edge.bidirectional)) {
+    patterns.push("bidirectional");
+  }
+  if (edges.some((edge) => !edge.bidirectional)) {
+    patterns.push("one-way");
+  }
+  if (Array.isArray(cosim?.events) && cosim.events.length > 0) {
+    patterns.push("event-driven");
+  }
+  return patterns;
+}
+
+function cosimCouplingSummary(cosim) {
+  const scheme = String(cosim?.scheme || "").toLowerCase();
+  const patterns = rawCosimPatterns(cosim);
+  if (Array.isArray(cosim?.events) && cosim.events.length > 0 && !patterns.includes("event-driven")) {
+    patterns.push("event-driven");
+  }
+  let schemeText = "Co-simulation";
+  let schemeBadge = "co-sim";
+  if (scheme === "gauss_seidel") {
+    schemeText = "Gauss-Seidel ping-pong";
+    schemeBadge = "ping-pong";
+  } else if (scheme === "jacobi") {
+    schemeText = "Jacobi lock-step";
+    schemeBadge = "lock-step";
+  } else if (scheme) {
+    schemeText = `${formatWorkflowCategory(scheme)} co-simulation`;
+  }
+  // "sequential"/"parallel" restate the scheme, so only the coupling shape is listed.
+  const extras = patterns.filter((pattern) => pattern !== "sequential" && pattern !== "parallel");
+  const badges = [schemeBadge];
+  if (extras.includes("event-driven")) {
+    badges.push("event-driven");
+  }
+  if (extras.includes("one-way")) {
+    badges.push("one-way");
+  }
+  return {
+    text: [schemeText, ...extras].join(", "),
+    badges,
+  };
+}
+
+// Returns { label, badges[] } describing how the workflow's FMUs exchange data.
+function workflowCouplingInfo(workflow) {
+  const models = workflowModels(workflow);
+  if (models.length === 0) {
+    return { label: "", badges: [] };
+  }
+  const cosimIndexes = models.map((model, index) => (isCosimModel(model) ? index : -1)).filter((index) => index >= 0);
+  if (cosimIndexes.length === 0) {
+    if (models.length === 1) {
+      return { label: "Single FMU step (no coupling)", badges: ["single step"] };
+    }
+    return { label: SEQUENTIAL_COUPLING_LABEL, badges: ["one-way"] };
+  }
+
+  const parts = [];
+  const badges = [];
+  const addBadge = (badge) => {
+    if (!badges.includes(badge)) {
+      badges.push(badge);
+    }
+  };
+  const firstCosim = cosimIndexes[0];
+  const lastCosim = cosimIndexes[cosimIndexes.length - 1];
+  if (firstCosim > 0) {
+    const head = models.slice(0, firstCosim).map(workflowModelLabel);
+    parts.push(`one-way hand-over from ${head.join(", ")}`);
+    addBadge("one-way");
+  }
+  for (const index of cosimIndexes) {
+    const summary = cosimCouplingSummary(models[index].cosim);
+    parts.push(summary.text);
+    summary.badges.forEach(addBadge);
+  }
+  if (lastCosim < models.length - 1) {
+    const tail = models.slice(lastCosim + 1).map(workflowModelLabel);
+    parts.push(`one-way hand-over to ${tail.join(", ")}`);
+    addBadge("one-way");
+  }
+  return { label: parts.join(" + "), badges };
+}
+
+function renderCouplingBadges(badges) {
+  return badges
+    .map((badge) => `<span class="coupling-badge coupling-${escapeHTML(badge.replace(/[^a-z-]/gi, "-").toLowerCase())}">${escapeHTML(badge)}</span>`)
+    .join("");
+}
+
 function renderWorkflows() {
   const grid = document.getElementById("workflowGrid");
   const context = document.getElementById("workflowContext");
@@ -1477,19 +1952,50 @@ function renderWorkflows() {
           workflowMaxRuntimeLabel(selected),
         ].filter(Boolean).join(" | ")
       : "";
+    const focusMatches = hasMatrixFocus() ? workflows.filter(workflowMatchesMatrixFocus).length : 0;
+    const coupling = workflowCouplingInfo(selected);
+    const mapping = workflowMatrixMapping(selected);
+    const candidate = mapping ? matrixCandidateById(mapping.candidate) : null;
     context.innerHTML = `
       <span class="workflow-context-site">${escapeHTML(demo.shortLabel || demo.label)}</span>
       <span>${escapeHTML(demo.id === "portfolio" ? "Showing every repo workflow." : `Showing workflows mapped to ${demo.label}.`)}</span>
+      ${renderMatrixFocusChips()}
+      ${hasMatrixFocus() ? `<span class="matrix-focus-count">${focusMatches} of ${workflows.length} highlighted</span>` : ""}
       ${selected ? `
+        <span class="workflow-context-break" aria-hidden="true"></span>
         <div class="workflow-selected-description">
           <strong>${escapeHTML(workflowLabel(selected))}</strong>
           ${selectedMeta ? `<em>${escapeHTML(selectedMeta)}</em>` : ""}
           ${description ? `<span>${escapeHTML(description)}</span>` : ""}
+          ${coupling.label ? `
+            <div class="workflow-coupling-line">
+              <span class="workflow-line-label">FMU coupling:</span>
+              <span>${escapeHTML(coupling.label)}</span>
+              <span class="coupling-badge-row">${renderCouplingBadges(coupling.badges)}</span>
+            </div>
+          ` : ""}
+          ${mapping ? `
+            <div class="workflow-matrix-line">
+              <span class="workflow-line-label">Model matrix:</span>
+              <span class="matrix-map-chip">${escapeHTML(workflowMatrixLabel(selected))}</span>
+              ${candidate ? `<span>${escapeHTML(candidate.title || "")}${candidate.chain ? ` &middot; <code>${escapeHTML(candidate.chain)}</code>` : ""}</span>` : ""}
+              <span class="workflow-model-muted">draft mapping</span>
+            </div>
+          ` : ""}
           ${renderWorkflowModelOverview(selected)}
         </div>
       ` : ""}
     `;
 
+    for (const button of context.querySelectorAll("[data-clear-focus]")) {
+      button.addEventListener("click", () => {
+        if (button.dataset.clearFocus === "model") {
+          setModelFocus("");
+        } else {
+          setCandidateFocus("");
+        }
+      });
+    }
     for (const button of context.querySelectorAll("[data-select-workflow-model]")) {
       button.addEventListener("click", () => {
         toggleWorkflowModel(Number(button.dataset.selectWorkflowModel));
@@ -1516,9 +2022,12 @@ function renderWorkflows() {
       const label = workflowLabel(workflow);
       const category = formatWorkflowCategory(workflowCategory(workflow));
       const metaPrefix = category ? `${category} | ` : "";
+      const coupling = workflowCouplingInfo(workflow);
+      const matrixLabel = workflowMatrixLabel(workflow);
+      const focusClass = hasMatrixFocus() ? (workflowMatchesMatrixFocus(workflow) ? " focus-match" : " focus-dim") : "";
       return `
         <button
-          class="workflow-tab${isSelected ? " selected" : ""}${pending ? " pending" : ""}"
+          class="workflow-tab${isSelected ? " selected" : ""}${pending ? " pending" : ""}${focusClass}"
           type="button"
           role="tab"
           aria-selected="${isSelected ? "true" : "false"}"
@@ -1527,6 +2036,12 @@ function renderWorkflows() {
         >
           <span class="workflow-tab-title">${escapeHTML(label)}</span>
           <span class="workflow-tab-meta">${escapeHTML(metaPrefix)}${workflow.stepCount} step${workflow.stepCount === 1 ? "" : "s"}${pending ? " | submitting" : ""}</span>
+          ${coupling.badges.length > 0 || matrixLabel ? `
+            <span class="workflow-tab-badges" title="${escapeHTML(coupling.label)}">
+              ${renderCouplingBadges(coupling.badges)}
+              ${matrixLabel ? `<span class="matrix-map-chip">${escapeHTML(matrixLabel)}</span>` : ""}
+            </span>
+          ` : ""}
         </button>
       `;
     })

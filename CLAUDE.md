@@ -137,8 +137,11 @@ uses `/api/config`, `/api/workflows`, `/api/runs[/{name}[/results]]` served by
 Workflows appear in the UI from their YAML `metadata` block (`display_name`,
 `site_id`, `category`, `result_family`, `description`, `tags`) — see
 `ListWorkflows` in `workflows.go`. A new workflow for an existing site only
-needs a matching `site_id`; a new *demonstrator site* also needs an entry in the
-hardcoded `DEMONSTRATORS` array in `app.js` (labels, map coordinates, facts).
+needs a matching `site_id` plus an entry in `web/static/cads-model-matrix.json`
+(`demo_workflows`: candidate workflow W1..W7 and model families M1..M14); a new
+*demonstrator site* also needs an entry in the hardcoded `DEMONSTRATORS` array
+in `app.js` (labels, map coordinates, facts) and a `sites` entry in the matrix
+file.
 
 ### Auth model
 
