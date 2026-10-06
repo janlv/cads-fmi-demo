@@ -40,6 +40,9 @@ type WorkflowMetadata struct {
 	Description  string          `json:"description,omitempty" yaml:"description"`
 	Tags         []string        `json:"tags,omitempty" yaml:"tags"`
 	Limits       *WorkflowLimits `json:"limits,omitempty" yaml:"limits"`
+	// SyntheticCase is the display name of the workflow's synthetic_case fixture (not a YAML
+	// metadata field; filled by the catalog from the top-level synthetic_case entry).
+	SyntheticCase string `json:"syntheticCase,omitempty" yaml:"-"`
 }
 
 // WorkflowLimits are the per-workflow execution limits (ARCH-COMP-015/016). CPU and Memory are
@@ -102,8 +105,45 @@ type WorkflowModelInput struct {
 var ErrWorkflowOutsideDirectory = errors.New("workflow path must stay within workflows/")
 
 type workflowCatalogFile struct {
-	Metadata WorkflowMetadata      `yaml:"metadata"`
-	Steps    []workflowCatalogStep `yaml:"steps"`
+	Metadata      WorkflowMetadata      `yaml:"metadata"`
+	SyntheticCase any                   `yaml:"synthetic_case"`
+	Steps         []workflowCatalogStep `yaml:"steps"`
+}
+
+// syntheticCaseName resolves the display name of a workflow's synthetic_case entry: the `name`
+// of an inline mapping, or the `name` inside a repo-relative YAML fixture (falling back to the
+// file name). Fixture read errors degrade to the path, never to a catalog failure.
+func syntheticCaseName(root string, spec any) string {
+	switch value := spec.(type) {
+	case map[string]any:
+		if name, ok := value["name"].(string); ok && strings.TrimSpace(name) != "" {
+			return strings.TrimSpace(name)
+		}
+		return "inline synthetic case"
+	case string:
+		rel := strings.TrimSpace(value)
+		if rel == "" {
+			return ""
+		}
+		fallback := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+		clean := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
+		if r, err := filepath.Rel(root, clean); err != nil || r == ".." || strings.HasPrefix(r, ".."+string(os.PathSeparator)) {
+			return fallback
+		}
+		data, err := os.ReadFile(clean)
+		if err != nil {
+			return fallback
+		}
+		var fixture struct {
+			Name string `yaml:"name"`
+		}
+		if err := yaml.Unmarshal(data, &fixture); err != nil || strings.TrimSpace(fixture.Name) == "" {
+			return fallback
+		}
+		return strings.TrimSpace(fixture.Name)
+	default:
+		return ""
+	}
 }
 
 type workflowCatalogStep struct {
@@ -184,6 +224,7 @@ func ListWorkflows(root string) ([]WorkflowSummary, error) {
 		}
 
 		base := filepath.Base(rel)
+		doc.Metadata.SyntheticCase = syntheticCaseName(root, doc.SyntheticCase)
 		workflows = append(workflows, WorkflowSummary{
 			Path:      rel,
 			Name:      strings.TrimSuffix(base, filepath.Ext(base)),
