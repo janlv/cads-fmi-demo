@@ -2029,8 +2029,8 @@ h2 {
 /* Row headlines: the top row picks a demonstrator, the lower row one of its workflows. */
 .site-tabs::before,
 .wf-tabs::before {
-  align-self: center;
-  padding: 0 10px 0 8px;
+  flex-basis: 100%;
+  padding: 4px 8px 0;
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.14em;
