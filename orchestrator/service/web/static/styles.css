@@ -2026,6 +2026,26 @@ h2 {
   background: rgba(255, 255, 255, 0.6);
 }
 
+/* Row headlines: the top row picks a demonstrator, the lower row one of its workflows. */
+.site-tabs::before,
+.wf-tabs::before {
+  align-self: center;
+  padding: 0 10px 0 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.site-tabs::before {
+  content: "Demonstrator";
+}
+
+.wf-tabs::before {
+  content: "Workflow";
+}
+
 .wf-tab {
   display: grid;
   gap: 3px;
