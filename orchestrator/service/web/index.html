@@ -38,37 +38,30 @@
     </header>
 
     <main class="dashboard-grid">
-      <div class="dash-columns">
-        <section id="demoWorkflowsPanel" class="panel dash-left" aria-label="Demo workflows">
-          <div class="dash-head">
-            <p class="panel-kicker">Demo</p>
-            <h2>Demo workflows</h2>
-            <p class="pane-hint">The workflows the demo runs, with the models each one couples. Click a workflow or a model.</p>
+      <section id="selectedWorkflowPanel" class="panel workflow-shell" aria-label="Demo workflows">
+        <div id="siteTabs" class="site-tabs" role="tablist" aria-label="Demonstrator sites"></div>
+        <div id="workflowTabs" class="wf-tabs" role="tablist" aria-label="Workflows at this site"></div>
+
+        <div id="workflowContent" class="workflow-content" role="tabpanel" aria-live="polite">
+          <div class="wf-header">
+            <div id="siteStrip" class="site-strip"></div>
+            <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch selected workflow</button>
           </div>
-          <div id="demoWorkflowList" class="demo-workflow-pane" aria-live="polite"></div>
-        </section>
-
-        <div class="dash-right">
-          <section id="selectedWorkflowPanel" class="panel" aria-label="Selected workflow">
-            <div class="dash-head dash-head-row">
-              <div>
-                <p class="panel-kicker">Selected workflow</p>
-                <h2 id="selectedWorkflowTitle">No workflow selected</h2>
-              </div>
-              <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch selected workflow</button>
-            </div>
-            <div id="selectedWorkflowBody" class="dash-body" aria-live="polite"></div>
-          </section>
-
-          <section id="selectedModelPanel" class="panel" aria-label="Selected model">
-            <div class="dash-head">
-              <p class="panel-kicker">Model</p>
-              <h2 id="selectedModelTitle" class="dash-model-title">No model selected</h2>
-            </div>
-            <div id="selectedModelBody" class="dash-body" aria-live="polite"></div>
-          </section>
+          <div id="workflowTitleLine" class="wf-title-line"></div>
+          <div id="demoWorkflowList" class="wf-chain-area"></div>
+          <div class="wf-cards">
+            <section class="wf-card" aria-label="Workflow">
+              <h3 class="wf-card-title">Workflow</h3>
+              <div id="workflowFactsBody"></div>
+            </section>
+            <section id="selectedModelPanel" class="wf-card" aria-label="Selected model">
+              <h3 class="wf-card-title">Model: <code id="selectedModelTitle">none</code></h3>
+              <div id="selectedModelBody"></div>
+            </section>
+          </div>
+          <footer id="workflowFooter" class="wf-footer"></footer>
         </div>
-      </div>
+      </section>
 
       <div id="dashboardWorkspace" class="dashboard-workspace">
         <aside id="runsRail" class="panel panel-history-column">
