@@ -227,8 +227,8 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 		}
 		body := rec.Body.String()
 		if !strings.Contains(body, "STOR-HY CADS Playground") ||
-			!strings.Contains(body, "demonstratorMap") ||
-			!strings.Contains(body, "workflowGrid") ||
+			!strings.Contains(body, "demoWorkflowList") ||
+			!strings.Contains(body, "selectedWorkflowPanel") ||
 			!strings.Contains(body, "workflowOutput") ||
 			!strings.Contains(body, "runsList") {
 			t.Fatalf("dashboard body missing expected markers: %q", body)

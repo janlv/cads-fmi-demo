@@ -261,26 +261,6 @@ h2 {
   min-width: 0;
 }
 
-.panel-workflow {
-  padding: 18px 20px;
-}
-
-.panel-project {
-  padding: 20px;
-}
-
-.project-overview {
-  display: grid;
-  grid-template-columns: minmax(620px, 1.55fr) minmax(310px, 0.75fr);
-  gap: 18px;
-  align-items: stretch;
-}
-
-.demonstrator-map,
-.demonstrator-details {
-  min-width: 0;
-}
-
 .project-copy {
   margin: 12px 0 0;
   color: var(--muted);
@@ -310,154 +290,6 @@ h2 {
   color: var(--ink);
   font-size: 1.3rem;
   letter-spacing: 0;
-}
-
-.demo-all-button,
-.inline-action {
-  border: 1px solid rgba(0, 28, 99, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.76);
-  color: var(--accent-deep);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.demo-all-button {
-  padding: 7px 11px;
-  white-space: nowrap;
-}
-
-.inline-action {
-  margin-left: 8px;
-  padding: 6px 10px;
-}
-
-.demo-all-button.selected {
-  background: rgba(232, 254, 116, 0.74);
-  border-color: rgba(5, 66, 235, 0.28);
-}
-
-.demo-map-canvas {
-  position: relative;
-  aspect-ratio: 2560 / 1563;
-  min-height: 0;
-  border-radius: 18px;
-  overflow: hidden;
-  border: 1px solid rgba(0, 28, 99, 0.1);
-  background: rgba(146, 162, 192, 0.26);
-}
-
-.demo-map-layer {
-  position: absolute;
-  inset: 0;
-}
-
-.demo-map-image {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.demo-map-label {
-  position: absolute;
-  left: var(--x);
-  top: var(--y);
-  max-width: 180px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent-deep);
-  font: inherit;
-  text-align: left;
-  text-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.96),
-    1px 0 0 rgba(255, 255, 255, 0.96),
-    -1px 0 0 rgba(255, 255, 255, 0.96),
-    0 -1px 0 rgba(255, 255, 255, 0.96);
-  cursor: pointer;
-  z-index: 1;
-}
-
-.demo-map-label.align-right {
-  transform: translateX(-100%);
-  text-align: right;
-}
-
-.demo-map-label-name,
-.demo-map-label-subtitle {
-  display: block;
-}
-
-.demo-map-label-name {
-  font-size: 1.04rem;
-  font-weight: 800;
-  line-height: 1.05;
-}
-
-.demo-map-label-subtitle {
-  margin-top: 2px;
-  color: #004ea2;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.08;
-  text-transform: uppercase;
-}
-
-.demo-map-label:hover .demo-map-label-name,
-.demo-map-label:hover .demo-map-label-subtitle,
-.demo-map-label.selected .demo-map-label-name,
-.demo-map-label.selected .demo-map-label-subtitle {
-  color: #001c63;
-}
-
-.demo-marker {
-  position: absolute;
-  left: var(--x);
-  top: var(--y);
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  border: 2px solid rgba(0, 28, 99, 0.54);
-  border-radius: 999px;
-  background: rgba(238, 254, 175, 0.95);
-  cursor: pointer;
-  z-index: 2;
-  transition:
-    background-color 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
-}
-
-.demo-marker:hover {
-  transform: translate(-50%, -50%) scale(1.18);
-  background: var(--accent-deep);
-  border-color: var(--accent);
-}
-
-.demo-marker.selected {
-  background: var(--accent-deep);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(232, 254, 116, 0.42);
-}
-
-.demo-marker.selected:hover {
-  background: var(--accent-deep);
-  border-color: var(--accent);
-}
-
-.demo-facts {
-  margin: 14px 0 0;
-  padding-left: 18px;
-  color: var(--muted);
-  line-height: 1.45;
-  font-size: 0.88rem;
 }
 
 .dashboard-workspace {
@@ -497,124 +329,6 @@ h2 {
   gap: 16px;
   align-items: flex-start;
   margin-bottom: 18px;
-}
-
-.workflow-toolbar {
-  align-items: center;
-  margin-bottom: 14px;
-}
-
-.workflow-grid {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 2px 2px 8px;
-  scrollbar-width: thin;
-}
-
-.workflow-model-overview {
-  display: grid;
-  gap: 9px;
-  margin-top: 7px;
-}
-
-.workflow-model-section-title {
-  color: var(--accent-deep);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.workflow-model-chain {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  align-items: center;
-}
-
-.workflow-model-node {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  max-width: 100%;
-  padding: 5px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(5, 66, 235, 0.16);
-  background: rgba(5, 66, 235, 0.07);
-  color: var(--accent-deep);
-  font: inherit;
-  font-size: 0.76rem;
-  font-weight: 750;
-  cursor: pointer;
-}
-
-.workflow-model-node:hover,
-.workflow-model-node:focus-visible,
-.workflow-model-node.selected {
-  border-color: rgba(5, 66, 235, 0.34);
-  background: rgba(5, 66, 235, 0.12);
-}
-
-.workflow-model-node:focus-visible {
-  outline: 2px solid rgba(5, 66, 235, 0.35);
-  outline-offset: 2px;
-}
-
-.workflow-model-index {
-  display: inline-grid;
-  width: 1.3rem;
-  height: 1.3rem;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--accent-lime);
-  color: var(--accent-deep);
-  font-size: 0.68rem;
-}
-
-.workflow-model-arrow {
-  color: rgba(0, 28, 99, 0.52);
-  font-weight: 800;
-}
-
-.workflow-model-card {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding: 9px;
-  border-radius: 8px;
-  border: 1px solid rgba(5, 66, 235, 0.12);
-  background: rgba(255, 255, 255, 0.7);
-}
-
-.workflow-model-card h4 {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  margin: 0;
-  color: var(--ink);
-  font-size: 0.82rem;
-}
-
-.workflow-model-card h4 code {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 650;
-  white-space: normal;
-  word-break: break-word;
-}
-
-.workflow-model-row {
-  display: grid;
-  gap: 4px;
-}
-
-.workflow-model-row > span {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
 }
 
 .workflow-model-chip-row {
@@ -662,7 +376,6 @@ h2 {
   line-height: 1.5;
 }
 
-.workflow-tab,
 .selected-launch-button,
 .rail-toggle-button,
 .rail-restore-button {
@@ -673,51 +386,10 @@ h2 {
   transition: transform 140ms ease, opacity 140ms ease;
 }
 
-.workflow-tab {
-  flex: 0 0 auto;
-  min-width: 170px;
-  max-width: 240px;
-  padding: 12px 14px;
-  border: 1px solid rgba(0, 28, 99, 0.1);
-  background: rgba(255, 255, 255, 0.78);
-  color: var(--ink);
-  text-align: left;
-}
-
-.workflow-tab.selected {
-  border-color: rgba(5, 66, 235, 0.38);
-  background: rgba(5, 66, 235, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(5, 66, 235, 0.1);
-}
-
-.workflow-tab.pending {
-  opacity: 0.74;
-}
-
-.workflow-tab:hover,
 .selected-launch-button:hover:not(:disabled),
 .rail-toggle-button:hover,
 .rail-restore-button:hover {
   transform: translateY(-1px);
-}
-
-.workflow-tab-title,
-.workflow-tab-meta {
-  display: block;
-}
-
-.workflow-tab-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-transform: capitalize;
-}
-
-.workflow-tab-meta {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 500;
 }
 
 .selected-launch-button {
@@ -1598,27 +1270,6 @@ h2 {
 }
 
 /* Co-simulation coupling view */
-.workflow-cosim-group {
-  display: grid;
-  gap: 6px;
-  max-width: 100%;
-  padding: 8px 10px;
-  border: 1.5px dashed rgba(5, 66, 235, 0.36);
-  border-radius: 12px;
-  background: rgba(5, 66, 235, 0.04);
-}
-
-.workflow-cosim-group.selected {
-  border-color: rgba(5, 66, 235, 0.6);
-  background: rgba(5, 66, 235, 0.08);
-}
-
-.workflow-cosim-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  align-items: center;
-}
 
 .cosim-scheme-badge {
   padding: 3px 8px;
@@ -1630,25 +1281,6 @@ h2 {
   letter-spacing: 0.04em;
 }
 
-.cosim-member-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.cosim-model-pill {
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 28, 99, 0.16);
-  background: var(--paper);
-  color: var(--accent-deep);
-  font-size: 0.72rem;
-  font-weight: 750;
-}
-
-.cosim-edge-list,
-.cosim-connection-list,
-.workflow-model-problems,
 .run-step-list,
 .run-fmu-list {
   display: grid;
@@ -1656,69 +1288,6 @@ h2 {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.cosim-edge-list code,
-.cosim-connection-list code {
-  color: var(--accent-deep);
-  font-size: 0.7rem;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.cosim-event-line,
-.cosim-pattern-line {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  overflow-wrap: anywhere;
-}
-
-.cosim-event-line {
-  color: var(--warning);
-  font-weight: 700;
-}
-
-.cosim-problem-flag,
-.workflow-model-problems li {
-  color: var(--danger);
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.workflow-cosim-card {
-  grid-column: 1 / -1;
-}
-
-.cosim-table-wrap {
-  overflow-x: auto;
-}
-
-.cosim-model-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.7rem;
-}
-
-.cosim-model-table th,
-.cosim-model-table td {
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--line);
-  color: var(--body-ink);
-  text-align: left;
-  vertical-align: top;
-}
-
-.cosim-model-table th {
-  color: var(--muted);
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.cosim-model-table td code {
-  color: var(--muted);
-  overflow-wrap: anywhere;
 }
 
 /* Step chain status (failed / skipped steps from _run) */
@@ -1916,99 +1485,7 @@ h2 {
   font-size: 0.76rem;
 }
 
-/* ---- Navigation tabs (model matrix, site map, workflow details) ---- */
-
-.nav-area {
-  padding: 14px 20px 20px;
-}
-
-.nav-strip {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.nav-tabs {
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
-  overflow-x: auto;
-  padding: 4px;
-  border-radius: 14px;
-  background: rgba(233, 236, 242, 0.85);
-  scrollbar-width: thin;
-}
-
-.nav-tab {
-  flex: 0 0 auto;
-  padding: 8px 16px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.nav-tab:hover {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.nav-tab.selected {
-  background: #ffffff;
-  color: var(--ink);
-  box-shadow: 0 1px 4px rgba(0, 28, 99, 0.16);
-}
-
-.nav-tab:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.nav-strip-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.nav-site-chip {
-  padding: 6px 11px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #ffffff;
-  font-size: 0.8rem;
-  font-weight: 750;
-}
-
-.nav-site-chip::before {
-  content: "Site: ";
-  font-weight: 500;
-  opacity: 0.8;
-}
-
-.nav-site-chip.all-sites {
-  background: rgba(5, 66, 235, 0.1);
-  color: var(--accent-deep);
-}
-
-.nav-panel {
-  padding-top: 12px;
-}
-
-.nav-panel[hidden],
-.nav-strip-actions [hidden] {
-  display: none !important;
-}
+/* ---- Pane hint ---- */
 
 .pane-hint {
   margin: 0 0 12px;
@@ -2016,7 +1493,7 @@ h2 {
   font-size: 0.8rem;
 }
 
-/* ---- Workflow coupling and matrix mapping ---- */
+/* ---- Coupling strip, badges and focus outlines ---- */
 
 .output-coupling {
   display: flex;
@@ -2039,36 +1516,10 @@ h2 {
   font-size: 0.72rem;
 }
 
-button.cosim-model-pill {
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 750;
-  cursor: pointer;
-}
-
-button.cosim-model-pill.selected {
-  border-color: rgba(5, 66, 235, 0.5);
-  background: rgba(5, 66, 235, 0.14);
-}
-
-.details-chain .workflow-model-overview {
-  margin-top: 0;
-  font-size: 0.8rem;
-}
-
-.details-chain .workflow-model-section-title {
-  margin-top: 0;
-}
-
-.coupling-badge-row,
-.workflow-tab-badges {
+.coupling-badge-row {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.workflow-tab-badges {
-  margin-top: 6px;
 }
 
 .coupling-badge {
@@ -2119,88 +1570,7 @@ button.cosim-model-pill.selected {
   letter-spacing: 0;
 }
 
-/* ---- Details tab: breadcrumb and master-detail cards ---- */
-
-.details-breadcrumb {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  align-items: center;
-  margin-bottom: 10px;
-  font-size: 0.9rem;
-}
-
-.crumb {
-  padding: 3px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-weight: 750;
-  cursor: pointer;
-}
-
-.crumb:hover {
-  background: rgba(5, 66, 235, 0.08);
-}
-
-.crumb.empty {
-  color: var(--muted);
-  font-weight: 500;
-  font-style: italic;
-}
-
-.crumb-sep {
-  color: var(--muted);
-}
-
-.details-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr) minmax(0, 1.1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.details-card {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.7);
-  outline: none;
-}
-
-.details-card.flash {
-  animation: details-flash 900ms ease;
-}
-
-@keyframes details-flash {
-  0% { box-shadow: 0 0 0 3px rgba(5, 66, 235, 0.45); }
-  100% { box-shadow: 0 0 0 3px rgba(5, 66, 235, 0); }
-}
-
-.details-card-head .panel-kicker {
-  margin-bottom: 2px;
-  font-size: 0.66rem;
-}
-
-.details-card-head h3 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1.02rem;
-  line-height: 1.25;
-}
-
-.details-sub {
-  margin: 0;
-  color: var(--accent-deep);
-  font-size: 0.8rem;
-  font-weight: 650;
-}
+/* ---- Selected workflow and model panels ---- */
 
 .details-text {
   margin: 0;
@@ -2209,20 +1579,6 @@ button.cosim-model-pill.selected {
   line-height: 1.45;
 }
 
-.details-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 6px;
-  margin: 0;
-}
-
-.details-facts div {
-  padding: 7px 9px;
-  border-radius: 10px;
-  background: rgba(233, 236, 242, 0.6);
-}
-
-.details-facts dt,
 .details-label {
   color: var(--muted);
   font-size: 0.66rem;
@@ -2231,34 +1587,10 @@ button.cosim-model-pill.selected {
   letter-spacing: 0.08em;
 }
 
-.details-facts dd {
-  margin: 2px 0 0;
-  color: var(--ink);
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.details-card .demo-facts {
-  margin: 0;
-  font-size: 0.8rem;
-}
-
 .details-block {
   display: grid;
   gap: 5px;
   min-width: 0;
-}
-
-.details-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  align-items: center;
-  font-size: 0.8rem;
-}
-
-.details-inline .details-label {
-  flex: 1 0 100%;
 }
 
 .details-caption {
@@ -2266,12 +1598,6 @@ button.cosim-model-pill.selected {
   color: var(--muted);
   font-size: 0.72rem;
   line-height: 1.4;
-}
-
-.details-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 .partner-chip {
@@ -2297,49 +1623,6 @@ button.cosim-model-pill.selected {
 .details-run-phase.phase-running { background: rgba(5, 66, 235, 0.12); color: var(--accent); }
 .details-run-phase.phase-failed,
 .details-run-phase.phase-error { background: rgba(165, 63, 43, 0.14); color: var(--danger); }
-
-.workflow-grid.workflow-list {
-  flex-direction: column;
-  gap: 6px;
-  max-height: 360px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 2px 4px 2px 2px;
-}
-
-.workflow-list .workflow-tab {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  padding: 9px 11px;
-  border-radius: 12px;
-}
-
-.workflow-list .workflow-tab:hover {
-  transform: none;
-  border-color: rgba(5, 66, 235, 0.3);
-}
-
-.workflow-list .workflow-tab-title {
-  font-size: 0.88rem;
-}
-
-.workflow-list .workflow-tab-badges {
-  margin-top: 4px;
-}
-
-.details-workflow-summary {
-  display: grid;
-  gap: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-
-.details-workflow-title {
-  margin: 0;
-  color: var(--ink);
-  font-size: 0.92rem;
-}
 
 .details-kv {
   display: grid;
@@ -2377,10 +1660,6 @@ button.cosim-model-pill.selected {
   color: var(--muted);
 }
 
-.details-workflow-card .selected-launch-button {
-  width: 100%;
-}
-
 .details-empty {
   padding: 12px;
   border-radius: 12px;
@@ -2390,67 +1669,11 @@ button.cosim-model-pill.selected {
   text-align: center;
 }
 
-.details-model-list {
-  display: grid;
-  gap: 4px;
-}
-
-.details-model-item {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 9px;
-  border: 1px solid rgba(0, 28, 99, 0.1);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.8);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.84rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.details-model-item.member {
-  margin-left: 18px;
-}
-
-.details-model-item:hover {
-  border-color: rgba(5, 66, 235, 0.3);
-}
-
-.details-model-item.selected {
-  border-color: rgba(5, 66, 235, 0.42);
-  background: rgba(5, 66, 235, 0.1);
-}
-
-.details-model-index {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--accent-lime);
-  color: var(--accent-deep);
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-.details-model-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-weight: 650;
-}
-
 .details-model-detail {
   display: grid;
   gap: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-}
-
-.details-model-detail .workflow-model-card {
-  margin: 0;
 }
 
 .details-fmu-name {
@@ -2469,23 +1692,11 @@ button.cosim-model-pill.selected {
   font-weight: 700;
 }
 
-.site-map-body .demonstrator-map {
-  max-width: 980px;
-  margin: 0 auto;
-}
-
 @media (max-width: 1040px) {
-  .details-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   
-  .workflow-toolbar {
-    align-items: stretch;
-  }
-
-  .hero-project,
-  .project-overview {
+  
+  
+  .hero-project {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2501,11 +1712,10 @@ button.cosim-model-pill.selected {
   }
 
   .hero-row,
-  .hero-branding,
-  .workflow-toolbar,
-  .panel-head,
-  .trace-head,
-  .result-head {
+.hero-branding,
+.panel-head,
+.trace-head,
+.result-head {
     flex-direction: column;
   }
 
@@ -2560,14 +1770,8 @@ button.cosim-model-pill.selected {
 }
 
 @media (max-width: 640px) {
-  .nav-area {
-    padding: 12px 14px 16px;
-  }
-
-  .nav-tab {
-    padding: 7px 11px;
-  }
-
+  
+  
   .page-shell {
     padding: 18px 14px 28px;
   }
@@ -2578,10 +1782,7 @@ button.cosim-model-pill.selected {
     border-radius: 22px;
   }
 
-  .panel-workflow {
-    padding: 16px;
-  }
-
+  
   .storhy-logo {
     min-width: 0;
     width: 100%;
@@ -2591,10 +1792,7 @@ button.cosim-model-pill.selected {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .workflow-tab {
-    min-width: 145px;
-  }
-
+  
   .ae-metric-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2611,8 +1809,7 @@ button.cosim-model-pill.selected {
   }
 }
 
-
-/* ---- Demo workflows tab: one row per workflow with its model chain ---- */
+/* ---- Demo workflows list: one row per workflow with its model chain ---- */
 
 .demo-workflow-pane {
   display: grid;
@@ -2785,46 +1982,122 @@ button.cosim-model-pill.selected {
   font-size: 0.72rem;
 }
 
-/* ---- Details: models used at a site, model list entries ---- */
-
-.details-fmu-list {
-  display: grid;
-  gap: 3px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.78rem;
-}
-
-.details-fmu-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
-
-.details-fmu-list li span {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.details-fmu-list code {
-  color: var(--accent-deep);
-  font-size: 0.72rem;
-}
-
-.details-model-name code {
-  display: block;
-  color: var(--accent-deep);
-  font-size: 0.76rem;
-}
-
-.details-model-name small {
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 500;
-}
+/* ---- Model panel label ---- */
 
 .details-model-label {
   color: var(--ink);
   font-size: 0.86rem;
+}
+
+/* ---- Single screen: demo workflows left, selection right, results below ---- */
+
+.dash-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.dash-left,
+.dash-right > .panel {
+  padding: 18px 20px;
+}
+
+.dash-right {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.dash-head {
+  margin-bottom: 12px;
+}
+
+.dash-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.dash-head .pane-hint {
+  margin: 4px 0 0;
+}
+
+.dash-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.dash-model-title {
+  font-family: var(--font-mono);
+  font-size: 1.05rem !important;
+}
+
+.dash-body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.site-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(233, 236, 242, 0.6);
+  font-size: 0.8rem;
+}
+
+.site-strip-text {
+  color: var(--accent-deep);
+  font-weight: 650;
+}
+
+.site-strip-partners {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.details-coupling-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 0.84rem;
+}
+
+.details-kv-inline {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.details-kv-inline div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+.details-model-io {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.dw-pending {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1040px) {
+  .dash-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
