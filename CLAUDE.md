@@ -145,9 +145,10 @@ needs a matching `site_id` plus an entry in `web/static/cads-model-matrix.json`
 (`demo_workflows`: which models it uses; the file's slide ids are internal and
 never displayed); a new *demonstrator site* also needs an entry in the
 hardcoded `DEMONSTRATORS` array in `app.js` (labels, facts), a `sites` entry in
-that file (partners), and inclusion in its `demo_scope.sites`. The dashboard is
-one screen: workflow list with model chains on the left, selected workflow and
-model on the right, runs and results below; there is no map or site picker.
+that file (partners), and inclusion in its `demo_scope.sites`. The dashboard
+navigates with two data-driven tab rows (site tabs from `demo_scope.sites`,
+workflow tabs from the catalog) above a fixed-shape content area (site strip,
+workflow title, model chain, Workflow and Model cards) and the runs/results.
 
 ### Auth model
 

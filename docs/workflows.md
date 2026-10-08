@@ -242,14 +242,18 @@ The FMI 3.0 models under `create_fmu/storhy_fmi3/` are stateful, deterministic
 placeholders with time-compressed ageing so a 24 h run shows visible trends.
 They are not validated engineering models.
 
-## Demo Workflows Screen (dashboard navigation)
+## Dashboard Navigation
 
-The dashboard is a single screen: a left column lists the workflows the demo
-runs and, for each, the chain of models it couples (FMU names, a short label,
-owners) with the coupling drawn between them; the right column shows the
-selected workflow (site, partners with access, coupling, limits, latest run,
-launch button) and the selected model (FMU identity from the last run, inputs,
-outputs, parameters); the run history and results follow below. The short labels and the per-workflow model lists
+The dashboard has two tab rows that grow with the data: a site tab per
+demonstrator in the demo scope, and under it a workflow tab per catalog
+workflow of that site. The content area has the same shape for every
+workflow: a site strip (operator, location, partners with access, launch
+button), the workflow title with its coupling badges and description, the
+chain of models it couples (FMU names, short labels, owners, coupling arrows,
+event marker), then a Workflow card (steps, limits, synthetic case, latest run
+and its provenance) beside a Model card for the selected model (FMU identity
+from the last run, inputs, outputs, parameters); run history and results
+follow below. The short labels and the per-workflow model lists
 come from `orchestrator/service/web/static/cads-model-matrix.json`
 (`models[].name`, `demo_fmus`, `demo_workflows`), which also carries the demo
 scope (`demo_scope.sites`) and the partner access lists per site. The file
