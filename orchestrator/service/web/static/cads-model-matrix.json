@@ -104,7 +104,7 @@
         "W1"
       ],
       "demo_fmus": [
-        "RunnerStressFmi3"
+        "RunnerStress"
       ]
     },
     {
@@ -175,7 +175,7 @@
         "W2"
       ],
       "demo_fmus": [
-        "SedimentExposureFmi3"
+        "SedimentExposure"
       ]
     },
     {
@@ -209,7 +209,7 @@
         "W1"
       ],
       "demo_fmus": [
-        "IoTIndicatorFmi3"
+        "IoTIndicator"
       ]
     },
     {
@@ -237,7 +237,7 @@
         "W6"
       ],
       "demo_fmus": [
-        "RulFmi3"
+        "Rul"
       ]
     },
     {
@@ -255,7 +255,7 @@
         "W3"
       ],
       "demo_fmus": [
-        "BatteryDegradationFmi3"
+        "BatteryDegradation"
       ]
     },
     {
@@ -272,7 +272,7 @@
         "W6"
       ],
       "demo_fmus": [
-        "EmsDispatchFmi3"
+        "EmsDispatch"
       ]
     },
     {
@@ -346,7 +346,7 @@
         "W6"
       ],
       "demo_fmus": [
-        "DegradationCostFmi3"
+        "DegradationCost"
       ]
     }
   ],

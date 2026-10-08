@@ -46,7 +46,7 @@ def _hour_of_day(t):
 
 
 # ---------------------------------------------------------------------------
-# EmsDispatchFmi3: price-driven battery dispatch (Alqueva hybrid)
+# EmsDispatch: price-driven battery dispatch (Alqueva hybrid)
 # ---------------------------------------------------------------------------
 
 EMS_MODE_IDLE = 0
@@ -97,7 +97,7 @@ def ems_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# BatteryDegradationFmi3: energy balance + accelerated fade (Alqueva hybrid)
+# BatteryDegradation: energy balance + accelerated fade (Alqueva hybrid)
 # ---------------------------------------------------------------------------
 
 BATTERY_SOC_FLOOR = 5.0
@@ -170,7 +170,7 @@ def battery_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# RunnerStressFmi3: daily pump/turbine cycling and runner stress (Cheylas)
+# RunnerStress: daily pump/turbine cycling and runner stress (Cheylas)
 # ---------------------------------------------------------------------------
 
 RUNNER_MODE_STANDSTILL = 0
@@ -241,7 +241,7 @@ def runner_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# IoTIndicatorFmi3: EWMA vibration condition indicator (Cheylas)
+# IoTIndicator: EWMA vibration condition indicator (Cheylas)
 # ---------------------------------------------------------------------------
 
 def _iot_raw_vibration(v, t):
@@ -284,7 +284,7 @@ def iot_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# RulFmi3: Miner-rule fatigue damage and remaining useful life (Cheylas)
+# Rul: Miner-rule fatigue damage and remaining useful life (Cheylas)
 # ---------------------------------------------------------------------------
 
 RUL_STATUS_OK = 0
@@ -340,7 +340,7 @@ def rul_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# SedimentExposureFmi3: sediment exposure with cleaning accounting (La Rance
+# SedimentExposure: sediment exposure with cleaning accounting (La Rance
 # tidal profile or Cheylas cycling/dewatering profile)
 # ---------------------------------------------------------------------------
 
@@ -415,7 +415,7 @@ def sediment_step(v, t, dt):
 
 
 # ---------------------------------------------------------------------------
-# DegradationCostFmi3: degradation cost versus market revenue (M14)
+# DegradationCost: degradation cost versus market revenue (M14)
 # ---------------------------------------------------------------------------
 
 COST_STATUS_OK = 0
@@ -484,7 +484,7 @@ def cost_step(v, t, dt):
 # ---------------------------------------------------------------------------
 
 MODEL_SPECS = {
-    "EmsDispatchFmi3": {
+    "EmsDispatch": {
         "step_size": 900.0,
         "description": "Alqueva hybrid EMS: price-driven battery set-point with SoC taper. " + PLACEHOLDER_NOTE,
         "parameters": {
@@ -509,7 +509,7 @@ MODEL_SPECS = {
         "init": ems_init,
         "step": ems_step,
     },
-    "BatteryDegradationFmi3": {
+    "BatteryDegradation": {
         "step_size": 300.0,
         "description": "Alqueva BESS: energy balance with temperature-scaled, accelerated fade. " + PLACEHOLDER_NOTE,
         "parameters": {
@@ -542,7 +542,7 @@ MODEL_SPECS = {
         "init": battery_init,
         "step": battery_step,
     },
-    "RunnerStressFmi3": {
+    "RunnerStress": {
         "step_size": 900.0,
         "description": "Cheylas runner: daily pump/turbine cycling, load and stress amplitude. " + PLACEHOLDER_NOTE,
         "parameters": {
@@ -568,7 +568,7 @@ MODEL_SPECS = {
         "init": runner_init,
         "step": runner_step,
     },
-    "IoTIndicatorFmi3": {
+    "IoTIndicator": {
         "step_size": 300.0,
         "description": "Cheylas IoT: EWMA vibration RMS and normalised condition indicator, from a measured "
         "vibration input when supplied, else a synthetic load-driven signal. " + PLACEHOLDER_NOTE,
@@ -596,7 +596,7 @@ MODEL_SPECS = {
         "init": iot_init,
         "step": iot_step,
     },
-    "RulFmi3": {
+    "Rul": {
         "step_size": 900.0,
         "description": "Cheylas RUL: Miner-rule fatigue damage from stress and condition. " + PLACEHOLDER_NOTE,
         "parameters": {
@@ -628,7 +628,7 @@ MODEL_SPECS = {
         "init": rul_init,
         "step": rul_step,
     },
-    "SedimentExposureFmi3": {
+    "SedimentExposure": {
         "step_size": 300.0,
         "description": "Sediment exposure (La Rance tidal or Cheylas cycling profile) with cleaning accounting: "
         "a cleaning trigger resets exposure and adds cost and downtime; a measured concentration input, when "
@@ -668,7 +668,7 @@ MODEL_SPECS = {
         "init": sediment_init,
         "step": sediment_step,
     },
-    "DegradationCostFmi3": {
+    "DegradationCost": {
         "step_size": 900.0,
         "description": "Degradation cost versus market revenue: values consumed asset life against gross "
         "revenue and flags RUL thresholds. " + PLACEHOLDER_NOTE,

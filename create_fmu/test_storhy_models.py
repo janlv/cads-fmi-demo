@@ -17,10 +17,10 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-FMI3_DIR = Path(__file__).resolve().parent / "storhy_fmi3"
-sys.path.insert(0, str(FMI3_DIR))
+MODELS_DIR = Path(__file__).resolve().parent / "storhy_models"
+sys.path.insert(0, str(MODELS_DIR))
 
-from storhy_fmi3_models import MODEL_SPECS, ModelRunner  # noqa: E402
+from storhy_model_logic import MODEL_SPECS, ModelRunner  # noqa: E402
 
 START = 0.0
 STOP = 86400.0
@@ -107,8 +107,8 @@ def run_cosim(models, connections, scheme, signals, events=(), order=None):
 
 def run_gauss_seidel():
     models = {
-        "ems": ModelRunner("EmsDispatchFmi3"),
-        "battery": ModelRunner("BatteryDegradationFmi3", {"initial_soc_percent": 50.0}),
+        "ems": ModelRunner("EmsDispatch"),
+        "battery": ModelRunner("BatteryDegradation", {"initial_soc_percent": 50.0}),
     }
     connections = [
         ("battery.soc_percent", "ems.soc_percent"),
@@ -129,9 +129,9 @@ def run_gauss_seidel():
 
 def run_jacobi():
     models = {
-        "runner": ModelRunner("RunnerStressFmi3", {"flow_demand_pu": 0.75}),
-        "iot": ModelRunner("IoTIndicatorFmi3"),
-        "rul": ModelRunner("RulFmi3"),
+        "runner": ModelRunner("RunnerStress", {"flow_demand_pu": 0.75}),
+        "iot": ModelRunner("IoTIndicator"),
+        "rul": ModelRunner("Rul"),
     }
     connections = [
         ("runner.load_pu", "iot.load_pu"),
@@ -163,8 +163,8 @@ W2_CONNECTIONS = [("sediment.sediment_exposure", "rul.condition_indicator")]
 
 def _w2_models():
     return {
-        "sediment": ModelRunner("SedimentExposureFmi3", SEDIMENT_W2),
-        "rul": ModelRunner("RulFmi3", RUL_W2),
+        "sediment": ModelRunner("SedimentExposure", SEDIMENT_W2),
+        "rul": ModelRunner("Rul", RUL_W2),
     }
 
 
@@ -194,10 +194,10 @@ def run_event():
 
 
 def run_cost(inputs, overrides=None):
-    """Sequential DegradationCostFmi3 step over one day with constant inputs."""
+    """Sequential DegradationCost step over one day with constant inputs."""
     params = dict(overrides or {})
     params.update(inputs)
-    model = ModelRunner("DegradationCostFmi3", params)
+    model = ModelRunner("DegradationCost", params)
     names = [
         "degradation_cost_eur",
         "degradation_cost_rate_eur_per_day",
@@ -242,17 +242,17 @@ class SpecTests(unittest.TestCase):
                 self.assertTrue(spec["inputs"])
                 self.assertTrue(spec["outputs"])
 
-    def test_model_files_use_literal_fmi3slave_class_line(self):
+    def test_model_files_use_literal_slave_class_line(self):
         for name in MODEL_SPECS:
             matches = [
-                p for p in FMI3_DIR.glob("*_fmi3.py")
+                p for p in MODELS_DIR.glob("*_model.py")
                 if re.search(rf"^class {name}\(Fmi3Slave\):$", p.read_text(), re.MULTILINE)
             ]
             self.assertEqual(len(matches), 1, name)
 
     def test_substepping_uses_declared_step(self):
-        battery = ModelRunner("BatteryDegradationFmi3")
-        ems = ModelRunner("EmsDispatchFmi3")
+        battery = ModelRunner("BatteryDegradation")
+        ems = ModelRunner("EmsDispatch")
         for k in range(POINTS):
             battery.advance((k + 1) * H)
             ems.advance((k + 1) * H)
@@ -291,7 +291,7 @@ class GaussSeidelTests(unittest.TestCase):
 
     def test_coupling_matters(self):
         models, _ = run_gauss_seidel()
-        uncoupled = ModelRunner("BatteryDegradationFmi3")
+        uncoupled = ModelRunner("BatteryDegradation")
         uncoupled.advance(STOP)
         self.assertNotAlmostEqual(models["battery"].get("soh_percent"), uncoupled.get("soh_percent"), places=6)
 
@@ -354,7 +354,7 @@ class EventTests(unittest.TestCase):
         for a, b in zip(damage, damage[1:]):
             self.assertGreaterEqual(b, a)
         self.assertGreater(damage[-1], RUL_W2["initial_damage"] + 0.05)
-        uncoupled = ModelRunner("RulFmi3", RUL_W2)
+        uncoupled = ModelRunner("Rul", RUL_W2)
         uncoupled.advance(STOP)
         self.assertGreater(models["rul"].get("damage_index"), uncoupled.get("damage_index"))
 
@@ -367,13 +367,13 @@ class EventTests(unittest.TestCase):
             self.assertGreaterEqual(b, a)
 
     def test_min_interval_limits_held_trigger(self):
-        sediment = ModelRunner("SedimentExposureFmi3", {"cleaning_trigger": True})
+        sediment = ModelRunner("SedimentExposure", {"cleaning_trigger": True})
         sediment.advance(STOP)
         # Held for 24 h with a 4 h minimum interval: cleanings at 0, 4, ..., 20 h.
         self.assertEqual(sediment.get("cleaning_count"), 6)
 
     def test_tidal_profile_still_available(self):
-        sediment = ModelRunner("SedimentExposureFmi3")
+        sediment = ModelRunner("SedimentExposure")
         heads = []
         for k in range(POINTS):
             sediment.advance((k + 1) * H)
@@ -408,7 +408,7 @@ def _drive(model, variable, rows, outputs):
 
 class MeasuredInputTests(unittest.TestCase):
     def test_iot_follows_measured_vibration(self):
-        iot = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75})
+        iot = ModelRunner("IoTIndicator", {"load_pu": 0.75})
         iot.set("vibration_rms_measured_mm_s", 5.0)
         iot.advance(6 * 3600.0)
         self.assertAlmostEqual(iot.get("vibration_rms_mm_s"), 5.0, places=3)
@@ -426,20 +426,20 @@ class MeasuredInputTests(unittest.TestCase):
         self.assertAlmostEqual(iot.get("condition_indicator"), (6.5 - 1.4) / (7.1 - 1.4), places=3)
 
     def test_iot_zero_measured_keeps_synthetic_signal(self):
-        synthetic = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75})
-        explicit = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75, "vibration_rms_measured_mm_s": 0.0})
+        synthetic = ModelRunner("IoTIndicator", {"load_pu": 0.75})
+        explicit = ModelRunner("IoTIndicator", {"load_pu": 0.75, "vibration_rms_measured_mm_s": 0.0})
         synthetic.advance(STOP)
         explicit.advance(STOP)
         self.assertEqual(synthetic.values, explicit.values)
 
     def test_sediment_measured_concentration_overrides_profile(self):
-        sediment = ModelRunner("SedimentExposureFmi3", dict(SEDIMENT_W2, initial_exposure=0.3))
+        sediment = ModelRunner("SedimentExposure", dict(SEDIMENT_W2, initial_exposure=0.3))
         sediment.set("measured_concentration_g_l", 1.0)
         sediment.advance(3600.0)
         self.assertAlmostEqual(sediment.get("sediment_concentration_g_l"), 1.0)
         self.assertAlmostEqual(sediment.get("sediment_exposure"), 0.3 + 0.16 * 1.0, places=9)
         # Back to 0: the cycling profile takes over again.
-        profile = ModelRunner("SedimentExposureFmi3", SEDIMENT_W2)
+        profile = ModelRunner("SedimentExposure", SEDIMENT_W2)
         profile.advance(7200.0)
         sediment.set("measured_concentration_g_l", 0.0)
         sediment.advance(7200.0)
@@ -450,7 +450,7 @@ class MeasuredInputTests(unittest.TestCase):
         variable, rows = _read_fallback_csv("vibration_rms_mm_s.csv")
         self.assertEqual(variable, "vibration_rms_measured_mm_s")
         self.assertEqual(len(rows), 289)
-        iot = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75})
+        iot = ModelRunner("IoTIndicator", {"load_pu": 0.75})
         trace = _drive(iot, variable, rows, ["vibration_rms_mm_s", "condition_indicator"])
         measured = [value for _, value in rows]
         self.assertGreaterEqual(min(trace["vibration_rms_mm_s"]), min(measured) - 1e-9)
@@ -462,7 +462,7 @@ class MeasuredInputTests(unittest.TestCase):
     def test_bundled_turbidity_series_drives_exposure(self):
         variable, rows = _read_fallback_csv("turbidity_g_l.csv")
         self.assertEqual(variable, "measured_concentration_g_l")
-        sediment = ModelRunner("SedimentExposureFmi3", SEDIMENT_W2)
+        sediment = ModelRunner("SedimentExposure", SEDIMENT_W2)
         trace = _drive(sediment, variable, rows, ["sediment_concentration_g_l", "sediment_exposure"])
         self.assertEqual(trace["sediment_concentration_g_l"], [value for _, value in rows[:-1]])
         exposure = trace["sediment_exposure"]
@@ -474,7 +474,7 @@ class MeasuredInputTests(unittest.TestCase):
 class RunnerEnergyTests(unittest.TestCase):
     def test_energy_monotone_and_only_in_turbine_mode(self):
         models, _ = run_jacobi()
-        runner = ModelRunner("RunnerStressFmi3", {"flow_demand_pu": 0.75})
+        runner = ModelRunner("RunnerStress", {"flow_demand_pu": 0.75})
         energy = [runner.get("energy_mwh")]
         modes = [runner.get("operating_mode")]
         for k in range(POINTS):
@@ -534,15 +534,15 @@ class ModelDescriptionTests(unittest.TestCase):
             subprocess.run(
                 [
                     sys.executable, "-m", "pythonfmu3", "build",
-                    "-f", str(FMI3_DIR / "battery_degradation_fmi3.py"),
+                    "-f", str(MODELS_DIR / "battery_degradation_model.py"),
                     "-d", tmp,
-                    str(FMI3_DIR / "storhy_fmi3_common.py"),
-                    str(FMI3_DIR / "storhy_fmi3_models.py"),
+                    str(MODELS_DIR / "storhy_model_common.py"),
+                    str(MODELS_DIR / "storhy_model_logic.py"),
                 ],
                 check=True,
                 stdout=subprocess.DEVNULL,
             )
-            with zipfile.ZipFile(Path(tmp) / "BatteryDegradationFmi3.fmu") as fmu:
+            with zipfile.ZipFile(Path(tmp) / "BatteryDegradation.fmu") as fmu:
                 root = ElementTree.fromstring(fmu.read("modelDescription.xml"))
 
         self.assertEqual(root.get("fmiVersion"), "3.0")

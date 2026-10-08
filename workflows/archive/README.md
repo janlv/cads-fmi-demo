@@ -10,8 +10,9 @@ dashboard catalog.
 
 `demonstrators/la_rance/maintenance/sediment_cleaning_events.yaml` uses the
 retired `CleaningDecisionFmi3` FMU and the old `SedimentExposureFmi3`
-interface (`cleanings_done`, `tidal_head_m`), so it no longer runs against the
-current FMUs; its pattern lives on in
+interface (`cleanings_done`, `tidal_head_m`; the model is now
+`SedimentExposure`), so it no longer runs against the current FMUs; its
+pattern lives on in
 `workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml`.
 
 All models are deterministic placeholders, not validated engineering models.

@@ -9,7 +9,7 @@ VENV_DIR="$SCRIPT_DIR/.venv"
 REQ_FILE="$SCRIPT_DIR/requirements.txt"
 STORHY_REPLICA_DIR="$SCRIPT_DIR/storhy_replicas"
 STORHY_REPLICA_COMMON="$STORHY_REPLICA_DIR/storhy_replica_common.py"
-STORHY_FMI3_DIR="$SCRIPT_DIR/storhy_fmi3"
+STORHY_MODELS_DIR="$SCRIPT_DIR/storhy_models"
 
 usage() {
     cat <<'EOF'
@@ -104,9 +104,9 @@ for replica in "$STORHY_REPLICA_DIR"/*_fmu.py; do
 done
 
 log_step "Building STOR-HY FMI 3.0 FMUs via pythonfmu3"
-for model in "$STORHY_FMI3_DIR"/*_fmi3.py; do
+for model in "$STORHY_MODELS_DIR"/*_model.py; do
     python -m pythonfmu3 build -f "$model" -d "$FMU_DIR" \
-        "$STORHY_FMI3_DIR/storhy_fmi3_common.py" "$STORHY_FMI3_DIR/storhy_fmi3_models.py"
+        "$STORHY_MODELS_DIR/storhy_model_common.py" "$STORHY_MODELS_DIR/storhy_model_logic.py"
 done
 
 log_ok "FMUs built under $FMU_DIR"

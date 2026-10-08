@@ -1,5 +1,5 @@
 metadata:
-  display_name: Cheylas Runner RUL Lock-step (FMI 3.0)
+  display_name: Cheylas Runner RUL Lock-step
   site_id: cheylas
   category: maintenance
   result_family: storhy_mock
@@ -24,10 +24,10 @@ steps:
       communication_step: 900
       models:
         - name: runner
-          fmu: fmu/models/RunnerStressFmi3.fmu
+          fmu: fmu/models/RunnerStress.fmu
           start_values: {flow_demand_pu: 0.75}
         - name: iot
-          fmu: fmu/models/IoTIndicatorFmi3.fmu
+          fmu: fmu/models/IoTIndicator.fmu
           input_series:
             db:
               site: cheylas
@@ -35,7 +35,7 @@ steps:
               window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
               fallback: {csv: data/storhy/cheylas/measurements/vibration_rms_mm_s.csv}
         - name: rul
-          fmu: fmu/models/RulFmi3.fmu
+          fmu: fmu/models/Rul.fmu
           start_values: {initial_damage: 0.35}
       connections:
         - {from: runner.load_pu, to: iot.load_pu}
@@ -61,7 +61,7 @@ steps:
           - rul.rul_days
         sample_every: 900
   - name: degradation_cost
-    fmu: fmu/models/DegradationCostFmi3.fmu
+    fmu: fmu/models/DegradationCost.fmu
     start_time: 0
     stop_time: 86400
     start_from:

@@ -1,5 +1,5 @@
 metadata:
-  display_name: Cheylas Sediment Erosion Events (FMI 3.0)
+  display_name: Cheylas Sediment Erosion Events
   site_id: cheylas
   category: monitoring
   result_family: storhy_mock
@@ -24,7 +24,7 @@ steps:
       communication_step: 900
       models:
         - name: sediment
-          fmu: fmu/models/SedimentExposureFmi3.fmu
+          fmu: fmu/models/SedimentExposure.fmu
           start_values:
             profile_mode: 1
             cycles_per_day: 8.0
@@ -39,7 +39,7 @@ steps:
               window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
               fallback: {csv: data/storhy/cheylas/measurements/turbidity_g_l.csv}
         - name: rul
-          fmu: fmu/models/RulFmi3.fmu
+          fmu: fmu/models/Rul.fmu
           start_values: {stress_amplitude_mpa: 55.0, initial_damage: 0.3, demo_acceleration: 100.0}
       connections:
         - {from: sediment.sediment_exposure, to: rul.condition_indicator}

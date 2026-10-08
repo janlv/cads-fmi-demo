@@ -252,13 +252,12 @@ RUN echo "[image] Building bundled demo FMUs" && \
         python -m pythonfmu build -f "$replica" -d fmu/models create_fmu/storhy_replicas/storhy_replica_common.py; \
     done && \
     echo "[image] Building STOR-HY FMI 3.0 FMUs via pythonfmu3" && \
-    for model in create_fmu/storhy_fmi3/*_fmi3.py; do \
-        python -m pythonfmu3 build -f "$model" -d fmu/models \
-            create_fmu/storhy_fmi3/storhy_fmi3_common.py \
-            create_fmu/storhy_fmi3/storhy_fmi3_models.py || exit 1; \
-    done && \
     case "$(uname -m)" in aarch64|arm64) fmi3_arch=aarch64 ;; *) fmi3_arch=x86_64 ;; esac && \
-    for fmu in fmu/models/*Fmi3.fmu; do \
+    for model in create_fmu/storhy_models/*_model.py; do \
+        python -m pythonfmu3 build -f "$model" -d fmu/models \
+            create_fmu/storhy_models/storhy_model_common.py \
+            create_fmu/storhy_models/storhy_model_logic.py || exit 1; \
+        fmu="fmu/models/$(sed -n 's/^class \([A-Za-z0-9_]*\)(Fmi3Slave):$/\1/p' "$model").fmu"; \
         unzip -l "$fmu" | grep -q "binaries/${fmi3_arch}-linux/" \
             || { echo "[image] $fmu lacks binaries/${fmi3_arch}-linux/" >&2; exit 1; }; \
     done && \

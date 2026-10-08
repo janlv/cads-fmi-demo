@@ -387,12 +387,12 @@ steps:
       communication_step: 900
       models:
         - name: battery
-          fmu: fmu/models/BatteryDegradationFmi3.fmu
+          fmu: fmu/models/BatteryDegradation.fmu
           start_values: {capacity_kwh: 2000}
           start_from: {initial_soc: prep.soc_percent}
           input_series: {csv: data/ambient.csv}
         - name: ems
-          fmu: fmu/models/EmsDispatchFmi3.fmu
+          fmu: fmu/models/EmsDispatch.fmu
       connections:
         - {from: battery.soc_percent, to: ems.soc_percent}
         - {from: ems.power_setpoint_mw, to: battery.power_setpoint_mw}
@@ -434,7 +434,7 @@ steps:
 	if len(cosim.Events) != 1 || cosim.Events[0].Mode != "level" || cosim.Events[0].Set != "ems.protection_request" {
 		t.Fatalf("events = %+v, want low_soc level event", cosim.Events)
 	}
-	if len(cosim.Models) != 2 || cosim.Models[0].InputSeries != "data/ambient.csv" || cosim.Models[0].Label != "Battery Degradation Fmi3" ||
+	if len(cosim.Models) != 2 || cosim.Models[0].InputSeries != "data/ambient.csv" || cosim.Models[0].Label != "Battery Degradation" ||
 		strings.Join(cosim.Models[0].Outputs, ",") != "soc_percent" {
 		t.Fatalf("cosim models = %+v, want member summaries", cosim.Models)
 	}

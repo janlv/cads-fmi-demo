@@ -3,7 +3,7 @@
 pythonfmu3 discovers the FMU class with a regex that requires the literal line
 ``class X(Fmi3Slave):`` in each model file, so shared behaviour lives in plain
 functions here instead of a common base class. The model equations live in
-``storhy_fmi3_models.py`` (stdlib only). Nothing in here prints to stdout: the
+``storhy_model_logic.py`` (stdlib only). Nothing in here prints to stdout: the
 CADS runner reserves stdout for the result JSON.
 """
 
@@ -16,7 +16,7 @@ from pythonfmu3 import (
     Int32,
 )
 
-from storhy_fmi3_models import BOOLEAN, FLOAT64, INT32, MODEL_SPECS, coerce, new_values
+from storhy_model_logic import BOOLEAN, FLOAT64, INT32, MODEL_SPECS, coerce, new_values
 
 AUTHOR = "NORCE - STOR-HY CADS demo"
 MODEL_VERSION = "0.1.0"

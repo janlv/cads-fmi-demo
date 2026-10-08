@@ -12,7 +12,7 @@ demonstrator in these workflows, models, or dashboard mappings.
 
 - `create_fmu/storhy_replicas/` contains the Python FMU replica classes and the
   shared model logic in `storhy_replica_common.py`.
-- `create_fmu/storhy_fmi3/` contains the FMI 3.0 co-simulation FMUs used by
+- `create_fmu/storhy_models/` contains the FMI 3.0 co-simulation FMUs used by
   the current demonstrator workflows (one FMU per model family).
 - `workflows/demonstrators/<site>/<category>/` contains the site-specific
   workflow YAML files. The demo is scoped to two demonstrators, Le Cheylas and
@@ -71,13 +71,13 @@ deterministic placeholders, not validated engineering models; see
 
 | Family | FMU (`fmu/models/<Class>.fmu`) | Used in |
 | --- | --- | --- |
-| M1 runner stress | `RunnerStressFmi3` | Cheylas Runner RUL Lock-step |
-| M5 sediment | `SedimentExposureFmi3` (tidal or cycling profile, cleaning accounting) | Cheylas Sediment Erosion Events |
-| M7 IoT indicators | `IoTIndicatorFmi3` | Cheylas Runner RUL Lock-step |
-| M8 degradation/health/RUL | `RulFmi3` | Cheylas Runner RUL Lock-step, Cheylas Sediment Erosion Events |
-| M9 battery degradation | `BatteryDegradationFmi3` | Alqueva Battery-EMS Co-simulation |
-| M10 EMS | `EmsDispatchFmi3` | Alqueva Battery-EMS Co-simulation |
-| M14 degradation cost vs market revenue | `DegradationCostFmi3` | Cheylas Runner RUL Lock-step, Alqueva Battery-EMS Co-simulation |
+| M1 runner stress | `RunnerStress` | Cheylas Runner RUL Lock-step |
+| M5 sediment | `SedimentExposure` (tidal or cycling profile, cleaning accounting) | Cheylas Sediment Erosion Events |
+| M7 IoT indicators | `IoTIndicator` | Cheylas Runner RUL Lock-step |
+| M8 degradation/health/RUL | `Rul` | Cheylas Runner RUL Lock-step, Cheylas Sediment Erosion Events |
+| M9 battery degradation | `BatteryDegradation` | Alqueva Battery-EMS Co-simulation |
+| M10 EMS | `EmsDispatch` | Alqueva Battery-EMS Co-simulation |
+| M14 degradation cost vs market revenue | `DegradationCost` | Cheylas Runner RUL Lock-step, Alqueva Battery-EMS Co-simulation |
 
 ## Demonstrator Workflows
 
@@ -85,14 +85,14 @@ deterministic placeholders, not validated engineering models; see
 
 | Workflow | YAML | Model chain |
 | --- | --- | --- |
-| Cheylas Runner RUL Lock-step (W1) | `workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml` | cosim jacobi [`RunnerStressFmi3`, `IoTIndicatorFmi3` -> `RulFmi3`] -> `DegradationCostFmi3`; `iot.vibration_rms_measured_mm_s` from channel `cheylas.vibration_rms_mm_s` (database, else bundled CSV) |
-| Cheylas Sediment Erosion Events (W2) | `workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml` | cosim gauss_seidel [`SedimentExposureFmi3` -> `RulFmi3`, event `high_exposure` pulses `sediment.cleaning_trigger`]; `sediment.measured_concentration_g_l` from channel `cheylas.turbidity_g_l` (database, else bundled CSV) |
+| Cheylas Runner RUL Lock-step (W1) | `workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml` | cosim jacobi [`RunnerStress`, `IoTIndicator` -> `Rul`] -> `DegradationCost`; `iot.vibration_rms_measured_mm_s` from channel `cheylas.vibration_rms_mm_s` (database, else bundled CSV) |
+| Cheylas Sediment Erosion Events (W2) | `workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml` | cosim gauss_seidel [`SedimentExposure` -> `Rul`, event `high_exposure` pulses `sediment.cleaning_trigger`]; `sediment.measured_concentration_g_l` from channel `cheylas.turbidity_g_l` (database, else bundled CSV) |
 
 ### Alqueva Hydroelectric Power Station
 
 | Workflow | YAML | Model chain |
 | --- | --- | --- |
-| Alqueva Battery-EMS Co-simulation (W3) | `workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml` | cosim gauss_seidel [`EmsDispatchFmi3` <-> `BatteryDegradationFmi3`] -> `DegradationCostFmi3` |
+| Alqueva Battery-EMS Co-simulation (W3) | `workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml` | cosim gauss_seidel [`EmsDispatch` <-> `BatteryDegradation`] -> `DegradationCost` |
 
 ### Archived workflows
 
@@ -170,10 +170,10 @@ steps:
       communication_step: 900       # master step H
       models:
         - name: ems
-          fmu: fmu/models/EmsDispatchFmi3.fmu
+          fmu: fmu/models/EmsDispatch.fmu
           start_values: {max_power_mw: 20.0}
         - name: battery
-          fmu: fmu/models/BatteryDegradationFmi3.fmu
+          fmu: fmu/models/BatteryDegradation.fmu
           start_from: {initial_soc_percent: earlier_step.soc_percent}   # optional, as for sequential steps
       connections:
         - {from: battery.soc_percent, to: ems.soc_percent}
@@ -233,12 +233,12 @@ fails (the completed steps stay in the result, the failing step is named):
 
 | Workflow | ARCH-COMP-003 pattern | Slide-6 candidate | Models |
 |---|---|---|---|
-| `workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml` | parallel lock-step (jacobi) over a one-way DAG + one-way sequential tail | W1 | RunnerStressFmi3, IoTIndicatorFmi3 -> RulFmi3, then DegradationCostFmi3 |
-| `workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml` | event-driven (gauss_seidel, one-way connection, event targets the model it reads) | W2 | SedimentExposureFmi3 -> RulFmi3 with a pulsed `cleaning_trigger` |
-| `workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml` | sequential ping-pong (gauss_seidel, cyclic) + one-way sequential tail | W3 | EmsDispatchFmi3 <-> BatteryDegradationFmi3, then DegradationCostFmi3 |
+| `workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml` | parallel lock-step (jacobi) over a one-way DAG + one-way sequential tail | W1 | RunnerStress, IoTIndicator -> Rul, then DegradationCost |
+| `workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml` | event-driven (gauss_seidel, one-way connection, event targets the model it reads) | W2 | SedimentExposure -> Rul with a pulsed `cleaning_trigger` |
+| `workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml` | sequential ping-pong (gauss_seidel, cyclic) + one-way sequential tail | W3 | EmsDispatch <-> BatteryDegradation, then DegradationCost |
 | `workflows/archive/**` | one-way master-slave (sequential hand-over) | archived | FMI 2 replicas |
 
-The FMI 3.0 models under `create_fmu/storhy_fmi3/` are stateful, deterministic
+The FMI 3.0 models under `create_fmu/storhy_models/` are stateful, deterministic
 placeholders with time-compressed ageing so a 24 h run shows visible trends.
 They are not validated engineering models.
 
@@ -331,7 +331,7 @@ rows, new versus already present rows, and the time range per channel.
 ```yaml
 models:
   - name: iot
-    fmu: fmu/models/IoTIndicatorFmi3.fmu
+    fmu: fmu/models/IoTIndicator.fmu
     input_series:
       db:
         site: cheylas                                             # schema
@@ -348,8 +348,8 @@ Playground runs and plain local runs), it feeds the repo-relative
 batch start. The runner records which source fed each input in `_run`.
 
 On the FMU side the measured inputs default to 0, and a value of 0 means "no
-measurement": `IoTIndicatorFmi3` then falls back to its synthetic vibration
-signal and `SedimentExposureFmi3` to its profile concentration.
+measurement": `IoTIndicator` then falls back to its synthetic vibration
+signal and `SedimentExposure` to its profile concentration.
 
 ## Dashboard Navigation
 

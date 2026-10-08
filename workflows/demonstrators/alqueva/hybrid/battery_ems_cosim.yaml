@@ -1,5 +1,5 @@
 metadata:
-  display_name: Alqueva Battery-EMS Co-simulation (FMI 3.0)
+  display_name: Alqueva Battery-EMS Co-simulation
   site_id: alqueva
   category: hybrid
   result_family: storhy_mock
@@ -21,10 +21,10 @@ steps:
       communication_step: 900
       models:
         - name: ems
-          fmu: fmu/models/EmsDispatchFmi3.fmu
+          fmu: fmu/models/EmsDispatch.fmu
           start_values: {rated_power_mw: 10.0}
         - name: battery
-          fmu: fmu/models/BatteryDegradationFmi3.fmu
+          fmu: fmu/models/BatteryDegradation.fmu
           start_values: {capacity_mwh: 40.0, max_power_mw: 10.0, initial_soc_percent: 50.0, ambient_temp_c: 22.0}
       connections:
         - {from: battery.soc_percent, to: ems.soc_percent}
@@ -47,7 +47,7 @@ steps:
           - ems.revenue_eur
         sample_every: 900
   - name: degradation_cost
-    fmu: fmu/models/DegradationCostFmi3.fmu
+    fmu: fmu/models/DegradationCost.fmu
     start_time: 0
     stop_time: 86400
     start_from:

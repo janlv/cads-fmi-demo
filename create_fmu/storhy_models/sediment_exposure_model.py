@@ -1,17 +1,17 @@
-"""FMI 3.0 co-simulation FMU SedimentExposureFmi3 (deterministic placeholder, not validated physics).
+"""FMI 3.0 co-simulation FMU SedimentExposure (deterministic placeholder, not validated physics).
 
-Equations and variables: see SedimentExposureFmi3 in storhy_fmi3_models.py.
+Equations and variables: see SedimentExposure in storhy_model_logic.py.
 """
 
 from pythonfmu3 import Fmi3Slave
 
-from storhy_fmi3_common import initialize_model, setup_experiment, setup_model, step_model
+from storhy_model_common import initialize_model, setup_experiment, setup_model, step_model
 
 
-class SedimentExposureFmi3(Fmi3Slave):
+class SedimentExposure(Fmi3Slave):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        setup_model(self, "SedimentExposureFmi3")
+        setup_model(self, "SedimentExposure")
 
     def setup_experiment(self, start_time):
         setup_experiment(self, start_time)

@@ -1,17 +1,17 @@
-"""FMI 3.0 co-simulation FMU RunnerStressFmi3 (deterministic placeholder, not validated physics).
+"""FMI 3.0 co-simulation FMU RunnerStress (deterministic placeholder, not validated physics).
 
-Equations and variables: see RunnerStressFmi3 in storhy_fmi3_models.py.
+Equations and variables: see RunnerStress in storhy_model_logic.py.
 """
 
 from pythonfmu3 import Fmi3Slave
 
-from storhy_fmi3_common import initialize_model, setup_experiment, setup_model, step_model
+from storhy_model_common import initialize_model, setup_experiment, setup_model, step_model
 
 
-class RunnerStressFmi3(Fmi3Slave):
+class RunnerStress(Fmi3Slave):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        setup_model(self, "RunnerStressFmi3")
+        setup_model(self, "RunnerStress")
 
     def setup_experiment(self, start_time):
         setup_experiment(self, start_time)

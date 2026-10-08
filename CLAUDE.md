@@ -115,7 +115,7 @@ A step with a `cosim:` block (schema in `workflow/cosim.go`, docs in
 `internal/fmi/cosim.cpp` on top of the `FmuInstance` abstraction
 (`fmu_instance.cpp`); the single-FMU path (`runSingle`) uses the same
 abstraction. FMI 3.0 demo FMUs are built with `pythonfmu3` from
-`create_fmu/storhy_fmi3/`; the shared logic there must stay in plain functions
+`create_fmu/storhy_models/`; the shared logic there must stay in plain functions
 because pythonfmu3 discovers `class X(Fmi3Slave):` by regex.
 
 ### Repo root discovery

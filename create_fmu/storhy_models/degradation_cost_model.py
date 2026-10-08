@@ -1,17 +1,17 @@
-"""FMI 3.0 co-simulation FMU DegradationCostFmi3 (deterministic placeholder, not validated physics).
+"""FMI 3.0 co-simulation FMU DegradationCost (deterministic placeholder, not validated physics).
 
-Equations and variables: see DegradationCostFmi3 in storhy_fmi3_models.py.
+Equations and variables: see DegradationCost in storhy_model_logic.py.
 """
 
 from pythonfmu3 import Fmi3Slave
 
-from storhy_fmi3_common import initialize_model, setup_experiment, setup_model, step_model
+from storhy_model_common import initialize_model, setup_experiment, setup_model, step_model
 
 
-class DegradationCostFmi3(Fmi3Slave):
+class DegradationCost(Fmi3Slave):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        setup_model(self, "DegradationCostFmi3")
+        setup_model(self, "DegradationCost")
 
     def setup_experiment(self, start_time):
         setup_experiment(self, start_time)

@@ -1,17 +1,17 @@
-"""FMI 3.0 co-simulation FMU RulFmi3 (deterministic placeholder, not validated physics).
+"""FMI 3.0 co-simulation FMU EmsDispatch (deterministic placeholder, not validated physics).
 
-Equations and variables: see RulFmi3 in storhy_fmi3_models.py.
+Equations and variables: see EmsDispatch in storhy_model_logic.py.
 """
 
 from pythonfmu3 import Fmi3Slave
 
-from storhy_fmi3_common import initialize_model, setup_experiment, setup_model, step_model
+from storhy_model_common import initialize_model, setup_experiment, setup_model, step_model
 
 
-class RulFmi3(Fmi3Slave):
+class EmsDispatch(Fmi3Slave):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        setup_model(self, "RulFmi3")
+        setup_model(self, "EmsDispatch")
 
     def setup_experiment(self, start_time):
         setup_experiment(self, start_time)
