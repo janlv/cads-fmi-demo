@@ -1143,7 +1143,8 @@ function parseInputSeries(series) {
     if (!text) {
       return null;
     }
-    const db = text.match(/^db:\/\/([^/]+)\/(.+)$/i);
+    // Accepts the catalog form "db:<site>.measurements/<ch1,ch2>" and the short "db://<site>/<ch1,ch2>".
+    const db = text.match(/^db:\/\/([^/]+)\/(.+)$/i) || text.match(/^db:([a-z][a-z0-9_]*)\.measurements\/(.+)$/i);
     if (db) {
       const channels = db[2].split(",").map((channel) => channel.trim()).filter(Boolean);
       return { kind: "db", site: db[1], channels: channels.map((channel) => ({ variable: channel, channel })), window: null, fallback: "", path: "" };
