@@ -38,6 +38,8 @@ type WorkflowMetadata struct {
 	Category     string          `json:"category,omitempty" yaml:"category"`
 	ResultFamily string          `json:"resultFamily,omitempty" yaml:"result_family"`
 	Description  string          `json:"description,omitempty" yaml:"description"`
+	// Summary is the one-sentence "what happens each communication step" shown above the model chain.
+	Summary      string          `json:"summary,omitempty" yaml:"summary"`
 	Tags         []string        `json:"tags,omitempty" yaml:"tags"`
 	Limits       *WorkflowLimits `json:"limits,omitempty" yaml:"limits"`
 	// SyntheticCase is the display name of the workflow's synthetic_case fixture (not a YAML

@@ -3,6 +3,9 @@ metadata:
   site_id: alqueva
   category: hybrid
   result_family: storhy_mock
+  summary: >-
+    Every 15 minutes the EMS decides to charge or discharge from the day-ahead price and the battery's state of charge, and the battery model follows the set-point and ages; afterwards the cost model compares the capacity fade against the arbitrage revenue.
+
   description: >-
     Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS model and a BESS degradation model,
     both FMI 3.0 FMUs exchanging state of charge and power set-point every 15 minutes; the

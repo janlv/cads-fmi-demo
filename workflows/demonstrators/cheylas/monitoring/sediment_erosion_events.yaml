@@ -3,6 +3,9 @@ metadata:
   site_id: cheylas
   category: monitoring
   result_family: storhy_mock
+  summary: >-
+    Every 15 minutes the sediment model takes the next measured turbidity sample and updates its exposure; the runtime raises a cleaning event when exposure crosses 0.8, and the RUL model accumulates erosion damage from the exposure.
+
   description: >-
     Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model
     driven by the measured turbidity channel turbidity_g_l, read from the Cheylas schema of the

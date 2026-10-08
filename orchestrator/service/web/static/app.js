@@ -990,7 +990,9 @@ function renderWorkflowTitleLine(workflow) {
       <h2>${escapeHTML(workflowLabel(workflow))}</h2>
       <span class="coupling-badge-row">${renderCouplingBadges(coupling.badges)}</span>
     </div>
-    ${description ? `<p class="details-text">${escapeHTML(description)}</p>` : ""}
+    ${workflow.metadata?.summary
+      ? `<p class="details-text workflow-summary">${escapeHTML(workflow.metadata.summary)}</p>`
+      : description ? `<p class="details-text">${escapeHTML(description)}</p>` : ""}
     <div class="details-coupling-line">
       <span class="details-label">FMU coupling:</span>
       <span>${escapeHTML(coupling.label || "n/a")}</span>

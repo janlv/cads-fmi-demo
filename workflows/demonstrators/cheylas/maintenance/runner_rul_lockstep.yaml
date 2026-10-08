@@ -3,6 +3,9 @@ metadata:
   site_id: cheylas
   category: maintenance
   result_family: storhy_mock
+  summary: >-
+    Every 15 minutes the runner model produces load and stress for the current duty cycle, the IoT indicator model turns the measured vibration into a condition indicator, and the RUL model accumulates fatigue damage from both; afterwards the cost model weighs the consumed runner life against the energy produced.
+
   description: >-
     Jacobi (parallel lock-step) co-simulation of three FMI 3.0 FMUs with a one-way coupling graph:
     a runner duty-cycle model feeds load to an IoT vibration indicator model and stress to a
