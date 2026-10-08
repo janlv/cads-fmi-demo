@@ -13,6 +13,7 @@ SERVICE_ACCOUNT="playground-storhy-playground-pg-admin"
 NAMESPACE="playground"
 OUTPUT=""
 S3_CREDENTIALS_SECRET="storhy-argo-artifacts-s3-credentials"
+CADS_DB_SECRET="storhy-cads-db"
 MAX_RUNTIME_SECONDS="${CADS_MAX_RUNTIME_SECONDS:-900}"
 MAX_RUNTIME_CEILING_SECONDS="${CADS_MAX_RUNTIME_CEILING_SECONDS:-3600}"
 CPU_REQUEST="${CADS_DEFAULT_CPU_REQUEST:-250m}"
@@ -46,7 +47,11 @@ provenance as dashboard submissions:
   - container resources: metadata.limits.cpu/memory as request and limit, else
     --cpu/--memory as request and limit, else CADS_DEFAULT_{CPU,MEMORY}_{REQUEST,LIMIT}
     (250m/256Mi requests, 1/1Gi limits);
-  - labels/annotations with the workflow path, site, SHA-256 and git version.
+  - labels/annotations with the workflow path, site, SHA-256 and git version;
+  - env CADS_RUN_ID={{workflow.name}} and CADS_DB_URL from the optional secret
+    storhy-cads-db (key url): with it the runner reads input_series.db from the
+    STOR-HY database and writes results back; without it runs still start and
+    use the CSV fallbacks.
 USAGE
 }
 
@@ -318,6 +323,14 @@ spec:
               secretKeyRef:
                 name: ${S3_CREDENTIALS_SECRET}
                 key: endpoint
+          - name: CADS_RUN_ID
+            value: "{{workflow.name}}"
+          - name: CADS_DB_URL
+            valueFrom:
+              secretKeyRef:
+                name: ${CADS_DB_SECRET}
+                key: url
+                optional: true
 YAML
 
 echo "[remote-workflow] Generated $OUTPUT"

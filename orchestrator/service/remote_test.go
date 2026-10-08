@@ -667,3 +667,35 @@ pod: {"later_stray":{"debug":2}}
 		t.Fatalf("extractJSONTail() = %+v, %v; want _run candidate", tail, err)
 	}
 }
+
+func TestRemoteManifestCarriesDatabaseEnv(t *testing.T) {
+	manifest, err := generateRemoteWorkflowManifest(remoteManifestSpec{
+		Namespace: "playground", ServiceAccount: "sa", Image: "img", WorkflowPath: "workflows/x.yaml", SiteID: "cheylas",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed hostedWorkflowManifest
+	if err := yaml.Unmarshal(manifest, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]argoEnvVar{}
+	for _, item := range parsed.Spec.Templates[0].Container.Env {
+		env[item.Name] = item
+	}
+	if env["CADS_RUN_ID"].Value != "{{workflow.name}}" || env["CADS_RUN_ID"].ValueFrom != nil {
+		t.Fatalf("CADS_RUN_ID env = %+v", env["CADS_RUN_ID"])
+	}
+	ref := env["CADS_DB_URL"].ValueFrom
+	if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "storhy-cads-db" || ref.SecretKeyRef.Key != "url" ||
+		ref.SecretKeyRef.Optional == nil || !*ref.SecretKeyRef.Optional {
+		t.Fatalf("CADS_DB_URL env = %+v, want optional secret ref storhy-cads-db/url", env["CADS_DB_URL"])
+	}
+	if !strings.Contains(string(manifest), "optional: true") || !strings.Contains(string(manifest), "'{{workflow.name}}'") && !strings.Contains(string(manifest), `"{{workflow.name}}"`) {
+		t.Fatalf("manifest:\n%s", manifest)
+	}
+	// The S3 secret refs stay mandatory.
+	if env["S3_BUCKET"].ValueFrom.SecretKeyRef.Optional != nil {
+		t.Fatalf("S3_BUCKET must not be optional: %+v", env["S3_BUCKET"])
+	}
+}

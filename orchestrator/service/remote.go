@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -18,6 +19,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/cadsdb"
 	workflowpkg "github.com/norceresearch/cads-fmi-demo/orchestrator/service/workflow"
 )
 
@@ -27,7 +29,11 @@ const (
 	defaultArgoServiceAccount  = "playground-storhy-playground-pg-admin"
 	defaultRemoteImage         = "ghcr.io/janlv/cads-fmi-demo:playground"
 	defaultS3CredentialsSecret = "storhy-argo-artifacts-s3-credentials"
-	defaultPollInterval        = 5 * time.Second
+	// defaultDBSecret holds the CADS database URL (key `url`); it is optional so runs still start
+	// without it and then fall back to CSV inputs and skip the results sink.
+	defaultDBSecret     = "storhy-cads-db"
+	defaultDBSecretKey  = "url"
+	defaultPollInterval = 5 * time.Second
 
 	defaultMaxRuntimeSeconds        int64 = 900
 	defaultMaxRuntimeCeilingSeconds int64 = 3600
@@ -100,6 +106,9 @@ type DashboardConfig struct {
 	MaxRuntimeSeconds        int64         `json:"maxRuntimeSeconds,omitempty"`
 	MaxRuntimeCeilingSeconds int64         `json:"maxRuntimeCeilingSeconds,omitempty"`
 	DefaultResources         *RunResources `json:"defaultResources,omitempty"`
+	// DatabaseConfigured is true when the service has a CADS database (CADS_DB_URL); set by the
+	// server, not by the remote client.
+	DatabaseConfigured bool `json:"databaseConfigured"`
 }
 
 type RunSummary struct {
@@ -157,6 +166,18 @@ type ArgoRemoteClient struct {
 	exec     execRunner
 	now      func() time.Time
 	hostname func() (string, error)
+	// runStore, when set, is consulted before the Argo logs for stored run results.
+	runStore RunReader
+}
+
+// RunReader reads a stored run back from the CADS database.
+type RunReader interface {
+	ReadRun(ctx context.Context, site, runID string) (map[string]map[string]any, error)
+}
+
+// SetRunStore makes GetRunResults read results from the CADS database first.
+func (c *ArgoRemoteClient) SetRunStore(store RunReader) {
+	c.runStore = store
 }
 
 func NewArgoRemoteClient(workDir string, input ArgoOptionInputs, lookup EnvLookup) *ArgoRemoteClient {
@@ -476,6 +497,12 @@ func (c *ArgoRemoteClient) GetRunResults(ctx context.Context, name string) (*Run
 		Partial:       !succeeded,
 	}
 
+	if results := c.readStoredRun(ctx, run); results != nil {
+		response.CollectedFrom = "database"
+		applyRunInfo(response, results, run)
+		return response, nil
+	}
+
 	output, err := c.runArgo(ctx,
 		c.withArgoConnectionArgs("logs", name, "--tail", "2000")...,
 	)
@@ -493,6 +520,39 @@ func (c *ArgoRemoteClient) GetRunResults(ctx context.Context, name string) (*Run
 		return response, nil
 	}
 
+	applyRunInfo(response, results, run)
+	return response, nil
+}
+
+// readStoredRun returns the run's results from the CADS database (site from the workflow's
+// metadata.site_id, run id = Argo workflow name), or nil to fall back to the logs.
+func (c *ArgoRemoteClient) readStoredRun(ctx context.Context, run *RunSummary) map[string]map[string]any {
+	if c.runStore == nil || run == nil || run.WorkflowPath == "" {
+		return nil
+	}
+	metadata, _, err := readWorkflowDocument(c.workDir, run.WorkflowPath)
+	if err != nil {
+		return nil
+	}
+	site := strings.TrimSpace(metadata.SiteID)
+	if !cadsdb.ValidSite(site) {
+		return nil
+	}
+	results, err := c.runStore.ReadRun(ctx, site, run.Name)
+	if err != nil {
+		if !errors.Is(err, cadsdb.ErrRunNotFound) {
+			log.Printf("read run %s from database (site %s): %v; falling back to argo logs", run.Name, site, err)
+		}
+		return nil
+	}
+	if len(results) == 0 {
+		return nil
+	}
+	return results
+}
+
+// applyRunInfo fills StepResults and the status fields from the `_run` record.
+func applyRunInfo(response *RunResults, results map[string]map[string]any, run *RunSummary) {
 	response.StepResults = results
 	if info := results[workflowpkg.RunInfoStepName]; info != nil {
 		if status, ok := info["status"].(string); ok && strings.TrimSpace(status) != "" {
@@ -511,7 +571,6 @@ func (c *ArgoRemoteClient) GetRunResults(ctx context.Context, name string) (*Run
 	if response.Partial && response.Error == "" {
 		response.Error = run.Message
 	}
-	return response, nil
 }
 
 func (c *ArgoRemoteClient) ensureReady() error {
@@ -704,8 +763,9 @@ type argoValueFromRef struct {
 }
 
 type argoSecretKeyRef struct {
-	Name string `json:"name" yaml:"name"`
-	Key  string `json:"key" yaml:"key"`
+	Name     string `json:"name" yaml:"name"`
+	Key      string `json:"key" yaml:"key"`
+	Optional *bool  `json:"optional,omitempty" yaml:"optional,omitempty"`
 }
 
 type argoStatus struct {
@@ -1226,6 +1286,7 @@ func buildRemoteWorkflowEnvVars(secretName string) []argoEnvVar {
 		}
 	}
 
+	optional := true
 	return []argoEnvVar{
 		secretRef("AWS_ACCESS_KEY_ID", "access_key_id"),
 		secretRef("AWS_SECRET_ACCESS_KEY", "secret_access_key"),
@@ -1233,6 +1294,12 @@ func buildRemoteWorkflowEnvVars(secretName string) []argoEnvVar {
 		secretRef("AWS_DEFAULT_REGION", "region"),
 		secretRef("S3_BUCKET", "bucket_name"),
 		secretRef("S3_ENDPOINT", "endpoint"),
+		// The runner writes results to the database under the Argo workflow name, which is
+		// also how GetRunResults finds them again.
+		{Name: EnvRunID, Value: "{{workflow.name}}"},
+		{Name: "CADS_DB_URL", ValueFrom: &argoValueFromRef{SecretKeyRef: &argoSecretKeyRef{
+			Name: defaultDBSecret, Key: defaultDBSecretKey, Optional: &optional,
+		}}},
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/cadsdb"
 	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/fmi"
 )
 
@@ -30,6 +31,10 @@ type Executor struct {
 	now          func() time.Time
 	version      string
 	cancelled    atomic.Bool
+	// seriesReader serves `input_series.db`; ownedStore is set when the executor opened the
+	// connection itself (from CADS_DB_URL) and closes it after the run.
+	seriesReader cadsdb.SeriesReader
+	ownedStore   *cadsdb.PG
 }
 
 // Option configures the executor.
@@ -118,6 +123,7 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 	// The cancel flag is deliberately NOT reset here: a cancellation requested before Run starts
 	// (e.g. SIGTERM delivered between signal.Notify and Run) must still take effect.
 	err := e.run(workflowPath, results, rec)
+	e.closeOwnedStore()
 	results[RunInfoStepName] = rec.finish(err)
 	return results, err
 }
@@ -141,6 +147,7 @@ func (e *Executor) run(workflowPath string, results map[string]map[string]any, r
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return fmt.Errorf("parse workflow %s: %w", absPath, err)
 	}
+	rec.setSite(strings.TrimSpace(doc.Metadata.SiteID))
 	if len(doc.Steps) == 0 {
 		return fmt.Errorf("workflow %s does not define any steps", absPath)
 	}
@@ -272,6 +279,7 @@ func (e *Executor) runFMUStep(step workflowStep, results map[string]map[string]a
 	}
 	if inputSeries != nil {
 		cfg.InputSeries = inputSeries.Config
+		info.FMUs[0].Inputs = inputSeries.Inputs
 	}
 
 	result, runErr := e.runFMU(cfg)
@@ -312,7 +320,11 @@ func (e *Executor) runCoSimStep(step workflowStep, results map[string]map[string
 	}
 	defer resolved.Cleanup()
 	for _, model := range step.CoSim.Models {
-		info.FMUs = append(info.FMUs, rec.describeFMU(model.Name, resolved.FMUPaths[model.Name]))
+		desc := rec.describeFMU(model.Name, resolved.FMUPaths[model.Name])
+		if inputs := resolved.Inputs[model.Name]; inputs != nil {
+			desc.Inputs = inputs
+		}
+		info.FMUs = append(info.FMUs, desc)
 	}
 
 	result, runErr := e.runCoSim(resolved.Config)
@@ -358,7 +370,18 @@ func (e *Executor) resolveRepoPath(path string, kind string) (string, error) {
 	return resolved, nil
 }
 
+// relPath returns a repo-relative, forward-slash form of an absolute path inside the root.
+func (e *Executor) relPath(absPath string) string {
+	if rel, err := filepath.Rel(e.root, absPath); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return filepath.ToSlash(absPath)
+}
+
 type workflowFile struct {
+	Metadata struct {
+		SiteID string `yaml:"site_id"`
+	} `yaml:"metadata"`
 	SyntheticCase any            `yaml:"synthetic_case"`
 	Steps         []workflowStep `yaml:"steps"`
 }
@@ -381,6 +404,7 @@ type workflowStep struct {
 type inputSeriesSpec struct {
 	CSV string             `yaml:"csv"`
 	S3  *s3InputSeriesSpec `yaml:"s3"`
+	DB  *dbInputSeriesSpec `yaml:"db"`
 }
 
 type s3InputSeriesSpec struct {
@@ -501,6 +525,8 @@ func (e *Executor) buildStartValues(literal map[string]any, from map[string]stri
 type resolvedInputSeries struct {
 	Config  *fmi.InputSeriesConfig
 	Cleanup func()
+	// Inputs is the per-variable dataset provenance (ARCH-COMP-018).
+	Inputs []InputDataset
 }
 
 func (e *Executor) buildInputSeries(spec *inputSeriesSpec) (*resolvedInputSeries, error) {
@@ -510,9 +536,16 @@ func (e *Executor) buildInputSeries(spec *inputSeriesSpec) (*resolvedInputSeries
 
 	hasCSV := strings.TrimSpace(spec.CSV) != ""
 	hasS3 := spec.S3 != nil
+	hasDB := spec.DB != nil
+	sources := 0
+	for _, has := range []bool{hasCSV, hasS3, hasDB} {
+		if has {
+			sources++
+		}
+	}
 
 	switch {
-	case hasCSV && hasS3:
+	case sources > 1:
 		return nil, fmt.Errorf("input_series must define exactly one source")
 	case hasCSV:
 		csvPath, err := e.resolveRepoPath(spec.CSV, "input series")
@@ -522,11 +555,16 @@ func (e *Executor) buildInputSeries(spec *inputSeriesSpec) (*resolvedInputSeries
 		if _, err := os.Stat(csvPath); err != nil {
 			return nil, fmt.Errorf("missing CSV %s: %w", csvPath, err)
 		}
-		return &resolvedInputSeries{Config: &fmi.InputSeriesConfig{CSVPath: csvPath}}, nil
+		return &resolvedInputSeries{
+			Config: &fmi.InputSeriesConfig{CSVPath: csvPath},
+			Inputs: fileInputs(csvPath, InputSourceCSV, e.relPath(csvPath)),
+		}, nil
 	case hasS3:
 		return e.buildS3InputSeries(*spec.S3)
+	case hasDB:
+		return e.buildDBInputSeries(spec.DB)
 	default:
-		return nil, fmt.Errorf("input_series.csv or input_series.s3 is required")
+		return nil, fmt.Errorf("input_series.csv, input_series.s3 or input_series.db is required")
 	}
 }
 

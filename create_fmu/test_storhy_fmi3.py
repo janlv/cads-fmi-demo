@@ -382,6 +382,95 @@ class EventTests(unittest.TestCase):
         self.assertGreater(max(heads), 8.0)
 
 
+MEASUREMENTS_DIR = Path(__file__).resolve().parents[1] / "data" / "storhy" / "cheylas" / "measurements"
+
+
+def _read_fallback_csv(name):
+    """Read a seconds-relative fallback CSV (``time,<variable>``) as [(t, value)]."""
+    with open(MEASUREMENTS_DIR / name) as fh:
+        header = fh.readline().strip().split(",")
+        rows = [tuple(float(x) for x in line.split(",")) for line in fh if line.strip()]
+    return header[1], rows
+
+
+def _drive(model, variable, rows, outputs):
+    """Sample-and-hold ``rows`` into ``variable`` at every model sub-step."""
+    h = model.spec["step_size"]
+    lookup = {t: value for t, value in rows}
+    trace = {name: [] for name in outputs}
+    while model.time < STOP - 1e-9:
+        model.set(variable, lookup[model.time])
+        model.advance(model.time + h)
+        for name in outputs:
+            trace[name].append(model.get(name))
+    return trace
+
+
+class MeasuredInputTests(unittest.TestCase):
+    def test_iot_follows_measured_vibration(self):
+        iot = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75})
+        iot.set("vibration_rms_measured_mm_s", 5.0)
+        iot.advance(6 * 3600.0)
+        self.assertAlmostEqual(iot.get("vibration_rms_mm_s"), 5.0, places=3)
+        self.assertAlmostEqual(iot.get("condition_indicator"), (5.0 - 1.4) / (7.1 - 1.4), places=3)
+        # The measured path ignores the synthetic load-driven signal.
+        iot.set("load_pu", 1.4)
+        iot.advance(12 * 3600.0)
+        self.assertAlmostEqual(iot.get("vibration_rms_mm_s"), 5.0, places=3)
+        # A higher measured level raises the indicator through the EWMA.
+        iot.set("vibration_rms_measured_mm_s", 6.5)
+        iot.advance(12 * 3600.0 + 900.0)
+        self.assertGreater(iot.get("vibration_rms_mm_s"), 5.0)
+        self.assertLess(iot.get("vibration_rms_mm_s"), 6.5)
+        iot.advance(STOP)
+        self.assertAlmostEqual(iot.get("condition_indicator"), (6.5 - 1.4) / (7.1 - 1.4), places=3)
+
+    def test_iot_zero_measured_keeps_synthetic_signal(self):
+        synthetic = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75})
+        explicit = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75, "vibration_rms_measured_mm_s": 0.0})
+        synthetic.advance(STOP)
+        explicit.advance(STOP)
+        self.assertEqual(synthetic.values, explicit.values)
+
+    def test_sediment_measured_concentration_overrides_profile(self):
+        sediment = ModelRunner("SedimentExposureFmi3", dict(SEDIMENT_W2, initial_exposure=0.3))
+        sediment.set("measured_concentration_g_l", 1.0)
+        sediment.advance(3600.0)
+        self.assertAlmostEqual(sediment.get("sediment_concentration_g_l"), 1.0)
+        self.assertAlmostEqual(sediment.get("sediment_exposure"), 0.3 + 0.16 * 1.0, places=9)
+        # Back to 0: the cycling profile takes over again.
+        profile = ModelRunner("SedimentExposureFmi3", SEDIMENT_W2)
+        profile.advance(7200.0)
+        sediment.set("measured_concentration_g_l", 0.0)
+        sediment.advance(7200.0)
+        self.assertAlmostEqual(sediment.get("sediment_concentration_g_l"), profile.get("sediment_concentration_g_l"))
+
+    @unittest.skipUnless((MEASUREMENTS_DIR / "vibration_rms_mm_s.csv").is_file(), "fallback CSVs not generated")
+    def test_bundled_vibration_series_drives_indicator(self):
+        variable, rows = _read_fallback_csv("vibration_rms_mm_s.csv")
+        self.assertEqual(variable, "vibration_rms_measured_mm_s")
+        self.assertEqual(len(rows), 289)
+        iot = ModelRunner("IoTIndicatorFmi3", {"load_pu": 0.75})
+        trace = _drive(iot, variable, rows, ["vibration_rms_mm_s", "condition_indicator"])
+        measured = [value for _, value in rows]
+        self.assertGreaterEqual(min(trace["vibration_rms_mm_s"]), min(measured) - 1e-9)
+        self.assertLessEqual(max(trace["vibration_rms_mm_s"]), max(measured) + 1e-9)
+        for value in trace["condition_indicator"]:
+            self.assertTrue(0.0 <= value <= 1.0)
+
+    @unittest.skipUnless((MEASUREMENTS_DIR / "turbidity_g_l.csv").is_file(), "fallback CSVs not generated")
+    def test_bundled_turbidity_series_drives_exposure(self):
+        variable, rows = _read_fallback_csv("turbidity_g_l.csv")
+        self.assertEqual(variable, "measured_concentration_g_l")
+        sediment = ModelRunner("SedimentExposureFmi3", SEDIMENT_W2)
+        trace = _drive(sediment, variable, rows, ["sediment_concentration_g_l", "sediment_exposure"])
+        self.assertEqual(trace["sediment_concentration_g_l"], [value for _, value in rows[:-1]])
+        exposure = trace["sediment_exposure"]
+        for a, b in zip(exposure, exposure[1:]):
+            self.assertGreaterEqual(b, a)
+        self.assertGreater(exposure[-1], 0.8)
+
+
 class RunnerEnergyTests(unittest.TestCase):
     def test_energy_monotone_and_only_in_turbine_mode(self):
         models, _ = run_jacobi()

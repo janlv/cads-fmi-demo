@@ -13,12 +13,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/cadsdb"
 	workflowpkg "github.com/norceresearch/cads-fmi-demo/orchestrator/service/workflow"
 )
 
 type Server struct {
 	Runner *Runner
 	Remote RemoteClient
+	// Data is the CADS database (nil when CADS_DB_URL is not configured).
+	Data DataStore
+}
+
+// DataStore is the part of the CADS Data interface the dashboard service reads.
+type DataStore interface {
+	ChannelStatus(ctx context.Context, site string) ([]cadsdb.ChannelInfo, error)
+}
+
+// dataResponse is the `/api/data?site=<id>` payload.
+type dataResponse struct {
+	Configured bool                 `json:"configured"`
+	Site       string               `json:"site"`
+	Channels   []cadsdb.ChannelInfo `json:"channels"`
 }
 
 type runRequest struct {
@@ -49,6 +64,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.StripPrefix("/static/", http.FileServer(http.FS(dashboardStaticFS))).ServeHTTP(w, r)
 	case r.URL.Path == "/api/config" && r.Method == http.MethodGet:
 		s.handleConfig(w, r)
+	case r.URL.Path == "/api/data" && r.Method == http.MethodGet:
+		s.handleData(w, r)
 	case r.URL.Path == "/api/workflows" && r.Method == http.MethodGet:
 		s.handleWorkflows(w, r)
 	case r.URL.Path == "/api/runs":
@@ -77,7 +94,29 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.remoteClient().Config())
+	cfg := s.remoteClient().Config()
+	cfg.DatabaseConfigured = s.Data != nil
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
+	site := strings.TrimSpace(r.URL.Query().Get("site"))
+	if err := cadsdb.CheckSite(site); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response := dataResponse{Configured: s.Data != nil, Site: site, Channels: []cadsdb.ChannelInfo{}}
+	if s.Data != nil {
+		channels, err := s.Data.ChannelStatus(r.Context(), site)
+		if err != nil {
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("read channels of %s: %v", site, err))
+			return
+		}
+		if channels != nil {
+			response.Channels = channels
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleWorkflows(w http.ResponseWriter, _ *http.Request) {

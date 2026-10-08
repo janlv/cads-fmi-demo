@@ -69,6 +69,7 @@ func (e *Executor) buildS3InputSeries(spec s3InputSeriesSpec) (*resolvedInputSer
 
 	return &resolvedInputSeries{
 		Config: &fmi.InputSeriesConfig{CSVPath: tempPath},
+		Inputs: fileInputs(tempPath, InputSourceS3, "s3://"+bucket+"/"+key),
 		Cleanup: func() {
 			_ = os.Remove(tempPath)
 		},

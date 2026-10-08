@@ -7,6 +7,10 @@ const state = {
   selectedModelKey: "",
   // Last workflow chosen on each site tab (in memory), so switching back restores it.
   workflowBySite: {},
+  // /api/data per site id: {state: "loading"|"ready"|"error", payload?, message?}.
+  siteData: new Map(),
+  // Chain data-source pill whose detail section is open (a model entry key).
+  openSourceKey: "",
   selectedRunName: "",
   runsRailCollapsed: false,
   modelMatrix: null,
@@ -684,6 +688,7 @@ function selectWorkflow(workflowPath, options = {}) {
   state.selectedWorkflowPath = workflowPath;
   if (changed) {
     state.selectedRunName = "";
+    state.openSourceKey = "";
     state.selectedModelKey = options.modelKey || "";
   } else if (options.modelKey) {
     state.selectedModelKey = options.modelKey;
@@ -965,6 +970,7 @@ function renderSiteHeader(workflow) {
         partners: ${partners.map((partner) => `<span class="partner-chip">${escapeHTML(partner)}</span>`).join("")}
       </span>
     ` : ""}
+    ${renderSiteDataItem(siteId)}
   `;
 }
 
@@ -998,10 +1004,16 @@ function renderWorkflowChainArea(workflow) {
     return;
   }
   container.innerHTML = workflow
-    ? `<div class="dw-chain" aria-label="Models in execution order">${renderWorkflowChain(workflow)}</div>`
+    ? `<div class="dw-chain" aria-label="Models in execution order">${renderWorkflowChain(workflow)}</div>${renderDataSourceDetails(workflow)}`
     : "";
   for (const pill of container.querySelectorAll("[data-chain-model]")) {
     pill.addEventListener("click", () => selectWorkflow(pill.dataset.chainWorkflow, { modelKey: pill.dataset.chainModel }));
+  }
+  for (const pill of container.querySelectorAll("[data-chain-source]")) {
+    pill.addEventListener("click", () => {
+      state.openSourceKey = state.openSourceKey === pill.dataset.chainSource ? "" : pill.dataset.chainSource;
+      renderWorkflowChainArea(selectedWorkflow());
+    });
   }
 }
 
@@ -1052,11 +1064,18 @@ function renderSelectedModelPanel() {
 function renderWorkflowChain(workflow) {
   const isSelected = workflow.path === state.selectedWorkflowPath;
   const selectedKey = isSelected ? selectedModelEntry(workflow)?.key || "" : "";
+  const openSourceKey = isSelected ? state.openSourceKey : "";
+  const entries = workflowFmus(workflow);
+  // Data-source pill (database, file or bucket) drawn before the model it feeds.
+  const sourcePill = (key) => {
+    const entry = entries.find((item) => item.key === key);
+    return entry ? renderDataSourcePill(workflow, entry, openSourceKey) : "";
+  };
   return workflowModels(workflow).map((model, index) => {
     const arrow = index > 0 ? '<span class="dw-arrow" title="one-way hand-over of final values">&rarr;</span>' : "";
     if (!isCosimModel(model)) {
       // Arrow and pill wrap together so an arrow never ends a line on its own.
-      return `<span class="dw-step">${arrow}${renderChainPill(workflow, String(index), model.fmu, model.label || model.name, [], selectedKey)}</span>`;
+      return `<span class="dw-step">${arrow}${sourcePill(String(index))}${renderChainPill(workflow, String(index), model.fmu, model.label || model.name, [], selectedKey)}</span>`;
     }
     const cosim = model.cosim;
     const members = Array.isArray(cosim.models) ? cosim.models : [];
@@ -1076,7 +1095,7 @@ function renderWorkflowChain(workflow) {
         connector = `<span class="dw-link" title="${title}">${symbol}</span>`;
       }
       // The connector wraps with the pill it leads into, never at a line end.
-      return `<span class="dw-step">${connector}${renderChainPill(workflow, `${index}.${member.name}`, member.fmu, member.label || member.name, memberEvents, selectedKey)}</span>`;
+      return `<span class="dw-step">${connector}${sourcePill(`${index}.${member.name}`)}${renderChainPill(workflow, `${index}.${member.name}`, member.fmu, member.label || member.name, memberEvents, selectedKey)}</span>`;
     }).join("");
     return `<span class="dw-step">
       ${arrow}
@@ -1107,6 +1126,323 @@ function renderChainPill(workflow, key, fmuPath, fallbackLabel, events, selected
   `;
 }
 
+// ---------------------------------------------------------------------------
+// Measured data from the STOR-HY database: input sources drawn in the chain,
+// the site's ingested channels (/api/data) and where results were written.
+// ---------------------------------------------------------------------------
+
+// Normalises a catalog inputSeries (string "db://site/channel[,channel]", a
+// file path, "s3://bucket/key", or {source, site, channels, window, fallback})
+// to {kind: "db"|"csv"|"s3", site, channels: [{variable, channel}], window, fallback, path}.
+function parseInputSeries(series) {
+  if (!series) {
+    return null;
+  }
+  if (typeof series === "string") {
+    const text = series.trim();
+    if (!text) {
+      return null;
+    }
+    const db = text.match(/^db:\/\/([^/]+)\/(.+)$/i);
+    if (db) {
+      const channels = db[2].split(",").map((channel) => channel.trim()).filter(Boolean);
+      return { kind: "db", site: db[1], channels: channels.map((channel) => ({ variable: channel, channel })), window: null, fallback: "", path: "" };
+    }
+    if (/^s3:\/\//i.test(text)) {
+      return { kind: "s3", site: "", channels: [], window: null, fallback: "", path: text };
+    }
+    return { kind: "csv", site: "", channels: [], window: null, fallback: "", path: text };
+  }
+  if (typeof series !== "object") {
+    return null;
+  }
+  // The workflow YAML nests the database form as {db: {site, channels, window, fallback: {csv}}}.
+  if (series.db && typeof series.db === "object") {
+    return parseInputSeries({ ...series.db, source: "db" });
+  }
+  const source = String(series.source || (series.s3 ? "s3" : series.csv ? "csv" : "")).toLowerCase();
+  const channelMap = series.channels && typeof series.channels === "object" ? series.channels : {};
+  const channels = Array.isArray(series.channels)
+    ? series.channels.map((channel) => ({ variable: String(channel), channel: String(channel) }))
+    : Object.entries(channelMap).map(([variable, channel]) => ({ variable, channel: String(channel) }));
+  const s3Path = series.s3 && typeof series.s3 === "object"
+    ? [series.s3.bucket ? `s3://${series.s3.bucket}` : "", series.s3.key || ""].filter(Boolean).join("/")
+    : "";
+  return {
+    kind: source === "db" ? "db" : source === "s3" ? "s3" : "csv",
+    site: String(series.site || ""),
+    channels,
+    window: series.window && typeof series.window === "object" ? { from: series.window.from || "", to: series.window.to || "" } : null,
+    fallback: String((series.fallback && typeof series.fallback === "object" ? series.fallback.csv : series.fallback) || ""),
+    path: String(series.csv || series.path || s3Path || ""),
+  };
+}
+
+// Run-time data inputs of one model (from _run.steps[].fmus[].inputs), when loaded.
+function runtimeDataInputs(workflow, entry) {
+  const inputs = runtimeFmuDescriptor(workflow, entry)?.inputs;
+  return Array.isArray(inputs) ? inputs.filter((input) => input && input.source) : [];
+}
+
+// Where a model's time-series input comes from: run provenance when a run is
+// loaded, else the catalog. Returns null when the model has no series input.
+function modelDataSource(workflow, entry) {
+  const catalog = parseInputSeries(entry?.inputSeries);
+  const runtime = runtimeDataInputs(workflow, entry);
+  if (runtime.length > 0) {
+    const kinds = runtime.map((input) => String(input.source).toLowerCase());
+    const kind = kinds.includes("db-fallback-csv") ? "fallback" : kinds.includes("db") ? "db" : kinds.includes("s3") ? "s3" : "csv";
+    return { kind, catalog, runtime };
+  }
+  if (!catalog) {
+    return null;
+  }
+  return { kind: catalog.kind, catalog, runtime: [] };
+}
+
+function shortDate(value) {
+  const text = String(value || "");
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text;
+}
+
+function dateRange(from, to) {
+  const start = shortDate(from);
+  const end = shortDate(to);
+  if (!start && !end) {
+    return "";
+  }
+  if (start && end && start.slice(0, 8) === end.slice(0, 8) && start !== end) {
+    return `${start}..${end.slice(8)}`;
+  }
+  return start === end ? start : `${start}..${end}`;
+}
+
+// --- /api/data per site, fetched once and cached --------------------------
+
+function siteDataState(siteId) {
+  return state.siteData.get(siteId) || null;
+}
+
+function ensureSiteData(siteId) {
+  if (!siteId || state.siteData.has(siteId)) {
+    return;
+  }
+  state.siteData.set(siteId, { state: "loading" });
+  fetchJSON(`/api/data?site=${encodeURIComponent(siteId)}`)
+    .then((payload) => state.siteData.set(siteId, { state: "ready", payload: payload || {} }))
+    .catch((error) => state.siteData.set(siteId, { state: "error", message: error.message }))
+    .finally(() => {
+      if (workflowSiteId(selectedWorkflow()) === siteId) {
+        renderWorkflowContent();
+      }
+    });
+}
+
+function siteChannelInfo(siteId, channel) {
+  const channels = siteDataState(siteId)?.payload?.channels;
+  return Array.isArray(channels) ? channels.find((item) => item?.channel === channel) || null : null;
+}
+
+function renderSiteDataItem(siteId) {
+  ensureSiteData(siteId);
+  const data = siteDataState(siteId);
+  if (!data || data.state === "loading") {
+    return '<span class="site-data site-data-muted">database: checking…</span>';
+  }
+  if (data.state === "error") {
+    return '<span class="site-data site-data-muted" title="The data endpoint is not available on this dashboard build.">database status unavailable</span>';
+  }
+  const payload = data.payload;
+  if (payload.configured === false || state.config?.databaseConfigured === false) {
+    return '<span class="site-data site-data-warn">database not configured</span>';
+  }
+  const channels = Array.isArray(payload.channels) ? payload.channels : [];
+  if (channels.length === 0) {
+    return '<span class="site-data site-data-muted">no data ingested</span>';
+  }
+  const points = channels.reduce((sum, channel) => sum + (Number(channel?.points) || 0), 0);
+  const ingested = channels.map((channel) => shortDate(channel?.ingestedAt)).filter(Boolean).sort().pop() || "";
+  const title = channels.map((channel) => `${channel.channel}: ${channel.points || 0} points${channel.unit ? ` (${channel.unit})` : ""}`).join("\n");
+  return `
+    <span class="site-data" title="${escapeHTML(title)}">
+      ${DATABASE_ICON}
+      database: ${channels.length} channel${channels.length === 1 ? "" : "s"} · ${formatMetric(points)} points${ingested ? ` · ingested ${escapeHTML(ingested)}` : ""}
+    </span>
+  `;
+}
+
+const DATABASE_ICON = '<svg class="db-icon" viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="3.5" rx="5.5" ry="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+const FILE_ICON = '<svg class="db-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5l3.5 3.5v9.5h-8.5z M9 1.5v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+
+// --- chain pill and its detail section -------------------------------------
+
+function renderDataSourcePill(workflow, entry, selectedSourceKey) {
+  const source = modelDataSource(workflow, entry);
+  if (!source) {
+    return "";
+  }
+  const key = entry.key;
+  const isOpen = selectedSourceKey === key;
+  const catalog = source.catalog || {};
+  const site = catalog.site || workflowSiteId(workflow);
+  let tone = "";
+  let icon = FILE_ICON;
+  let title = "";
+  let lines = [];
+  if (source.kind === "db") {
+    icon = DATABASE_ICON;
+    title = "STOR-HY database";
+    const channels = source.runtime.length > 0
+      ? source.runtime.filter((input) => String(input.source).toLowerCase() === "db").map((input) => input.dataset || input.variable)
+      : catalog.channels.map((channel) => `${site}.${channel.channel}`);
+    lines = channels.map((channel) => (String(channel).includes(".") ? String(channel) : `${site}.${channel}`));
+    const window = source.runtime[0] ? dateRange(source.runtime[0].from, source.runtime[0].to) : catalog.window ? dateRange(catalog.window.from, catalog.window.to) : "";
+    if (window) {
+      lines.push(window);
+    }
+  } else if (source.kind === "fallback") {
+    tone = " warn";
+    title = "bundled file";
+    lines = ["database not configured", ...source.runtime.map((input) => String(input.dataset || catalog.fallback || "").split("/").pop()).filter(Boolean)];
+  } else if (source.kind === "s3") {
+    title = "bucket";
+    lines = [String(source.runtime[0]?.dataset || catalog.path || "").replace(/^s3:\/\//, "")];
+  } else {
+    title = "file";
+    lines = [String(source.runtime[0]?.dataset || catalog.path || "").split("/").pop()];
+  }
+  return `
+    <button
+      type="button"
+      class="dw-source${tone}${isOpen ? " selected" : ""}"
+      data-chain-source="${escapeHTML(key)}"
+      aria-expanded="${isOpen ? "true" : "false"}"
+    >
+      <span class="dw-source-title">${icon}${escapeHTML(title)}</span>
+      ${lines.filter(Boolean).map((line) => `<span class="dw-source-line">${escapeHTML(line)}</span>`).join("")}
+    </button>
+    <span class="dw-arrow" title="time-series input">&rarr;</span>
+  `;
+}
+
+function renderDataSourceDetails(workflow) {
+  const key = state.openSourceKey;
+  const entry = key ? workflowFmus(workflow).find((item) => item.key === key) : null;
+  const source = entry ? modelDataSource(workflow, entry) : null;
+  if (!source) {
+    return "";
+  }
+  const catalog = source.catalog || {};
+  const site = catalog.site || workflowSiteId(workflow);
+  const rows = source.runtime.length > 0
+    ? source.runtime.map((input) => ({
+      variable: input.variable,
+      source: input.source,
+      channel: String(input.dataset || "").split(".").pop(),
+      dataset: input.dataset,
+      window: dateRange(input.from, input.to),
+      rows: input.rows,
+    }))
+    : (catalog.channels.length > 0 ? catalog.channels : [{ variable: "", channel: "" }]).map((channel) => ({
+      variable: channel.variable,
+      source: catalog.kind,
+      channel: channel.channel,
+      dataset: catalog.kind === "db" ? `${site}.${channel.channel}` : catalog.path,
+      window: catalog.window ? dateRange(catalog.window.from, catalog.window.to) : "",
+      rows: undefined,
+    }));
+  return `
+    <div class="dw-source-details">
+      <div class="dw-source-details-head">
+        <strong>Data feeding ${escapeHTML(fmuBaseName(entry.fmu))}</strong>
+        <span class="workflow-model-muted">${escapeHTML(source.runtime.length > 0 ? "from the latest run" : "from the workflow definition")}</span>
+      </div>
+      <table class="dw-source-table">
+        <thead><tr><th>Input</th><th>Source</th><th>Window</th><th>Rows</th><th>Unit</th><th>Cadence</th><th>Points in DB</th><th>Batch</th><th>Ingested</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => {
+            const info = row.channel ? siteChannelInfo(site, row.channel) : null;
+            return `
+              <tr>
+                <td><code>${escapeHTML(row.variable || "n/a")}</code></td>
+                <td>${escapeHTML(dataSourceText(row.source, row.dataset))}</td>
+                <td>${escapeHTML(row.window || (info ? dateRange(info.from, info.to) : "") || "n/a")}</td>
+                <td>${row.rows !== undefined && row.rows !== null ? escapeHTML(formatMetric(row.rows)) : "n/a"}</td>
+                <td>${escapeHTML(info?.unit || "n/a")}</td>
+                <td>${info?.samplingIntervalS ? escapeHTML(formatSimDuration(info.samplingIntervalS)) : "n/a"}</td>
+                <td>${info?.points !== undefined ? escapeHTML(formatMetric(info.points)) : "n/a"}</td>
+                <td>${escapeHTML(info?.batch || "n/a")}</td>
+                <td>${escapeHTML(shortDate(info?.ingestedAt) || "n/a")}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function dataSourceText(source, dataset) {
+  switch (String(source || "").toLowerCase()) {
+    case "db":
+      return `db ${dataset || ""}`.trim();
+    case "db-fallback-csv":
+      return `bundled file ${String(dataset || "").split("/").pop()} (database not configured)`.trim();
+    case "s3":
+      return `bucket ${dataset || ""}`.trim();
+    default:
+      return `file ${String(dataset || "").split("/").pop()}`.trim();
+  }
+}
+
+// Model card: one line per time-series input with its source.
+function modelDataInputLines(workflow, entry) {
+  const source = modelDataSource(workflow, entry);
+  if (!source) {
+    return [];
+  }
+  if (source.runtime.length > 0) {
+    return source.runtime.map((input) => {
+      const window = dateRange(input.from, input.to);
+      const rows = input.rows !== undefined && input.rows !== null ? `${formatMetric(input.rows)} rows` : "";
+      return `${input.variable || "input"}: ${[dataSourceText(input.source, input.dataset), [window, rows].filter(Boolean).join(", ")].filter(Boolean).join(" ")}`;
+    });
+  }
+  const catalog = source.catalog;
+  if (catalog.kind === "db") {
+    const window = catalog.window ? ` ${dateRange(catalog.window.from, catalog.window.to)}` : "";
+    const site = catalog.site || workflowSiteId(workflow);
+    return catalog.channels.map((channel) => `${channel.variable}: db ${site}.${channel.channel}${window}${catalog.fallback ? ` (fallback ${String(catalog.fallback).split("/").pop()})` : ""}`);
+  }
+  return [`${catalog.kind === "s3" ? "bucket" : "file"} ${catalog.path}`];
+}
+
+// --- results: where they were collected from and the database sink ---------
+
+function renderCollectedFromBadge(payload) {
+  const from = String(payload?.collectedFrom || "").toLowerCase();
+  if (!from) {
+    return "";
+  }
+  const isDatabase = from === "database";
+  return `<span class="collected-badge${isDatabase ? " database" : ""}" title="${escapeHTML(`collected from ${payload.collectedFrom}`)}">${isDatabase ? `${DATABASE_ICON}results from database` : "results from pod logs"}</span>`;
+}
+
+function resultsSinkText(sink) {
+  if (!sink || typeof sink !== "object") {
+    return "";
+  }
+  if (String(sink.status).toLowerCase() === "written") {
+    const outputs = Array.isArray(sink.outputs) ? sink.outputs.length : Number(sink.outputs);
+    return [
+      `written to ${sink.site || "database"}${sink.run_id ? ` as ${sink.run_id}` : ""}`,
+      Number.isFinite(outputs) ? `${formatMetric(outputs)} outputs` : "",
+      sink.series_points !== undefined ? `${formatMetric(sink.series_points)} series points` : "",
+    ].filter(Boolean).join(" | ");
+  }
+  return `not written${sink.error ? `: ${sink.error}` : ""}`;
+}
+
 function renderDemoScopeNote() {
   if (!Array.isArray(state.modelMatrix?.demo_scope?.sites)) {
     return "";
@@ -1123,8 +1459,10 @@ function renderCouplingLegend() {
     ["one-way", "final values handed to the next step"],
   ];
   return `
-    <div class="coupling-legend" aria-label="FMU coupling legend">
+    <div class="coupling-legend" aria-label="FMU coupling and data source legend">
       ${items.map(([badge, text]) => `<span>${renderCouplingBadges([badge])} ${escapeHTML(text)}</span>`).join("")}
+      <span><span class="legend-source">${DATABASE_ICON}database</span> measured series from the STOR-HY database</span>
+      <span><span class="legend-source warn">${FILE_ICON}bundled file</span> CSV shipped in the image (used when the database is not configured)</span>
     </div>
   `;
 }
@@ -1413,9 +1751,7 @@ function renderModelEntryDetails(workflow, entry) {
       return source && input.name ? `${source} -> ${input.name}` : input.name || source;
     })
     .filter(Boolean);
-  if (entry.inputSeries) {
-    inputs.push(entry.inputSeries);
-  }
+  const dataInputs = modelDataInputLines(workflow, entry);
   const parameters = Array.isArray(entry.parameters)
     ? entry.parameters
     : entry.parameters && typeof entry.parameters === "object"
@@ -1445,9 +1781,10 @@ function renderModelEntryDetails(workflow, entry) {
         ` : '<span class="details-caption">FMI version, step size and checksum: run the workflow to see</span>'}
       </div>
       <div class="details-model-io">
-        <div class="details-block">
+        <div class="details-block${dataInputs.length > 0 ? " details-block-wide" : ""}">
           <span class="details-label">Inputs</span>
-          <div class="workflow-model-chip-row">${renderWorkflowChips(inputs, 8)}</div>
+          ${inputs.length > 0 || dataInputs.length === 0 ? `<div class="workflow-model-chip-row">${renderWorkflowChips(inputs, 8)}</div>` : ""}
+          ${dataInputs.length > 0 ? `<ul class="input-source-list">${dataInputs.map((line) => `<li>${escapeHTML(line)}</li>`).join("")}</ul>` : ""}
         </div>
         <div class="details-block">
           <span class="details-label">Outputs</span>
@@ -2000,6 +2337,7 @@ function renderStorhyMockResult(container, workflow) {
     <div class="result-head">
       <h3>${escapeHTML(payload.runName || result.runName)}</h3>
       <div class="result-head-actions">
+        ${renderCollectedFromBadge(payload)}
         ${renderResultExportButtons(payload)}
         <span class="result-kind-pill result-kind-storhy">STOR-HY Mock</span>
       </div>
@@ -2632,6 +2970,7 @@ function renderGenericWorkflowResult(container, workflow) {
       <div class="result-head">
         <h3>${escapeHTML(payload.runName || result.runName)}</h3>
         <div class="result-head-actions">
+          ${renderCollectedFromBadge(payload)}
           ${renderResultExportButtons(payload)}
           <span class="result-kind-pill result-kind-trace">Structured Result</span>
         </div>
@@ -4476,6 +4815,18 @@ function renderRunInfoDetails(run, payload) {
       <span>Timing</span>
       <strong>${escapeHTML(`${formatWallSeconds(info.wall_seconds)} wall | ${formatSimDuration(info.simulated_seconds)} simulated | ${formatRatio(info.ratio)}`)}</strong>
     </div>
+    ${info.results_sink ? `
+      <div class="run-detail-line">
+        <span>Results database</span>
+        <strong class="sink-${String(info.results_sink.status).toLowerCase() === "written" ? "ok" : "failed"}">${escapeHTML(resultsSinkText(info.results_sink))}</strong>
+      </div>
+    ` : ""}
+    ${payload?.collectedFrom ? `
+      <div class="run-detail-line">
+        <span>Results collected from</span>
+        <strong>${escapeHTML(payload.collectedFrom === "argo logs" ? "pod logs" : payload.collectedFrom)}</strong>
+      </div>
+    ` : ""}
     ${info.started_at || info.finished_at ? `
       <div class="run-detail-line">
         <span>Runner window</span>

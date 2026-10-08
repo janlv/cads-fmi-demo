@@ -6,7 +6,9 @@ metadata:
   description: >-
     Jacobi (parallel lock-step) co-simulation of three FMI 3.0 FMUs with a one-way coupling graph:
     a runner duty-cycle model feeds load to an IoT vibration indicator model and stress to a
-    Miner-rule RUL model, which also reads the condition indicator. The IoT model sub-steps at
+    Miner-rule RUL model, which also reads the condition indicator. The IoT model filters the
+    measured vibration channel vibration_rms_mm_s, read from the Cheylas schema of the STOR-HY
+    database (the bundled measurement file when no database is configured), and sub-steps at
     5 minutes inside the 15-minute communication step. A degradation-cost model then weighs
     the consumed runner life against the value of the generated energy. Deterministic placeholder
     models, not validated physics.
@@ -26,6 +28,12 @@ steps:
           start_values: {flow_demand_pu: 0.75}
         - name: iot
           fmu: fmu/models/IoTIndicatorFmi3.fmu
+          input_series:
+            db:
+              site: cheylas
+              channels: {vibration_rms_measured_mm_s: vibration_rms_mm_s}
+              window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
+              fallback: {csv: data/storhy/cheylas/measurements/vibration_rms_mm_s.csv}
         - name: rul
           fmu: fmu/models/RulFmi3.fmu
           start_values: {initial_damage: 0.35}

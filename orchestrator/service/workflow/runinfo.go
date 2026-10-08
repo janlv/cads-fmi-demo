@@ -60,6 +60,8 @@ type RunInfo struct {
 type WorkflowInfo struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
+	// Site is the workflow's metadata.site_id (also the results-sink database schema).
+	Site string `json:"site,omitempty"`
 }
 
 // StepInfo records one step's outcome, timing and participating FMUs.
@@ -86,25 +88,32 @@ type FMUDescriptor struct {
 	// Path is repo-relative with forward slashes.
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
+	// Inputs records the datasets that fed this FMU's input series (ARCH-COMP-018).
+	Inputs []InputDataset `json:"inputs"`
 	fmi.FMUInfo
 }
 
 // MarshalJSON flattens the embedded FMUInfo next to model/path/sha256.
 func (d FMUDescriptor) MarshalJSON() ([]byte, error) {
 	type flat struct {
-		Model             string   `json:"model"`
-		Path              string   `json:"path"`
-		SHA256            string   `json:"sha256"`
-		FMIVersion        string   `json:"fmi_version"`
-		ModelName         string   `json:"model_name"`
-		ModelVersion      string   `json:"model_version"`
-		GUID              string   `json:"guid"`
-		GenerationTool    string   `json:"generation_tool"`
-		DeclaredStep      *float64 `json:"declared_step"`
-		StepUsed          float64  `json:"step_used"`
-		DoStepCalls       int64    `json:"do_step_calls"`
-		ClippedSubsteps   int64    `json:"clipped_substeps"`
-		DoStepWallSeconds float64  `json:"do_step_wall_seconds"`
+		Model             string         `json:"model"`
+		Path              string         `json:"path"`
+		SHA256            string         `json:"sha256"`
+		FMIVersion        string         `json:"fmi_version"`
+		ModelName         string         `json:"model_name"`
+		ModelVersion      string         `json:"model_version"`
+		GUID              string         `json:"guid"`
+		GenerationTool    string         `json:"generation_tool"`
+		DeclaredStep      *float64       `json:"declared_step"`
+		StepUsed          float64        `json:"step_used"`
+		DoStepCalls       int64          `json:"do_step_calls"`
+		ClippedSubsteps   int64          `json:"clipped_substeps"`
+		DoStepWallSeconds float64        `json:"do_step_wall_seconds"`
+		Inputs            []InputDataset `json:"inputs"`
+	}
+	inputs := d.Inputs
+	if inputs == nil {
+		inputs = []InputDataset{}
 	}
 	return json.Marshal(flat{
 		Model: d.Model, Path: d.Path, SHA256: d.SHA256,
@@ -112,6 +121,7 @@ func (d FMUDescriptor) MarshalJSON() ([]byte, error) {
 		GUID: d.GUID, GenerationTool: d.GenerationTool, DeclaredStep: d.DeclaredStep,
 		StepUsed: d.StepUsed, DoStepCalls: d.DoStepCalls, ClippedSubsteps: d.ClippedSubsteps,
 		DoStepWallSeconds: d.DoStepWallSeconds,
+		Inputs:            inputs,
 	})
 }
 
@@ -143,6 +153,10 @@ func newRunRecorder(now func() time.Time, version string, root string) *runRecor
 func (r *runRecorder) setWorkflow(path string, data []byte) {
 	sum := sha256.Sum256(data)
 	r.info.Workflow = WorkflowInfo{Path: filepath.ToSlash(path), SHA256: hex.EncodeToString(sum[:])}
+}
+
+func (r *runRecorder) setSite(site string) {
+	r.info.Workflow.Site = site
 }
 
 // describeFMU builds the identity record for one FMU file; bridge statistics are merged later.

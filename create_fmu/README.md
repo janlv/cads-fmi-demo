@@ -48,9 +48,9 @@ One FMU per model family of the Task 3.3 matrix:
 | M10 | `EmsDispatchFmi3` | 900 | `soc_percent` | `power_setpoint_mw`, `price_eur_mwh`, `mode`, `revenue_eur` |
 | M9 | `BatteryDegradationFmi3` | 300 | `power_setpoint_mw`, `ambient_temp_c` | `soc_percent`, `soh_percent`, `rul_days`, `cycle_count`, `power_actual_mw`, `cell_temp_c` |
 | M1 | `RunnerStressFmi3` | 900 | `flow_demand_pu` | `load_pu`, `operating_mode`, `stress_amplitude_mpa`, `start_stop_count`, `energy_mwh` |
-| M7 | `IoTIndicatorFmi3` | 300 | `load_pu` | `vibration_rms_mm_s`, `condition_indicator` |
+| M7 | `IoTIndicatorFmi3` | 300 | `load_pu`, `vibration_rms_measured_mm_s` | `vibration_rms_mm_s`, `condition_indicator` |
 | M8 | `RulFmi3` | 900 | `stress_amplitude_mpa`, `condition_indicator` | `damage_index`, `rul_days`, `damage_rate_per_day`, `status_code` |
-| M5 | `SedimentExposureFmi3` | 300 | `cleaning_trigger` (Boolean) | `head_m`, `sediment_concentration_g_l`, `sediment_exposure`, `cleaning_count`, `cumulative_cleaning_cost_eur`, `downtime_h`, `hours_since_cleaning` |
+| M5 | `SedimentExposureFmi3` | 300 | `cleaning_trigger` (Boolean), `measured_concentration_g_l` | `head_m`, `sediment_concentration_g_l`, `sediment_exposure`, `cleaning_count`, `cumulative_cleaning_cost_eur`, `downtime_h`, `hours_since_cleaning` |
 | M14 | `DegradationCostFmi3` | 900 | `rul_days`, `damage_rate_per_day`, `soh_percent`, `revenue_eur`, `energy_mwh` | `degradation_cost_eur`, `degradation_cost_rate_eur_per_day`, `gross_revenue_eur`, `net_benefit_eur`, `benefit_cost_ratio`, `status_code`, `recommendation_code` |
 
 `CleaningDecisionFmi3` was retired; its cleaning accounting (minimum interval,
@@ -82,6 +82,17 @@ Acceleration and simplifications worth knowing before quoting numbers:
   exposure to `post_cleaning_exposure` at most once per
   `min_cleaning_interval_h` and adds `cleaning_cost_eur` and
   `downtime_per_cleaning_h`.
+- `IoTIndicatorFmi3.vibration_rms_measured_mm_s` and
+  `SedimentExposureFmi3.measured_concentration_g_l` (start 0) are the measured
+  channels. When the input is above 0 it replaces the synthetic raw vibration
+  or the profile concentration; the EWMA, indicator, exposure and cleaning
+  logic stay the same, and `load_pu` stays as operating context (it still
+  drives the wear drift, which is only used on the synthetic path). The
+  Cheylas workflows feed these inputs from the STOR-HY database through
+  `input_series.db`, or from the bundled CSVs under
+  `data/storhy/cheylas/measurements/` when no database is configured (see
+  `docs/workflows.md`, "Measurement Data And Ingestion"). With both inputs at
+  0 the models behave exactly as before.
 - `DegradationCostFmi3` charges `asset_value_eur` times the consumed life:
   `damage_rate_per_day * dt / 86400` plus any capacity fade
   `(100 - soh_percent) / 100` not yet charged (relative to a new asset). Gross
@@ -91,8 +102,11 @@ Acceleration and simplifications worth knowing before quoting numbers:
   cycling) when `benefit_cost_ratio < 1`, else 0. `planning_horizon_days` is
   informative only. Because the battery fade is time-compressed, the Alqueva
   cost is deliberately exaggerated.
-- Prices, tides, operating schedules and vibration "noise" are synthetic
-  deterministic functions of time, so every run is reproducible.
+- Prices, tides, operating schedules and the synthetic vibration "noise" are
+  deterministic functions of time, so every run is reproducible. The
+  "measured" Cheylas channels are synthetic too: they come from
+  `scripts/dev/generate_synthetic_measurements.py` (fixed seed), not from
+  the plant.
 
 Layout:
 

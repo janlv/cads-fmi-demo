@@ -245,6 +245,12 @@ def runner_step(v, t, dt):
 # ---------------------------------------------------------------------------
 
 def _iot_raw_vibration(v, t):
+    # A positive measured value (fed by the runtime from the STOR-HY database
+    # or its bundled fallback CSV) replaces the synthetic raw signal; the EWMA
+    # and indicator mapping below are the same for both.
+    measured = float(v["vibration_rms_measured_mm_s"])
+    if measured > 0.0:
+        return measured
     load = clamp(v["load_pu"], 0.0, 1.5)
     # Deterministic "noise": incommensurate sines instead of a random generator.
     ripple = 0.12 * math.sin(t / 731.0) + 0.07 * math.sin(t / 197.0 + 1.3)
@@ -345,6 +351,16 @@ CYCLING_HEAD_SWING_M = 6.0
 
 
 def _sediment_hydraulics(v, t):
+    head, conc = _sediment_profile(v, t)
+    # A positive measured concentration (turbidity fed by the runtime from the
+    # STOR-HY database or its fallback CSV) replaces the profile value.
+    measured = float(v["measured_concentration_g_l"])
+    if measured > 0.0:
+        conc = measured
+    return head, conc
+
+
+def _sediment_profile(v, t):
     if int(v["profile_mode"]) == SEDIMENT_PROFILE_CYCLING:
         hour = float(t) / HOUR_S
         cycles = max(float(v["cycles_per_day"]), 0.0)
@@ -554,7 +570,8 @@ MODEL_SPECS = {
     },
     "IoTIndicatorFmi3": {
         "step_size": 300.0,
-        "description": "Cheylas IoT: EWMA vibration RMS and normalised condition indicator. " + PLACEHOLDER_NOTE,
+        "description": "Cheylas IoT: EWMA vibration RMS and normalised condition indicator, from a measured "
+        "vibration input when supplied, else a synthetic load-driven signal. " + PLACEHOLDER_NOTE,
         "parameters": {
             "baseline_vibration_mm_s": (FLOAT64, 1.4, "Vibration at standstill, healthy [mm/s]"),
             "load_vibration_gain_mm_s": (FLOAT64, 1.6, "Vibration added per pu load [mm/s]"),
@@ -566,6 +583,11 @@ MODEL_SPECS = {
         },
         "inputs": {
             "load_pu": (FLOAT64, 0.0, "Unit load from the runner model [pu]"),
+            "vibration_rms_measured_mm_s": (
+                FLOAT64,
+                0.0,
+                "Measured raw vibration RMS; when > 0 it replaces the synthetic raw signal [mm/s]",
+            ),
         },
         "outputs": {
             "vibration_rms_mm_s": (FLOAT64, 0.0, "Filtered vibration RMS [mm/s]"),
@@ -609,7 +631,8 @@ MODEL_SPECS = {
     "SedimentExposureFmi3": {
         "step_size": 300.0,
         "description": "Sediment exposure (La Rance tidal or Cheylas cycling profile) with cleaning accounting: "
-        "a cleaning trigger resets exposure and adds cost and downtime. " + PLACEHOLDER_NOTE,
+        "a cleaning trigger resets exposure and adds cost and downtime; a measured concentration input, when "
+        "supplied, replaces the profile concentration. " + PLACEHOLDER_NOTE,
         "parameters": {
             "profile_mode": (INT32, 0, "0 tidal (La Rance), 1 pump/turbine cycling and dewatering (Cheylas)"),
             "cycles_per_day": (FLOAT64, 8.0, "Operating cycles per day in cycling mode [1/d]"),
@@ -627,6 +650,11 @@ MODEL_SPECS = {
         },
         "inputs": {
             "cleaning_trigger": (BOOLEAN, False, "Cleaning request, e.g. pulsed by a master event [-]"),
+            "measured_concentration_g_l": (
+                FLOAT64,
+                0.0,
+                "Measured suspended sediment (turbidity); when > 0 it replaces the profile concentration [g/L]",
+            ),
         },
         "outputs": {
             "head_m": (FLOAT64, 0.0, "Hydraulic head [m]"),

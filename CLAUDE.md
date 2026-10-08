@@ -157,6 +157,14 @@ Kaizen/Argo credentials (`ARGO_TOKEN`, or a bearer token extracted from
 credentials (`GHCR_TOKEN`/`GITHUB_TOKEN`/`gh auth`) are needed only when
 publishing a new image. Hosted manifests project the playground S3 secret into
 `AWS_*`/`S3_*` env vars so `input_series.s3` works without per-run edits.
+`CADS_DB_URL` (PostgreSQL/TimescaleDB) enables `input_series.db` and the
+results sink; hosted manifests take it from the optional secret
+`storhy-cads-db` and set `CADS_RUN_ID` to the Argo workflow name. Locally,
+`scripts/commands/run_db.sh` starts a TimescaleDB container and ingests the
+bundled measurement batches under `data/storhy/<site>/measurements/`. The
+`cadsdb` package (`internal/cadsdb`) and the ingestion script must keep the
+same per-site schema (`channels`, `measurements`, `runs`, `run_outputs`,
+`run_series`).
 
 ## Conventions
 

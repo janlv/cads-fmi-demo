@@ -21,6 +21,10 @@ data/storhy/*
 !data/storhy/synthetic/
 data/storhy/synthetic/*
 !data/storhy/synthetic/*.yaml
+# Measurement batches (synthetic placeholders) and their fallback series are source.
+!data/storhy/*/
+data/storhy/*/*
+!data/storhy/*/measurements/
 
 # Local tooling
 .DS_Store

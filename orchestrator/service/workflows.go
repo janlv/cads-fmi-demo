@@ -175,6 +175,10 @@ type workflowCatalogInputSeries struct {
 		Bucket string `yaml:"bucket"`
 		Key    string `yaml:"key"`
 	} `yaml:"s3"`
+	DB *struct {
+		Site     string            `yaml:"site"`
+		Channels map[string]string `yaml:"channels"`
+	} `yaml:"db"`
 }
 
 // ListWorkflows returns the launchable workflows from the repository.
@@ -487,7 +491,22 @@ func workflowInputSeriesLabel(series *workflowCatalogInputSeries) string {
 		}
 		return key
 	}
+	if series.DB != nil && strings.TrimSpace(series.DB.Site) != "" {
+		channels := make([]string, 0, len(series.DB.Channels))
+		for _, variable := range sortedMapKeys(toAnyMap(series.DB.Channels)) {
+			channels = append(channels, strings.TrimSpace(series.DB.Channels[variable]))
+		}
+		return "db:" + strings.TrimSpace(series.DB.Site) + ".measurements/" + strings.Join(channels, ",")
+	}
 	return ""
+}
+
+func toAnyMap(values map[string]string) map[string]any {
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func sortedMapKeys(values map[string]any) []string {

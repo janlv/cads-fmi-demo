@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	svc "github.com/norceresearch/cads-fmi-demo/orchestrator/service"
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/cadsdb"
 )
 
 func main() {
@@ -23,6 +26,7 @@ func main() {
 	var kubeconfig string
 	var maxRuntimeSeconds int64
 	var showVersion bool
+	var dbURL string
 
 	flag.StringVar(&workflow, "workflow", "", "Run the workflow once and exit")
 	flag.BoolVar(&serve, "serve", false, "Start the HTTP service")
@@ -34,6 +38,7 @@ func main() {
 	flag.StringVar(&remoteImage, "remote-image", "", "Hosted workflow image (default CADS_WORKFLOW_IMAGE or ghcr.io/janlv/cads-fmi-demo:playground)")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Optional kubeconfig used when ARGO_TOKEN is not set")
 	flag.Int64Var(&maxRuntimeSeconds, "max-runtime-seconds", 0, "Default hosted run deadline in seconds when a workflow sets no limits.max_runtime_seconds (default CADS_MAX_RUNTIME_SECONDS or 900; capped by CADS_MAX_RUNTIME_CEILING_SECONDS, default 3600)")
+	flag.StringVar(&dbURL, "db-url", "", "CADS database URL for input data status and stored run results (default CADS_DB_URL)")
 	flag.BoolVar(&showVersion, "version", false, "Print the service version and exit")
 	flag.Parse()
 
@@ -77,6 +82,22 @@ func main() {
 		server := &svc.Server{
 			Runner: runner,
 			Remote: remote,
+		}
+		if dbURL == "" {
+			dbURL = cadsdb.URLFromEnv()
+		}
+		if dbURL != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			store, err := cadsdb.Open(ctx, dbURL)
+			cancel()
+			if err != nil {
+				log.Printf("[service] CADS database unavailable, continuing without it: %v", err)
+			} else {
+				defer store.Close()
+				server.Data = store
+				remote.SetRunStore(store)
+				fmt.Println("[service] CADS database configured")
+			}
 		}
 		fmt.Printf("[service] listening on %s (workdir %s, version %s)\n", addr, runner.WorkDir, svc.ResolvedVersion())
 		log.Fatal(http.ListenAndServe(addr, server))

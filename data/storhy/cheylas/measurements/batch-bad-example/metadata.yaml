@@ -1,0 +1,9 @@
+site: cheylas
+batch: bad-example-missing-unit
+source: NORCE AE/vibration edge box (synthetic placeholder)
+description: >-
+  Synthetic placeholder batch for the CADS demo; deterministic, not plant data.
+channels:
+  - channel: vibration_rms_mm_s
+    sampling_interval_s: 300
+    file: vibration_rms_mm_s.csv

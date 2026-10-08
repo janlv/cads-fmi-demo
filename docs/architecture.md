@@ -90,6 +90,38 @@ The repo also includes helper workflows and scripts for:
 These helpers exercise the same hosted-image pattern as the main CADS remote
 workflows.
 
+## Database-backed Data interface
+
+Measured data reaches models through the STOR-HY database, mirroring the D3.5
+data path (bucket, ingestion, per-demonstrator database partition, co-simulation,
+results back to the database):
+
+- **Ingestion.** `scripts/ingest_measurements.py` validates a measurement batch
+  (`metadata.yaml` with site, batch, source, and per-channel unit, sampling
+  interval and file; RFC3339 CSVs) and loads it into the per-site schema
+  `<site>.channels` / `<site>.measurements` (a TimescaleDB hypertable when the
+  extension exists). A batch that fails validation is rejected as a whole with
+  the reason logged (ARCH-DATA-001/004/007). `scripts/commands/run_db.sh`
+  starts a local TimescaleDB and ingests every bundled batch.
+- **Inputs.** A step or co-simulation model declares `input_series.db` (site,
+  FMU variable to channel map, time window, optional bundled fallback). With
+  `CADS_DB_URL` set the runner queries the window and feeds it to the FMU; the
+  provenance records `source: db` and the dataset. Without a database the
+  bundled fallback CSV is used and recorded as `db-fallback-csv`, which the
+  dashboard flags.
+- **Results.** After every run (also failed ones) the runner writes the run
+  record, scalar outputs and traces to `<site>.runs`, `run_outputs` and
+  `run_series` under the run id `CADS_RUN_ID` (the Argo workflow name on the
+  playground), and reports the outcome in `_run.results_sink`
+  (ARCH-COMP-007, ARCH-DATA-010). The dashboard reads results from the
+  database first and falls back to pod logs.
+- **Hosted runs** receive `CADS_DB_URL` from the Kubernetes secret
+  `storhy-cads-db` (key `url`, optional). Until that secret exists in the
+  playground, hosted runs use the bundled fallback and write nothing.
+
+Per-site schemas are the storage-side prerequisite for per-demonstrator
+authorisation (ARCH-DATA-006); role-based grants per schema are the next step.
+
 ## Main repo boundaries
 
 - `create_fmu/`: Python-side FMU generation only

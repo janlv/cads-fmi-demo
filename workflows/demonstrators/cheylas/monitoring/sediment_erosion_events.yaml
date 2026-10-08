@@ -4,8 +4,10 @@ metadata:
   category: monitoring
   result_family: storhy_mock
   description: >-
-    Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model on
-    a pump/turbine cycling and dewatering profile feeds its exposure to a Miner-rule RUL model
+    Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model
+    driven by the measured turbidity channel turbidity_g_l, read from the Cheylas schema of the
+    STOR-HY database (the bundled measurement file when no database is configured), on a
+    pump/turbine cycling and dewatering head profile feeds its exposure to a Miner-rule RUL model
     as the condition indicator. The master raises a high_exposure event when exposure exceeds 0.8
     and pulses the sediment model's own cleaning trigger for one 15-minute interval; the cleaning
     resets exposure and adds cost and downtime. Deterministic placeholder models, not validated
@@ -30,6 +32,12 @@ steps:
             initial_exposure: 0.3
             min_cleaning_interval_h: 4.0
             cleaning_cost_eur: 18000.0
+          input_series:
+            db:
+              site: cheylas
+              channels: {measured_concentration_g_l: turbidity_g_l}
+              window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
+              fallback: {csv: data/storhy/cheylas/measurements/turbidity_g_l.csv}
         - name: rul
           fmu: fmu/models/RulFmi3.fmu
           start_values: {stress_amplitude_mpa: 55.0, initial_damage: 0.3, demo_acceleration: 100.0}

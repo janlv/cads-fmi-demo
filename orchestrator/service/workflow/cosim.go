@@ -306,6 +306,8 @@ type resolvedCoSim struct {
 	Cleanup func()
 	// FMUPaths maps model name to the resolved absolute FMU path, for provenance.
 	FMUPaths map[string]string
+	// Inputs maps model name to its input dataset provenance.
+	Inputs map[string][]InputDataset
 }
 
 // buildCoSimConfig resolves FMU paths, start values (including start_from references into earlier
@@ -323,6 +325,7 @@ func (e *Executor) buildCoSimConfig(stepName string, spec *CoSimSpec, results ma
 			CommunicationStep: *spec.CommunicationStep,
 		},
 		FMUPaths: make(map[string]string, len(spec.Models)),
+		Inputs:   make(map[string][]InputDataset),
 	}
 	var cleanups []func()
 	resolved.Cleanup = func() {
@@ -358,6 +361,7 @@ func (e *Executor) buildCoSimConfig(stepName string, spec *CoSimSpec, results ma
 			if series != nil {
 				cfgModel.InputSeries = series.Config
 				cleanups = append(cleanups, series.Cleanup)
+				resolved.Inputs[model.Name] = series.Inputs
 			}
 		}
 		resolved.Config.Models = append(resolved.Config.Models, cfgModel)

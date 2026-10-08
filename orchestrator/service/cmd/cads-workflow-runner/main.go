@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,8 +10,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	svc "github.com/norceresearch/cads-fmi-demo/orchestrator/service"
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/cadsdb"
 	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/fmi"
 	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/workflow"
 )
@@ -68,6 +71,13 @@ func main() {
 
 	results, runErr := runner.Run(workflowPath)
 
+	// Results sink (ARCH-DATA-010): with CADS_DB_URL set, every finished run (also failed and
+	// cancelled ones) is written to <site>.runs/run_outputs/run_series before the JSON is
+	// printed, so `_run.results_sink` reports the outcome. Sink errors only go to stderr.
+	if url := cadsdb.URLFromEnv(); url != "" && results != nil {
+		writeResultsSink(url, results)
+	}
+
 	// The result map is printed even on failure: it carries completed steps plus the `_run`
 	// pseudo-step with status, failing step and provenance. stdout stays JSON-only in
 	// --json-output mode; diagnostics go to stderr.
@@ -91,4 +101,28 @@ func main() {
 		}
 		os.Exit(exitFailed)
 	}
+}
+
+const sinkTimeout = 90 * time.Second
+
+func writeResultsSink(url string, results map[string]map[string]any) {
+	ctx, cancel := context.WithTimeout(context.Background(), sinkTimeout)
+	defer cancel()
+	runID := svc.ResolveRunID(os.Getenv, time.Now())
+	var writer svc.RunWriter
+	store, err := cadsdb.Open(ctx, url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[workflow] results sink: %v\n", err)
+		if info := results["_run"]; info != nil {
+			info["results_sink"] = map[string]any{"status": svc.SinkFailed, "error": err.Error()}
+		}
+		return
+	}
+	defer store.Close()
+	writer = store
+	if err := svc.SinkResults(ctx, writer, runID, results); err != nil {
+		fmt.Fprintf(os.Stderr, "[workflow] results sink: %v\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[workflow] results sink: wrote run %s to site %s\n", runID, svc.RunSite(results))
 }
