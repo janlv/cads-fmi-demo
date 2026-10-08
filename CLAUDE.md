@@ -144,8 +144,10 @@ Workflows appear in the UI from their YAML `metadata` block (`display_name`,
 needs a matching `site_id` plus an entry in `web/static/cads-model-matrix.json`
 (`demo_workflows`: which models it uses; the file's slide ids are internal and
 never displayed); a new *demonstrator site* also needs an entry in the
-hardcoded `DEMONSTRATORS` array in `app.js` (labels, map coordinates, facts), a
-`sites` entry in that file, and inclusion in its `demo_scope.sites`.
+hardcoded `DEMONSTRATORS` array in `app.js` (labels, facts), a `sites` entry in
+that file (partners), and inclusion in its `demo_scope.sites`. The dashboard is
+one screen: workflow list with model chains on the left, selected workflow and
+model on the right, runs and results below; there is no map or site picker.
 
 ### Auth model
 
