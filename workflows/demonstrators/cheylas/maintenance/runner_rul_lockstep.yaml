@@ -5,9 +5,9 @@ metadata:
   result_family: storhy_mock
   description: >-
     Jacobi (parallel lock-step) co-simulation of three FMI 3.0 FMUs with a one-way coupling graph:
-    a runner duty-cycle model (M1) feeds load to an IoT vibration indicator (M7) and stress to a
-    Miner-rule RUL model (M8), which also reads the condition indicator. The IoT model sub-steps at
-    5 minutes inside the 15-minute communication step. A degradation-cost model (M14) then weighs
+    a runner duty-cycle model feeds load to an IoT vibration indicator model and stress to a
+    Miner-rule RUL model, which also reads the condition indicator. The IoT model sub-steps at
+    5 minutes inside the 15-minute communication step. A degradation-cost model then weighs
     the consumed runner life against the value of the generated energy. Deterministic placeholder
     models, not validated physics.
   tags: [cheylas, maintenance, rul, iot, degradation-cost, fmi3, cosim, jacobi, lock-step, one-way]

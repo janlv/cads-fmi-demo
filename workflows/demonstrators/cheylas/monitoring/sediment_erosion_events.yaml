@@ -4,8 +4,8 @@ metadata:
   category: monitoring
   result_family: storhy_mock
   description: >-
-    Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model (M5) on
-    a pump/turbine cycling and dewatering profile feeds its exposure to a Miner-rule RUL model (M8)
+    Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model on
+    a pump/turbine cycling and dewatering profile feeds its exposure to a Miner-rule RUL model
     as the condition indicator. The master raises a high_exposure event when exposure exceeds 0.8
     and pulses the sediment model's own cleaning trigger for one 15-minute interval; the cleaning
     resets exposure and adds cost and downtime. Deterministic placeholder models, not validated

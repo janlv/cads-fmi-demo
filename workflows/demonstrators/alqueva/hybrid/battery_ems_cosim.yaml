@@ -4,9 +4,9 @@ metadata:
   category: hybrid
   result_family: storhy_mock
   description: >-
-    Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS (M10) and a BESS degradation model
-    (M9), both FMI 3.0 FMUs exchanging state of charge and power set-point every 15 minutes; the
-    battery sub-steps at its own 5-minute step. A degradation-cost model (M14) then weighs the
+    Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS model and a BESS degradation model,
+    both FMI 3.0 FMUs exchanging state of charge and power set-point every 15 minutes; the
+    battery sub-steps at its own 5-minute step. A degradation-cost model then weighs the
     battery capacity fade against the arbitrage revenue. Deterministic placeholder models, not
     validated physics.
   tags: [alqueva, hybrid, bess, ems, degradation-cost, fmi3, cosim, gauss-seidel, ping-pong]
