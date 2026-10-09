@@ -451,3 +451,49 @@ steps:
 		t.Fatalf("broken = %+v, want problems instead of a listing failure", broken)
 	}
 }
+
+func TestSubmitSiteRunsLaunchesEveryWorkflowOfTheSite(t *testing.T) {
+	root := writeDashboardRepoFixture(t)
+	write := func(rel, siteID string) {
+		t.Helper()
+		path := filepath.Join(root, "workflows", "demonstrators", rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		doc := "metadata:\n  display_name: " + rel + "\n  site_id: " + siteID + "\nsteps:\n  - name: s\n    fmu: fmu/models/Rul.fmu\n"
+		if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	write("cheylas/a/one.yaml", "cheylas")
+	write("cheylas/b/two.yaml", "cheylas")
+	write("alqueva/c/three.yaml", "alqueva")
+
+	remote := &fakeRemoteClient{config: DashboardConfig{RemoteEnabled: true}}
+	server := &Server{Runner: &Runner{WorkDir: root}, Remote: remote}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sites/cheylas/runs", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var resp siteRunsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Site != "cheylas" || len(resp.Runs) != 2 || len(resp.Errors) != 0 {
+		t.Fatalf("response = %+v", resp)
+	}
+	if len(remote.submitted) != 2 ||
+		remote.submitted[0] != "workflows/demonstrators/cheylas/a/one.yaml" ||
+		remote.submitted[1] != "workflows/demonstrators/cheylas/b/two.yaml" {
+		t.Fatalf("submitted = %v", remote.submitted)
+	}
+
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/sites/nowhere/runs", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown site status = %d", rec.Code)
+	}
+}

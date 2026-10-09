@@ -11,6 +11,8 @@ const state = {
   siteData: new Map(),
   // Chain data-source pill whose detail section is open (a model entry key).
   openSourceKey: "",
+  // Site assessment submissions per site id: {pending, errors[], submitted}.
+  siteAssessments: {},
   selectedRunName: "",
   runsRailCollapsed: false,
   modelMatrix: null,
@@ -934,10 +936,260 @@ function renderWorkflowTabs() {
   bindTabRowKeys(container, "data-workflow-tab", (path) => selectWorkflow(path));
 }
 
+// ---------------------------------------------------------------------------
+// Operator view: what comes in, the site assessment, the resulting condition,
+// status and recommendation for the active site tab (matrix sites[].operator_view).
+// ---------------------------------------------------------------------------
+
+function operatorViewSpec(siteId) {
+  const view = matrixSiteEntry(siteId)?.operator_view;
+  return view && typeof view === "object" ? view : null;
+}
+
+function latestSuccessfulRun(workflowPath) {
+  return state.runs.find((run) => run.workflowPath === workflowPath && String(run.phase || "").toLowerCase() === "succeeded") || null;
+}
+
+// Payload of the latest successful run of a workflow; starts loading it if needed.
+function latestSuccessfulPayload(workflowPath) {
+  const run = latestSuccessfulRun(workflowPath);
+  if (!run) {
+    return { run: null, payload: null };
+  }
+  const cached = cachedRunResults(run.name);
+  if (cached?.state === "ready") {
+    return { run, payload: cached.payload };
+  }
+  ensureRunResultsLoaded(run);
+  return { run, payload: null, loading: true };
+}
+
+function operatorMetric(spec) {
+  const { run, payload, loading } = latestSuccessfulPayload(spec.workflow);
+  if (!payload) {
+    return { run, loading: Boolean(loading), value: undefined };
+  }
+  return { run, value: findStorhyMetricValue(modelStepEntriesOf(payload), spec.key, spec.step || "")?.value };
+}
+
+function workflowShortName(workflowPath) {
+  const workflow = workflowByPath(workflowPath);
+  return workflow ? workflowTabLabel(workflow) : String(workflowPath || "").split("/").pop();
+}
+
+function formatIndicator(value, unit) {
+  const numeric = Number(value);
+  if (value === undefined || value === null || !Number.isFinite(numeric)) {
+    return value === undefined || value === null ? "—" : String(value);
+  }
+  // Tiles show a readable precision: whole numbers from 100, two decimals below 10.
+  const digits = Math.abs(numeric) >= 100 ? 0 : Math.abs(numeric) >= 10 ? 1 : 2;
+  const text = numeric.toLocaleString("en-US", { maximumFractionDigits: digits });
+  if (!unit || unit === "index" || unit === "0-1" || unit === "count") {
+    return text;
+  }
+  return unit === "%" ? `${text}%` : `${text} ${unit}`;
+}
+
+function renderOperatorDataLines(siteId, view) {
+  const items = Array.isArray(view.data) ? view.data : [];
+  if (items.length === 0) {
+    return '<span class="workflow-model-muted">no data sources described</span>';
+  }
+  ensureSiteData(siteId);
+  const data = siteDataState(siteId);
+  const channels = data?.state === "ready" && Array.isArray(data.payload?.channels) ? data.payload.channels : [];
+  return items.map((item) => {
+    if (item.status) {
+      return `
+        <div class="op-data-line pending" title="${escapeHTML(item.note || "")}">
+          <strong>${escapeHTML(item.label)}</strong> · ${escapeHTML(item.status)}
+          ${item.note ? `<span class="op-data-note">${escapeHTML(item.note)}</span>` : ""}
+        </div>
+      `;
+    }
+    let text = "";
+    let tone = "";
+    if (!data || data.state === "loading") {
+      text = "checking the database…";
+      tone = " muted";
+    } else if (data.state === "error") {
+      text = "database status unavailable";
+      tone = " muted";
+    } else if (data.payload?.configured === false) {
+      text = "database not configured";
+      tone = " pending";
+    } else {
+      const wanted = Array.isArray(item.channels) && item.channels.length > 0 ? item.channels : channels.map((channel) => channel.channel);
+      const present = channels.filter((channel) => wanted.includes(channel.channel));
+      if (present.length === 0) {
+        text = "no data ingested";
+        tone = " pending";
+      } else {
+        const batches = [...new Set(present.map((channel) => channel.batch).filter(Boolean))];
+        const ingested = present.map((channel) => shortDate(channel.ingestedAt)).filter(Boolean).sort().pop();
+        text = [batches.join(", "), `${present.length} channel${present.length === 1 ? "" : "s"}`, ingested ? `ingested ${ingested}` : ""].filter(Boolean).join(" · ");
+      }
+    }
+    const title = (Array.isArray(item.channels) ? item.channels : []).join(", ");
+    return `
+      <div class="op-data-line${tone}" title="${escapeHTML(title)}">
+        ${DATABASE_ICON}<strong>${escapeHTML(item.label)}</strong> · ${escapeHTML(text)}
+      </div>
+    `;
+  }).join("");
+}
+
+function siteAssessmentSummary(siteId) {
+  const workflows = workflowsForSiteTab(siteId);
+  const latest = workflows.map((workflow) => latestRunFor([workflow.path])).filter(Boolean);
+  if (latest.length === 0) {
+    return "no assessment run yet";
+  }
+  const newest = latest.map((run) => run.createdAt).filter(Boolean).sort().pop();
+  const succeeded = latest.filter((run) => String(run.phase || "").toLowerCase() === "succeeded").length;
+  const running = latest.filter((run) => !isFinishedRunPhase(run.phase)).length;
+  return [
+    `last assessment: ${formatTimestampCompact(newest)}`,
+    `${succeeded} of ${workflows.length} workflows succeeded`,
+    running > 0 ? `${running} running` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+async function runSiteAssessment(siteId) {
+  const current = state.siteAssessments[siteId] || {};
+  if (!siteId || current.pending || !state.config?.remoteEnabled) {
+    return;
+  }
+  state.siteAssessments[siteId] = { pending: true, errors: [] };
+  renderOperatorView();
+  try {
+    const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/runs`, { method: "POST" });
+    const text = await response.text();
+    const body = text ? safeJSON(text) : null;
+    const runs = Array.isArray(body?.runs) ? body.runs : [];
+    runs.forEach(mergeRun);
+    const errors = Array.isArray(body?.errors) ? body.errors : [];
+    if (!response.ok && errors.length === 0) {
+      errors.push({ workflow: "", error: body?.error || text || `${response.status} ${response.statusText}` });
+    }
+    state.siteAssessments[siteId] = { pending: false, errors, submitted: runs.length };
+    renderRuns();
+    await loadRuns();
+  } catch (error) {
+    state.siteAssessments[siteId] = { pending: false, errors: [{ workflow: "", error: error.message }] };
+  }
+  renderOperatorView();
+}
+
+function renderOperatorView() {
+  const container = document.getElementById("operatorView");
+  if (!container) {
+    return;
+  }
+  const siteId = activeSiteId();
+  const view = operatorViewSpec(siteId);
+  const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
+  if (!view || !demo) {
+    container.innerHTML = "";
+    container.hidden = true;
+    return;
+  }
+  container.hidden = false;
+  const siteName = matrixSiteEntry(siteId)?.label || demo.shortLabel || demo.label;
+  const assessment = state.siteAssessments[siteId] || {};
+  const remoteEnabled = Boolean(state.config?.remoteEnabled);
+
+  const indicators = (Array.isArray(view.indicators) ? view.indicators : []).map((spec) => ({ spec, ...operatorMetric(spec) }));
+  const statuses = (Array.isArray(view.status) ? view.status : [])
+    .map((spec) => ({ spec, ...operatorMetric(spec) }))
+    .filter((item) => item.value !== undefined && item.value !== null && Number.isFinite(Number(item.value)));
+  const worst = statuses.length > 0 ? Math.max(...statuses.map((item) => Number(item.value))) : null;
+  const raisedBy = worst === null ? [] : [...new Set(statuses.filter((item) => Number(item.value) === worst).map((item) => workflowShortName(item.spec.workflow)))];
+  const recommendations = [];
+  for (const spec of Array.isArray(view.recommendation) ? view.recommendation : []) {
+    const { value } = operatorMetric(spec);
+    if (value === undefined || value === null || !Number.isFinite(Number(value))) {
+      continue;
+    }
+    const label = storhyRecommendation(value).label;
+    const existing = recommendations.find((item) => item.label === label);
+    const from = workflowShortName(spec.workflow);
+    if (existing) {
+      if (!existing.from.includes(from)) {
+        existing.from.push(from);
+      }
+    } else {
+      recommendations.push({ label, description: storhyRecommendation(value).description, from: [from] });
+    }
+  }
+  const status = worst === null ? null : storhyStatus(worst);
+
+  container.innerHTML = `
+    <div class="op-head">
+      <h2>Operator view: ${escapeHTML(siteName)}</h2>
+      <span class="workflow-model-muted">${escapeHTML([demo.operator, demo.location].filter(Boolean).join(" | "))}</span>
+    </div>
+    <div class="op-grid">
+      <div class="op-row">
+        <span class="op-label">Data in</span>
+        <div class="op-value op-data">${renderOperatorDataLines(siteId, view)}</div>
+      </div>
+      <div class="op-row">
+        <span class="op-label">Assessment</span>
+        <div class="op-value op-assessment">
+          <button
+            id="runSiteAssessment"
+            class="selected-launch-button op-run-button"
+            type="button"
+            ${!remoteEnabled || assessment.pending ? "disabled" : ""}
+            title="${remoteEnabled ? `Submit every ${escapeHTML(siteName)} workflow` : "Remote launching is disabled in the current dashboard configuration."}"
+          >${assessment.pending ? "Submitting…" : `Run ${escapeHTML(siteName)} assessment`}</button>
+          <span>${escapeHTML(siteAssessmentSummary(siteId))}</span>
+          ${(assessment.errors || []).map((item) => `<span class="op-error">${escapeHTML([item.workflow ? workflowShortName(item.workflow) : "", item.error].filter(Boolean).join(": "))}</span>`).join("")}
+        </div>
+      </div>
+      <div class="op-row">
+        <span class="op-label">Condition</span>
+        <div class="op-value op-tiles">
+          ${indicators.map((item) => `
+            <div class="op-tile" title="${escapeHTML(`${item.spec.step}.${item.spec.key}`)}">
+              <span class="op-tile-label">${escapeHTML(item.spec.label)}</span>
+              <strong>${item.loading ? "…" : escapeHTML(formatIndicator(item.value, item.spec.unit))}</strong>
+              <span class="op-tile-source">${escapeHTML(workflowShortName(item.spec.workflow))}${item.spec.unit && ["index", "0-1", "count"].includes(item.spec.unit) ? ` · ${escapeHTML(item.spec.unit)}` : ""}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <div class="op-row">
+        <span class="op-label">Status</span>
+        <div class="op-value">
+          ${status ? `
+            <span class="op-status op-status-${worst >= 2 ? "alarm" : worst >= 1 ? "warning" : "ok"}">${escapeHTML(status.label)}</span>
+            <span>${escapeHTML(status.description)}</span>
+            <span class="workflow-model-muted">from ${escapeHTML(raisedBy.join(", "))}</span>
+          ` : '<span class="workflow-model-muted">— no finished assessment yet</span>'}
+        </div>
+      </div>
+      <div class="op-row">
+        <span class="op-label">Recommendation</span>
+        <div class="op-value op-recommendations">
+          ${recommendations.length > 0 ? recommendations.map((item) => `
+            <div title="${escapeHTML(item.description)}"><strong>${escapeHTML(item.label)}</strong> <span class="workflow-model-muted">from ${escapeHTML(item.from.join(", "))}</span></div>
+          `).join("") : '<span class="workflow-model-muted">—</span>'}
+        </div>
+      </div>
+    </div>
+    <p class="op-footer">CADS recommends; the operator decides. In operation the assessment runs after each ingested batch.</p>
+  `;
+  container.querySelector("#runSiteAssessment")?.addEventListener("click", () => void runSiteAssessment(siteId));
+}
+
 // Content area for the selected workflow: header strip, title, model chain,
 // Workflow and Model cards, footer.
 function renderWorkflowContent() {
   const workflow = selectedWorkflow();
+  renderOperatorView();
   bindLaunchButton(workflow);
   renderSiteHeader(workflow);
   renderWorkflowTitleLine(workflow);
@@ -1006,7 +1258,7 @@ function renderWorkflowChainArea(workflow) {
     return;
   }
   container.innerHTML = workflow
-    ? `<div class="dw-chain" aria-label="Models in execution order">${renderWorkflowChain(workflow)}</div>${renderDataSourceDetails(workflow)}`
+    ? `${renderDataLaneList(workflow)}<div class="dw-chain" aria-label="Models in execution order">${renderWorkflowChain(workflow)}</div>${renderDataSourceDetails(workflow)}`
     : "";
   for (const pill of container.querySelectorAll("[data-chain-model]")) {
     pill.addEventListener("click", () => selectWorkflow(pill.dataset.chainWorkflow, { modelKey: pill.dataset.chainModel }));
@@ -1061,23 +1313,65 @@ function renderSelectedModelPanel() {
     : '<div class="details-empty">Pick a model in the chain above.</div>';
 }
 
+// Operator-view data entries that are not ingested yet (SCADA, market, ...),
+// drawn as placeholders above the models they will feed.
+function pendingDataFeeds(workflow, entry) {
+  const data = matrixSiteEntry(workflowSiteId(workflow))?.operator_view?.data;
+  const base = fmuBaseName(entry.fmu);
+  return (Array.isArray(data) ? data : []).filter((item) =>
+    item?.status && Array.isArray(item.feeds) && item.feeds.includes(base));
+}
+
+function renderPendingDataPill(item) {
+  return `
+    <span class="dw-source pending" title="${escapeHTML(item.note || "")}">
+      <span class="dw-source-title">${escapeHTML(item.label || "data")}</span>
+      <span class="dw-source-line">${escapeHTML(item.status)}</span>
+    </span>
+  `;
+}
+
+// Data pills (database, bundled file, bucket, pending feeds) for one model.
+function modelDataPills(workflow, entry, openSourceKey) {
+  return [
+    renderDataSourcePill(workflow, entry, openSourceKey),
+    ...pendingDataFeeds(workflow, entry).map(renderPendingDataPill),
+  ].filter((html) => html.trim());
+}
+
+// Two-row grid: the data lane on top, models and their connectors below, so
+// each data pill sits directly above the model it feeds.
+function renderLaneGrid(items) {
+  return `
+    <div class="dw-lane-grid" style="grid-template-columns: repeat(${items.length}, auto)">
+      ${items.map((item) => `
+        <div class="dw-lane-top">${item.lane.length > 0 ? `${item.lane.join("")}<span class="dw-down" aria-hidden="true">&darr;</span>` : ""}</div>
+        <div class="dw-lane-bottom">${item.node}</div>
+      `).join("")}
+    </div>
+  `;
+}
+
 // Steps in execution order: a co-sim step is a box of member pills with their
-// coupling between neighbours; plain steps follow after a one-way arrow.
+// coupling between neighbours; plain steps follow after a one-way arrow. Data
+// sources sit in a lane above the model they feed.
 function renderWorkflowChain(workflow) {
   const isSelected = workflow.path === state.selectedWorkflowPath;
   const selectedKey = isSelected ? selectedModelEntry(workflow)?.key || "" : "";
   const openSourceKey = isSelected ? state.openSourceKey : "";
   const entries = workflowFmus(workflow);
-  // Data-source pill (database, file or bucket) drawn before the model it feeds.
-  const sourcePill = (key) => {
+  const lane = (key) => {
     const entry = entries.find((item) => item.key === key);
-    return entry ? renderDataSourcePill(workflow, entry, openSourceKey) : "";
+    return entry ? modelDataPills(workflow, entry, openSourceKey) : [];
   };
-  return workflowModels(workflow).map((model, index) => {
-    const arrow = index > 0 ? '<span class="dw-arrow" title="one-way hand-over of final values">&rarr;</span>' : "";
+  const items = [];
+  workflowModels(workflow).forEach((model, index) => {
+    if (index > 0) {
+      items.push({ lane: [], node: '<span class="dw-arrow" title="one-way hand-over of final values">&rarr;</span>' });
+    }
     if (!isCosimModel(model)) {
-      // Arrow and pill wrap together so an arrow never ends a line on its own.
-      return `<span class="dw-step">${arrow}${sourcePill(String(index))}${renderChainPill(workflow, String(index), model.fmu, model.label || model.name, [], selectedKey)}</span>`;
+      items.push({ lane: lane(String(index)), node: renderChainPill(workflow, String(index), model.fmu, model.label || model.name, [], selectedKey) });
+      return;
     }
     const cosim = model.cosim;
     const members = Array.isArray(cosim.models) ? cosim.models : [];
@@ -1085,28 +1379,40 @@ function renderWorkflowChain(workflow) {
     const directed = new Set((Array.isArray(cosim.connections) ? cosim.connections : []).map((connection) =>
       `${connection?.fromModel || cosimVarModel(connection?.from)}\u0000${connection?.toModel || cosimVarModel(connection?.to)}`));
     const edgeTitles = cosimEdges(cosim).map((edge) => `${edge.from} ${edge.bidirectional ? "<->" : "->"} ${edge.to}`).join(", ");
-    const parts = members.map((member, memberIndex) => {
-      const memberEvents = events.filter((item) => cosimVarModel(item?.set) === member.name);
-      let connector = "";
+    const memberItems = [];
+    members.forEach((member, memberIndex) => {
       if (memberIndex > 0) {
         const previous = members[memberIndex - 1].name;
         const forward = directed.has(`${previous}\u0000${member.name}`);
         const backward = directed.has(`${member.name}\u0000${previous}`);
         const symbol = forward && backward ? "&#8644;" : forward ? "&rarr;" : backward ? "&larr;" : "&middot;";
         const title = forward && backward ? "bidirectional exchange" : forward || backward ? "one-way exchange" : "no direct exchange";
-        connector = `<span class="dw-link" title="${title}">${symbol}</span>`;
+        memberItems.push({ lane: [], node: `<span class="dw-link" title="${title}">${symbol}</span>` });
       }
-      // The connector wraps with the pill it leads into, never at a line end.
-      return `<span class="dw-step">${connector}${sourcePill(`${index}.${member.name}`)}${renderChainPill(workflow, `${index}.${member.name}`, member.fmu, member.label || member.name, memberEvents, selectedKey)}</span>`;
-    }).join("");
-    return `<span class="dw-step">
-      ${arrow}
-      <span class="dw-cosim" title="${escapeHTML(edgeTitles)}">
-        <span class="cosim-scheme-badge ${couplingPatternClass(cosimSchemeBadge(cosim.scheme))}">${escapeHTML(cosimSchemeLabel(cosim.scheme))}</span>
-        <span class="dw-cosim-members">${parts}</span>
-      </span>
-    </span>`;
-  }).join("");
+      const memberEvents = events.filter((item) => cosimVarModel(item?.set) === member.name);
+      const key = `${index}.${member.name}`;
+      memberItems.push({ lane: lane(key), node: renderChainPill(workflow, key, member.fmu, member.label || member.name, memberEvents, selectedKey) });
+    });
+    items.push({
+      lane: [],
+      node: `
+        <span class="dw-cosim" title="${escapeHTML(edgeTitles)}">
+          <span class="cosim-scheme-badge ${couplingPatternClass(cosimSchemeBadge(cosim.scheme))}">${escapeHTML(cosimSchemeLabel(cosim.scheme))}</span>
+          ${renderLaneGrid(memberItems)}
+        </span>
+      `,
+    });
+  });
+  return renderLaneGrid(items);
+}
+
+// Narrow screens: the data pills listed above the chain, each naming its model.
+function renderDataLaneList(workflow) {
+  const openSourceKey = workflow.path === state.selectedWorkflowPath ? state.openSourceKey : "";
+  const rows = workflowFmus(workflow).flatMap((entry) =>
+    modelDataPills(workflow, entry, openSourceKey).map((pill) =>
+      `<div class="dw-lane-list-row">${pill}<span class="dw-feeds">&rarr; feeds ${escapeHTML(fmuBaseName(entry.fmu))}</span></div>`));
+  return rows.length > 0 ? `<div class="dw-lane-list">${rows.join("")}</div>` : "";
 }
 
 function renderChainPill(workflow, key, fmuPath, fallbackLabel, events, selectedKey) {
@@ -1324,7 +1630,6 @@ function renderDataSourcePill(workflow, entry, selectedSourceKey) {
       <span class="dw-source-title">${icon}${escapeHTML(title)}</span>
       ${lines.filter(Boolean).map((line) => `<span class="dw-source-line">${escapeHTML(line)}</span>`).join("")}
     </button>
-    <span class="dw-arrow" title="time-series input">&rarr;</span>
   `;
 }
 
@@ -1612,7 +1917,7 @@ function bindLaunchButton(selected) {
   const remoteEnabled = Boolean(state.config?.remoteEnabled);
   const selectedPending = Boolean(selected && state.pendingWorkflows.has(selected.path));
   launchButton.disabled = !remoteEnabled || !selected || selectedPending;
-  launchButton.textContent = selectedPending ? "Submitting…" : "Launch selected workflow";
+  launchButton.textContent = selectedPending ? "Submitting…" : "Launch this workflow only";
   launchButton.title = remoteEnabled ? "" : "Remote launching is disabled in the current dashboard configuration.";
   launchButton.onclick = () => {
     if (state.selectedWorkflowPath) {
@@ -4674,6 +4979,7 @@ function ensureRunResultsLoaded(run) {
     .finally(() => {
       state.runResultsInflight.delete(run.name);
       renderRuns();
+      renderOperatorView();
     });
 }
 

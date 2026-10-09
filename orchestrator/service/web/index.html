@@ -40,12 +40,13 @@
     <main class="dashboard-grid">
       <section id="selectedWorkflowPanel" class="panel workflow-shell" aria-label="Demo workflows">
         <div id="siteTabs" class="site-tabs" role="tablist" aria-label="Demonstrator sites"></div>
+        <section id="operatorView" class="operator-view" aria-label="Operator view" aria-live="polite"></section>
         <div id="workflowTabs" class="wf-tabs" role="tablist" aria-label="Workflows at this site"></div>
 
         <div id="workflowContent" class="workflow-content" role="tabpanel" aria-live="polite">
           <div class="wf-header">
             <div id="siteStrip" class="site-strip"></div>
-            <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch selected workflow</button>
+            <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch this workflow only</button>
           </div>
           <div id="workflowTitleLine" class="wf-title-line"></div>
           <div id="demoWorkflowList" class="wf-chain-area"></div>

@@ -70,6 +70,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleWorkflows(w, r)
 	case r.URL.Path == "/api/runs":
 		s.handleRuns(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/sites/") && strings.HasSuffix(r.URL.Path, "/runs") && r.Method == http.MethodPost:
+		s.handleSubmitSiteRuns(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/runs/") && strings.HasSuffix(r.URL.Path, "/results") && r.Method == http.MethodGet:
 		s.handleRunResults(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/runs/") && r.Method == http.MethodGet:
@@ -322,4 +324,59 @@ func handlerErrorStatus(err error) int {
 		status = http.StatusNotFound
 	}
 	return status
+}
+
+// siteRunsResponse is the result of launching every catalog workflow mapped to one demonstrator
+// (the operator's "run assessment" action; ARCH-VIS-001 one view per demonstrator).
+type siteRunsResponse struct {
+	Site   string           `json:"site"`
+	Runs   []RunSummary     `json:"runs"`
+	Errors []siteRunFailure `json:"errors,omitempty"`
+}
+
+type siteRunFailure struct {
+	Workflow string `json:"workflow"`
+	Error    string `json:"error"`
+}
+
+// handleSubmitSiteRuns submits each workflow whose metadata site_id matches the path site.
+func (s *Server) handleSubmitSiteRuns(w http.ResponseWriter, r *http.Request) {
+	site := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/sites/"), "/runs")
+	if site == "" || strings.Contains(site, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	workDir, err := s.requireWorkDir()
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	workflows, err := ListWorkflows(workDir)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	resp := siteRunsResponse{Site: site, Runs: []RunSummary{}}
+	for _, wf := range workflows {
+		if wf.Metadata.SiteID != site {
+			continue
+		}
+		run, err := s.remoteClient().SubmitWorkflow(r.Context(), wf.Path)
+		if err != nil {
+			resp.Errors = append(resp.Errors, siteRunFailure{Workflow: wf.Path, Error: err.Error()})
+			continue
+		}
+		if run != nil {
+			resp.Runs = append(resp.Runs, *run)
+		}
+	}
+	if len(resp.Runs) == 0 && len(resp.Errors) == 0 {
+		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("no workflows mapped to site %q", site))
+		return
+	}
+	status := http.StatusOK
+	if len(resp.Runs) == 0 {
+		status = http.StatusBadGateway
+	}
+	writeJSON(w, status, resp)
 }

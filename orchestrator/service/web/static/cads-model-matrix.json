@@ -25,7 +25,95 @@
         "KAIZEN",
         "AH",
         "NORCE"
-      ]
+      ],
+      "operator_view": {
+        "data": [
+          {
+            "label": "IoT condition-monitoring batch",
+            "kind": "measurements",
+            "channels": [
+              "vibration_rms_mm_s",
+              "turbidity_g_l"
+            ],
+            "feeds": [
+              "IoTIndicator",
+              "SedimentExposure"
+            ]
+          },
+          {
+            "label": "SCADA plant batch",
+            "kind": "scada",
+            "feeds": [
+              "RunnerStress"
+            ],
+            "status": "not yet ingested",
+            "note": "operating point: active power, head, guide-vane opening, unit state"
+          }
+        ],
+        "indicators": [
+          {
+            "label": "Runner remaining life",
+            "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+            "step": "runner_health",
+            "key": "rul.rul_days",
+            "unit": "days"
+          },
+          {
+            "label": "Fatigue damage",
+            "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+            "step": "runner_health",
+            "key": "rul.damage_index",
+            "unit": "index"
+          },
+          {
+            "label": "Vibration condition indicator",
+            "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+            "step": "runner_health",
+            "key": "iot.condition_indicator",
+            "unit": "0-1"
+          },
+          {
+            "label": "Cleanings in the assessed day",
+            "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+            "step": "sediment_erosion",
+            "key": "sediment.cleaning_count",
+            "unit": "count"
+          },
+          {
+            "label": "Erosion damage",
+            "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+            "step": "sediment_erosion",
+            "key": "rul.damage_index",
+            "unit": "index"
+          },
+          {
+            "label": "Net benefit of operation",
+            "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+            "step": "degradation_cost",
+            "key": "net_benefit_eur",
+            "unit": "EUR"
+          }
+        ],
+        "status": [
+          {
+            "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+            "step": "degradation_cost",
+            "key": "status_code"
+          },
+          {
+            "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+            "step": "sediment_erosion",
+            "key": "rul.status_code"
+          }
+        ],
+        "recommendation": [
+          {
+            "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+            "step": "degradation_cost",
+            "key": "recommendation_code"
+          }
+        ]
+      }
     },
     {
       "id": "la-rance",
@@ -49,7 +137,80 @@
         "UPC",
         "NORCE",
         "HESSO"
-      ]
+      ],
+      "operator_view": {
+        "data": [
+          {
+            "label": "Day-ahead market prices",
+            "kind": "market",
+            "feeds": [
+              "EmsDispatch"
+            ],
+            "status": "not yet ingested",
+            "note": "price series; the EMS model currently uses a built-in daily profile"
+          },
+          {
+            "label": "Battery management system batch",
+            "kind": "scada",
+            "feeds": [
+              "BatteryDegradation"
+            ],
+            "status": "not yet ingested",
+            "note": "state of charge, temperature, power"
+          }
+        ],
+        "indicators": [
+          {
+            "label": "Battery state of health",
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "battery_ems",
+            "key": "battery.soh_percent",
+            "unit": "%"
+          },
+          {
+            "label": "Battery remaining life",
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "battery_ems",
+            "key": "battery.rul_days",
+            "unit": "days"
+          },
+          {
+            "label": "Equivalent full cycles",
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "battery_ems",
+            "key": "battery.cycle_count",
+            "unit": "cycles"
+          },
+          {
+            "label": "Arbitrage revenue",
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "battery_ems",
+            "key": "ems.revenue_eur",
+            "unit": "EUR"
+          },
+          {
+            "label": "Net benefit of operation",
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "degradation_cost",
+            "key": "net_benefit_eur",
+            "unit": "EUR"
+          }
+        ],
+        "status": [
+          {
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "degradation_cost",
+            "key": "status_code"
+          }
+        ],
+        "recommendation": [
+          {
+            "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+            "step": "degradation_cost",
+            "key": "recommendation_code"
+          }
+        ]
+      }
     },
     {
       "id": "vilarinho",

@@ -1815,17 +1815,8 @@ h2 {
 }
 
 .dw-chain {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
   min-width: 0;
-}
-
-.dw-step {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
+  overflow-x: auto;
 }
 
 .dw-cosim {
@@ -1840,13 +1831,6 @@ h2 {
 
 .dw-cosim .cosim-scheme-badge {
   align-self: flex-start;
-}
-
-.dw-cosim-members {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
 }
 
 .dw-pill {
@@ -2339,4 +2323,246 @@ h2 {
 
 .details-model-io .details-block-wide {
   grid-column: 1 / -1;
+}
+
+/* ---- Data lane above the model chain ---- */
+
+.dw-lane-grid {
+  display: grid;
+  grid-template-rows: auto auto;
+  grid-auto-flow: column;
+  gap: 4px 8px;
+  align-items: center;
+  justify-content: start;
+}
+
+.dw-lane-top {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  align-self: end;
+}
+
+.dw-lane-bottom {
+  display: flex;
+  justify-content: center;
+}
+
+.dw-down {
+  color: var(--ok);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.dw-source.pending {
+  border: 1px dashed rgba(83, 98, 126, 0.55);
+  background: rgba(233, 236, 242, 0.55);
+  color: var(--muted);
+  cursor: help;
+}
+
+.dw-lane-list {
+  display: none;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.dw-lane-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.dw-feeds {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1040px) {
+  .dw-lane-list {
+    display: grid;
+  }
+
+  /* Keep the empty grid cell so models and connectors stay on one row. */
+  .dw-lane-top {
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+
+  .op-run-button {
+    width: auto;
+  }
+}
+
+/* ---- Operator view (above the workflow tab row) ---- */
+
+.operator-view {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(5, 66, 235, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.op-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.op-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.op-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.op-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.op-label {
+  padding-top: 3px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.op-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  min-width: 0;
+  font-size: 0.84rem;
+}
+
+.op-data {
+  display: grid;
+  gap: 4px;
+}
+
+.op-data-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  color: var(--ok);
+}
+
+.op-data-line strong {
+  color: var(--ink);
+}
+
+.op-data-line.muted {
+  color: var(--muted);
+}
+
+.op-data-line.pending {
+  color: var(--warning);
+}
+
+.op-data-note {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.op-run-button {
+  padding: 8px 14px;
+  font-size: 0.86rem;
+}
+
+.op-error {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+.op-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 8px;
+}
+
+.op-tile {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(233, 236, 242, 0.45);
+}
+
+.op-tile-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.op-tile strong {
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.op-tile-source {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.op-status {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.op-status-ok {
+  background: rgba(47, 118, 82, 0.15);
+  color: var(--ok);
+}
+
+.op-status-warning {
+  background: rgba(191, 95, 47, 0.16);
+  color: var(--warning);
+}
+
+.op-status-alarm {
+  background: rgba(165, 63, 43, 0.18);
+  color: var(--danger);
+}
+
+.op-recommendations {
+  display: grid;
+  gap: 3px;
+}
+
+.op-footer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .op-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
