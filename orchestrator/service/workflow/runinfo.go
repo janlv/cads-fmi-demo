@@ -53,7 +53,9 @@ type RunInfo struct {
 	Ratio            *float64     `json:"ratio"`
 	RunnerVersion    string       `json:"runner_version"`
 	Workflow         WorkflowInfo `json:"workflow"`
-	Steps            []StepInfo   `json:"steps"`
+	// DataWindow is the resolved `data_window` (absent for workflows without one).
+	DataWindow *DataWindowInfo `json:"data_window,omitempty"`
+	Steps      []StepInfo      `json:"steps"`
 }
 
 // WorkflowInfo identifies the workflow definition that was executed.
@@ -90,6 +92,8 @@ type FMUDescriptor struct {
 	SHA256 string `json:"sha256"`
 	// Inputs records the datasets that fed this FMU's input series (ARCH-COMP-018).
 	Inputs []InputDataset `json:"inputs"`
+	// CarryOver records start values carried over from the previous assessment.
+	CarryOver *CarryOverInfo `json:"carry_over,omitempty"`
 	fmi.FMUInfo
 }
 
@@ -110,6 +114,7 @@ func (d FMUDescriptor) MarshalJSON() ([]byte, error) {
 		ClippedSubsteps   int64          `json:"clipped_substeps"`
 		DoStepWallSeconds float64        `json:"do_step_wall_seconds"`
 		Inputs            []InputDataset `json:"inputs"`
+		CarryOver         *CarryOverInfo `json:"carry_over,omitempty"`
 	}
 	inputs := d.Inputs
 	if inputs == nil {
@@ -122,6 +127,7 @@ func (d FMUDescriptor) MarshalJSON() ([]byte, error) {
 		StepUsed: d.StepUsed, DoStepCalls: d.DoStepCalls, ClippedSubsteps: d.ClippedSubsteps,
 		DoStepWallSeconds: d.DoStepWallSeconds,
 		Inputs:            inputs,
+		CarryOver:         d.CarryOver,
 	})
 }
 
@@ -157,6 +163,10 @@ func (r *runRecorder) setWorkflow(path string, data []byte) {
 
 func (r *runRecorder) setSite(site string) {
 	r.info.Workflow.Site = site
+}
+
+func (r *runRecorder) setDataWindow(info *DataWindowInfo) {
+	r.info.DataWindow = info
 }
 
 // describeFMU builds the identity record for one FMU file; bridge statistics are merged later.
@@ -259,9 +269,12 @@ func (r *runRecorder) finish(err error) map[string]any {
 		if errors.As(err, &stepErr) {
 			r.info.FailedStep = stepErr.Step
 		}
-		if errors.Is(err, fmi.ErrCancelled) {
+		switch {
+		case errors.Is(err, ErrNoNewData):
+			r.info.Status = StatusSkipped
+		case errors.Is(err, fmi.ErrCancelled):
 			r.info.Status = StatusCancelled
-		} else {
+		default:
 			r.info.Status = StatusFailed
 		}
 	}

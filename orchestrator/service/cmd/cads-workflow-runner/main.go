@@ -71,11 +71,21 @@ func main() {
 
 	results, runErr := runner.Run(workflowPath)
 
+	// A data_window assessment with no new data since the previous one finishes as "skipped":
+	// nothing is written to the database and the runner exits 0.
+	skipped := errors.Is(runErr, workflow.ErrNoNewData)
+
 	// Results sink (ARCH-DATA-010): with CADS_DB_URL set, every finished run (also failed and
 	// cancelled ones) is written to <site>.runs/run_outputs/run_series before the JSON is
 	// printed, so `_run.results_sink` reports the outcome. Sink errors only go to stderr.
 	if url := cadsdb.URLFromEnv(); url != "" && results != nil {
-		writeResultsSink(url, results)
+		if skipped {
+			if info := results[workflow.RunInfoStepName]; info != nil {
+				info["results_sink"] = map[string]any{"status": svc.SinkSkipped, "error": "no new data"}
+			}
+		} else {
+			writeResultsSink(url, results)
+		}
 	}
 
 	// The result map is printed even on failure: it carries completed steps plus the `_run`
@@ -94,6 +104,10 @@ func main() {
 		}
 	}
 
+	if skipped {
+		fmt.Fprintf(os.Stderr, "[workflow] skipped: %v\n", runErr)
+		return
+	}
 	if runErr != nil {
 		fmt.Fprintf(os.Stderr, "[workflow] failed: %v\n", runErr)
 		if errors.Is(runErr, fmi.ErrCancelled) {

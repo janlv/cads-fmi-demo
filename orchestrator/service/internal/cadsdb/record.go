@@ -14,12 +14,23 @@ import (
 const runInfoStep = "_run"
 
 // OutputRow is one <site>.run_outputs row. Exactly one of Value/ValueText is set for scalar
-// outputs; both stay nil for a null output.
+// outputs; both stay nil for a null output. RunID is only filled by multi-run reads
+// (ReadRunOutputs); BuildRunRecord and ReadRun leave it empty.
 type OutputRow struct {
+	RunID     string
 	Step      string
 	Name      string
 	Value     *float64
 	ValueText *string
+}
+
+// RunSeriesRow is one <site>.run_series sample tagged with its run (ReadRunSeries).
+type RunSeriesRow struct {
+	RunID  string
+	Step   string
+	Signal string
+	T      float64
+	Value  *float64
 }
 
 // SeriesRow is one <site>.run_series sample.
@@ -249,6 +260,64 @@ func AssembleRun(provenance map[string]any, outputs []OutputRow, series []Series
 		step(name)["trace"] = map[string]any{"time": timeAxis, "signals": signals}
 	}
 	return results
+}
+
+// Window sources reported by RunWindow.
+const (
+	WindowSourceDataWindow = "data_window"
+	WindowSourceInput      = "input"
+	WindowSourceStartedAt  = "started_at"
+)
+
+// RunWindow returns the measurement time window a stored run assessed. It prefers the
+// `data_window` record ({from, to}), then the first input dataset of any FMU in `steps` that
+// has both `from` and `to`, then startedAt extended by simulatedSeconds (to = from when that is
+// nil or not positive). Malformed provenance entries are skipped; ok is false when nothing
+// usable is found.
+func RunWindow(provenance map[string]any, startedAt *time.Time, simulatedSeconds *float64) (from, to time.Time, source string, ok bool) {
+	if dw, isMap := provenance["data_window"].(map[string]any); isMap {
+		if f, t, good := windowBounds(dw); good {
+			return f, t, WindowSourceDataWindow, true
+		}
+	}
+	if steps, isList := provenance["steps"].([]any); isList {
+		for _, rawStep := range steps {
+			step, _ := rawStep.(map[string]any)
+			fmus, _ := step["fmus"].([]any)
+			for _, rawFMU := range fmus {
+				fmu, _ := rawFMU.(map[string]any)
+				inputs, _ := fmu["inputs"].([]any)
+				for _, rawInput := range inputs {
+					input, _ := rawInput.(map[string]any)
+					if f, t, good := windowBounds(input); good {
+						return f, t, WindowSourceInput, true
+					}
+				}
+			}
+		}
+	}
+	if startedAt != nil && !startedAt.IsZero() {
+		from = startedAt.UTC()
+		to = from
+		if simulatedSeconds != nil && *simulatedSeconds > 0 && !math.IsInf(*simulatedSeconds, 0) {
+			to = from.Add(time.Duration(*simulatedSeconds * float64(time.Second)))
+		}
+		return from, to, WindowSourceStartedAt, true
+	}
+	return time.Time{}, time.Time{}, "", false
+}
+
+// windowBounds parses non-empty RFC 3339 "from"/"to" strings of m.
+func windowBounds(m map[string]any) (time.Time, time.Time, bool) {
+	if m == nil {
+		return time.Time{}, time.Time{}, false
+	}
+	from := parseTimestamp(m["from"])
+	to := parseTimestamp(m["to"])
+	if from == nil || to == nil {
+		return time.Time{}, time.Time{}, false
+	}
+	return from.UTC(), to.UTC(), true
 }
 
 func floatPtr(value any) *float64 {

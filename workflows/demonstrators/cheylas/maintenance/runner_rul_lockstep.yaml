@@ -4,7 +4,7 @@ metadata:
   category: maintenance
   result_family: storhy_mock
   summary: >-
-    Every 15 minutes the runner model produces load and stress for the current duty cycle, the IoT indicator model turns the measured vibration into a condition indicator, and the RUL model accumulates fatigue damage from both; afterwards the cost model weighs the consumed runner life against the energy produced.
+    Every 15 minutes RunnerStress produces the runner load and stress for the current duty cycle, IoTIndicator turns the measured vibration (channel vibration_rms_mm_s from the STOR-HY database) into a condition indicator, and Rul accumulates fatigue damage from RunnerStress's stress and IoTIndicator's indicator; afterwards DegradationCost weighs the consumed runner life from Rul against the energy produced by RunnerStress.
 
   description: >-
     Jacobi (parallel lock-step) co-simulation of three FMI 3.0 FMUs with a one-way coupling graph:
@@ -13,17 +13,19 @@ metadata:
     measured vibration channel vibration_rms_mm_s, read from the Cheylas schema of the STOR-HY
     database (the bundled measurement file when no database is configured), and sub-steps at
     5 minutes inside the 15-minute communication step. A degradation-cost model then weighs
-    the consumed runner life against the value of the generated energy. Deterministic placeholder
+    the consumed runner life against the value of the generated energy. Each assessment covers the
+    measurements since the previous one and continues the accumulated state: the RUL model starts
+    from the previous run's damage index and planning rate (first run: the last 24 hours of data
+    from initial damage 0.35; at most 7 days per run when catching up). Deterministic placeholder
     models, not validated physics.
   tags: [cheylas, maintenance, rul, iot, degradation-cost, fmi3, cosim, jacobi, lock-step, one-way]
   limits: {max_runtime_seconds: 300}
+data_window: {mode: since_previous_run, initial_span: 24h, max_span: 7d}
 synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
 steps:
   - name: runner_health
     cosim:
       scheme: jacobi
-      start_time: 0
-      stop_time: 86400
       communication_step: 900
       models:
         - name: runner
@@ -35,11 +37,13 @@ steps:
             db:
               site: cheylas
               channels: {vibration_rms_measured_mm_s: vibration_rms_mm_s}
-              window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
               fallback: {csv: data/storhy/cheylas/measurements/vibration_rms_mm_s.csv}
         - name: rul
           fmu: fmu/models/Rul.fmu
           start_values: {initial_damage: 0.35}
+          carry_over:
+            initial_damage: runner_health.rul.damage_index
+            initial_planning_rate_per_day: runner_health.rul.planning_rate_per_day
       connections:
         - {from: runner.load_pu, to: iot.load_pu}
         - {from: runner.stress_amplitude_mpa, to: rul.stress_amplitude_mpa}
@@ -52,6 +56,7 @@ steps:
         - rul.damage_index
         - rul.rul_days
         - rul.damage_rate_per_day
+        - rul.planning_rate_per_day
         - rul.status_code
       trace:
         signals:
@@ -65,8 +70,6 @@ steps:
         sample_every: 900
   - name: degradation_cost
     fmu: fmu/models/DegradationCost.fmu
-    start_time: 0
-    stop_time: 86400
     start_from:
       rul_days: runner_health.rul.rul_days
       damage_rate_per_day: runner_health.rul.damage_rate_per_day

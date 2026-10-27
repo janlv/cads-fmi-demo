@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,9 +56,13 @@ type parsedDBSpec struct {
 	site        string
 	variables   []string // sorted FMU variable names
 	channels    map[string]string
-	from, to    time.Time
-	fallback    string // resolved absolute path, or ""
+	from, to    time.Time // zero for an unresolved data_window (fallback without database)
+	fallback    string    // resolved absolute path, or ""
 	fallbackRel string
+	// windowed is set when the window comes from the workflow's data_window: the CSV then
+	// starts at simStart and every channel needs a sample exactly at from.
+	windowed bool
+	simStart float64
 }
 
 // WithSeriesReader installs the database reader for `input_series.db` (tests, or a shared
@@ -90,21 +95,28 @@ func (e *Executor) parseDBSpec(spec *dbInputSeriesSpec) (*parsedDBSpec, error) {
 		parsed.variables = append(parsed.variables, variable)
 	}
 	sort.Strings(parsed.variables)
-	if spec.Window == nil {
+	switch {
+	case spec.Window == nil && e.window != nil:
+		// The workflow's data_window supplies the window (zero times when unresolved).
+		parsed.windowed = true
+		parsed.from, parsed.to = e.window.from, e.window.to
+		parsed.simStart = e.window.simStart
+	case spec.Window == nil:
 		return nil, fmt.Errorf("input_series.db.window with from/to is required")
+	default:
+		from, err := time.Parse(time.RFC3339, strings.TrimSpace(spec.Window.From))
+		if err != nil {
+			return nil, fmt.Errorf("input_series.db.window.from must be RFC3339: %w", err)
+		}
+		to, err := time.Parse(time.RFC3339, strings.TrimSpace(spec.Window.To))
+		if err != nil {
+			return nil, fmt.Errorf("input_series.db.window.to must be RFC3339: %w", err)
+		}
+		if !to.After(from) {
+			return nil, fmt.Errorf("input_series.db.window.to must be after window.from")
+		}
+		parsed.from, parsed.to = from.UTC(), to.UTC()
 	}
-	from, err := time.Parse(time.RFC3339, strings.TrimSpace(spec.Window.From))
-	if err != nil {
-		return nil, fmt.Errorf("input_series.db.window.from must be RFC3339: %w", err)
-	}
-	to, err := time.Parse(time.RFC3339, strings.TrimSpace(spec.Window.To))
-	if err != nil {
-		return nil, fmt.Errorf("input_series.db.window.to must be RFC3339: %w", err)
-	}
-	if !to.After(from) {
-		return nil, fmt.Errorf("input_series.db.window.to must be after window.from")
-	}
-	parsed.from, parsed.to = from.UTC(), to.UTC()
 	if spec.Fallback != nil && strings.TrimSpace(spec.Fallback.CSV) != "" {
 		path, err := e.resolveRepoPath(strings.TrimSpace(spec.Fallback.CSV), "input series fallback")
 		if err != nil {
@@ -131,6 +143,9 @@ func (e *Executor) buildDBInputSeries(spec *dbInputSeriesSpec) (*resolvedInputSe
 		}
 		return e.buildDBFallback(parsed)
 	}
+	if parsed.windowed && !e.window.resolved() {
+		return nil, fmt.Errorf("input_series.db: data_window is not resolved")
+	}
 
 	channelSet := make(map[string]struct{}, len(parsed.channels))
 	var channels []string
@@ -147,7 +162,13 @@ func (e *Executor) buildDBInputSeries(spec *dbInputSeriesSpec) (*resolvedInputSe
 	if err != nil {
 		return nil, fmt.Errorf("input_series.db: %w", err)
 	}
-	csvText, counts, err := buildDBSeriesCSV(parsed.variables, parsed.channels, parsed.from, rows)
+	var csvText string
+	var counts map[string]int
+	if parsed.windowed {
+		csvText, counts, err = buildWindowedDBSeriesCSV(parsed.variables, parsed.channels, parsed.from, parsed.simStart, rows)
+	} else {
+		csvText, counts, err = buildDBSeriesCSV(parsed.variables, parsed.channels, parsed.from, rows)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("input_series.db (%s, %s..%s): %w", parsed.site,
 			parsed.from.Format(time.RFC3339), parsed.to.Format(time.RFC3339), err)
@@ -208,12 +229,42 @@ func (e *Executor) closeOwnedStore() {
 // carrying its last value forward. The first row must have a sample for every channel.
 // It also returns the sample count per channel.
 func buildDBSeriesCSV(variables []string, channels map[string]string, from time.Time, rows []cadsdb.Row) (string, map[string]int, error) {
+	return buildSeriesCSV(variables, channels, from, 0, false, rows)
+}
+
+// buildWindowedDBSeriesCSV is buildDBSeriesCSV for a data_window: time is
+// `simStart + (at - from)` seconds and every channel must have a sample exactly at from, so
+// consecutive assessments join without a gap (the previous run's last held sample is the
+// first sample of this one).
+func buildWindowedDBSeriesCSV(variables []string, channels map[string]string, from time.Time, simStart float64, rows []cadsdb.Row) (string, map[string]int, error) {
+	return buildSeriesCSV(variables, channels, from, simStart, true, rows)
+}
+
+func buildSeriesCSV(variables []string, channels map[string]string, from time.Time, offset float64, requireAtFrom bool, rows []cadsdb.Row) (string, map[string]int, error) {
 	counts := make(map[string]int)
 	if len(rows) == 0 {
 		return "", counts, fmt.Errorf("no samples in window for channel(s) %s", strings.Join(uniqueChannels(variables, channels), ", "))
 	}
 	sorted := append([]cadsdb.Row(nil), rows...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Time.Before(sorted[j].Time) })
+	if requireAtFrom {
+		atFrom := make(map[string]struct{})
+		for _, row := range sorted {
+			if row.Time.Equal(from) {
+				atFrom[row.Channel] = struct{}{}
+			}
+		}
+		var missing []string
+		for _, channel := range uniqueChannels(variables, channels) {
+			if _, ok := atFrom[channel]; !ok {
+				missing = append(missing, channel)
+			}
+		}
+		if len(missing) > 0 {
+			return "", counts, fmt.Errorf("channel(s) %s have no sample exactly at the window start %s (data_window windows must start on a sample time shared by all channels)",
+				strings.Join(missing, ", "), from.UTC().Format(time.RFC3339Nano))
+		}
+	}
 
 	var builder strings.Builder
 	builder.WriteString("time")
@@ -225,7 +276,7 @@ func buildDBSeriesCSV(variables []string, channels map[string]string, from time.
 
 	last := make(map[string]float64)
 	writeRow := func(at time.Time) {
-		builder.WriteString(formatFloat(at.Sub(from).Seconds()))
+		builder.WriteString(formatFloat(offset + at.Sub(from).Seconds()))
 		for _, variable := range variables {
 			builder.WriteString(",")
 			builder.WriteString(formatFloat(last[channels[variable]]))
@@ -322,17 +373,76 @@ func (e *Executor) buildDBFallback(parsed *parsedDBSpec) (*resolvedInputSeries, 
 		resolved.Cleanup = cleanup
 	}
 	e.logf("[workflow] input_series.db: %s not set, using fallback %s", cadsdb.EnvURL, parsed.fallbackRel)
+	if parsed.windowed && e.window != nil {
+		span := e.window.simStop - e.window.simStart
+		if last, err := csvLastTime(parsed.fallback); err == nil {
+			if covered := last - firstTimeOr0(parsed.fallback); covered < span {
+				fmt.Fprintf(os.Stderr, "[workflow] warning: input_series.db fallback %s covers %g s, shorter than the %g s data_window span; its last values are held\n",
+					parsed.fallbackRel, covered, span)
+			}
+		}
+	}
 	for _, variable := range parsed.variables {
-		resolved.Inputs = append(resolved.Inputs, InputDataset{
+		input := InputDataset{
 			Variable: variable,
 			Source:   InputSourceDBFallback,
 			Dataset:  parsed.fallbackRel,
-			From:     parsed.from.Format(time.RFC3339),
-			To:       parsed.to.Format(time.RFC3339),
 			Rows:     rows,
-		})
+		}
+		if !parsed.from.IsZero() {
+			input.From = parsed.from.Format(time.RFC3339)
+			input.To = parsed.to.Format(time.RFC3339)
+		}
+		resolved.Inputs = append(resolved.Inputs, input)
 	}
 	return resolved, nil
+}
+
+// csvLastTime returns the time column of the last non-empty data row.
+func csvLastTime(path string) (float64, error) {
+	return csvTimeAt(path, true)
+}
+
+func firstTimeOr0(path string) float64 {
+	first, err := csvTimeAt(path, false)
+	if err != nil {
+		return 0
+	}
+	return first
+}
+
+func csvTimeAt(path string, last bool) (float64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	header := true
+	found := ""
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if header {
+			header = false
+			continue
+		}
+		if line == "" {
+			continue
+		}
+		found = line
+		if !last {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+	if found == "" {
+		return 0, fmt.Errorf("%s has no data rows", path)
+	}
+	column, _, _ := strings.Cut(found, ",")
+	return strconv.ParseFloat(strings.Trim(strings.TrimSpace(column), `"`), 64)
 }
 
 // fileInputs describes a CSV-backed input series for provenance; read errors are left to the

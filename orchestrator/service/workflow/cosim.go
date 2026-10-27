@@ -33,6 +33,9 @@ type CoSimModelSpec struct {
 	FMU         string            `yaml:"fmu" json:"fmu"`
 	StartValues map[string]any    `yaml:"start_values" json:"startValues,omitempty"`
 	StartFrom   map[string]string `yaml:"start_from" json:"startFrom,omitempty"`
+	// CarryOver maps start values to outputs of the previous assessment (`step.variable`);
+	// only with `data_window: {mode: since_previous_run}`.
+	CarryOver   map[string]string `yaml:"carry_over" json:"carryOver,omitempty"`
 	InputSeries *inputSeriesSpec  `yaml:"input_series" json:"-"`
 	StepSize    *float64          `yaml:"step_size" json:"-"`
 }
@@ -85,19 +88,30 @@ func IsValidIdentifier(s string) bool {
 // ValidateCoSim checks a cosim block for structural errors before any FMU is loaded. Variable
 // existence is checked by the bridge, which can read the model descriptions.
 func ValidateCoSim(stepName string, spec *CoSimSpec) error {
+	return ValidateCoSimWithWindow(stepName, spec, false)
+}
+
+// ValidateCoSimWithWindow is ValidateCoSim for workflows that may set `data_window`: when
+// windowed is true, start_time and stop_time may both be omitted because the window supplies
+// them (setting only one of them is still an error).
+func ValidateCoSimWithWindow(stepName string, spec *CoSimSpec, windowed bool) error {
 	if spec == nil {
 		return fmt.Errorf("step %s: cosim block is empty", stepName)
 	}
 	if _, ok := fmi.SchemeCode(spec.Scheme); !ok {
 		return fmt.Errorf("step %s: cosim.scheme must be %s or %s (got %q)", stepName, SchemeGaussSeidel, SchemeJacobi, spec.Scheme)
 	}
-	if spec.StartTime == nil || spec.StopTime == nil || spec.CommunicationStep == nil {
+	windowTimes := windowed && spec.StartTime == nil && spec.StopTime == nil
+	if spec.CommunicationStep == nil || (!windowTimes && (spec.StartTime == nil || spec.StopTime == nil)) {
+		if windowed {
+			return fmt.Errorf("step %s: cosim requires communication_step and either both start_time and stop_time or neither (data_window sets them)", stepName)
+		}
 		return fmt.Errorf("step %s: cosim requires start_time, stop_time and communication_step", stepName)
 	}
 	if *spec.CommunicationStep <= 0 {
 		return fmt.Errorf("step %s: cosim.communication_step must be positive", stepName)
 	}
-	if *spec.StopTime <= *spec.StartTime {
+	if !windowTimes && *spec.StopTime <= *spec.StartTime {
 		return fmt.Errorf("step %s: cosim.stop_time must be greater than start_time", stepName)
 	}
 	if len(spec.Models) == 0 {
@@ -308,24 +322,30 @@ type resolvedCoSim struct {
 	FMUPaths map[string]string
 	// Inputs maps model name to its input dataset provenance.
 	Inputs map[string][]InputDataset
+	// CarryOver maps model name to its carry_over provenance (absent without carry_over).
+	CarryOver map[string]*CarryOverInfo
 }
 
 // buildCoSimConfig resolves FMU paths, start values (including start_from references into earlier
 // results), input series and the exchange/event tables for the bridge.
 func (e *Executor) buildCoSimConfig(stepName string, spec *CoSimSpec, results map[string]map[string]any) (*resolvedCoSim, error) {
-	if err := ValidateCoSim(stepName, spec); err != nil {
+	if err := ValidateCoSimWithWindow(stepName, spec, e.window != nil); err != nil {
 		return nil, err
 	}
 	scheme := strings.ToLower(strings.TrimSpace(spec.Scheme))
 	resolved := &resolvedCoSim{
 		Config: fmi.CoSimConfig{
 			Scheme:            scheme,
-			StartTime:         *spec.StartTime,
-			StopTime:          *spec.StopTime,
 			CommunicationStep: *spec.CommunicationStep,
 		},
-		FMUPaths: make(map[string]string, len(spec.Models)),
-		Inputs:   make(map[string][]InputDataset),
+		FMUPaths:  make(map[string]string, len(spec.Models)),
+		Inputs:    make(map[string][]InputDataset),
+		CarryOver: make(map[string]*CarryOverInfo),
+	}
+	if spec.StartTime != nil && spec.StopTime != nil {
+		resolved.Config.StartTime, resolved.Config.StopTime = *spec.StartTime, *spec.StopTime
+	} else {
+		resolved.Config.StartTime, resolved.Config.StopTime = e.window.simStart, e.window.simStop
 	}
 	var cleanups []func()
 	resolved.Cleanup = func() {
@@ -348,9 +368,12 @@ func (e *Executor) buildCoSimConfig(stepName string, spec *CoSimSpec, results ma
 		if _, err := os.Stat(fmuPath); err != nil {
 			return fail(fmt.Errorf("model %s references missing FMU %s: %w", model.Name, fmuPath, err))
 		}
-		startVals, err := e.buildStartValues(model.StartValues, model.StartFrom, results)
+		startVals, carryInfo, err := e.buildStartValues(model.StartValues, model.CarryOver, model.StartFrom, results)
 		if err != nil {
 			return fail(fmt.Errorf("model %s start values invalid: %w", model.Name, err))
+		}
+		if carryInfo != nil {
+			resolved.CarryOver[model.Name] = carryInfo
 		}
 		cfgModel := fmi.CoSimModel{Name: model.Name, FMUPath: fmuPath, StartValues: startVals}
 		if model.InputSeries != nil {

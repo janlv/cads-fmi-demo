@@ -321,6 +321,59 @@ class JacobiTests(unittest.TestCase):
         self.assertIn(trace["rul.status_code"][-1], (0, 1, 2))
 
 
+class RulCarryOverTests(unittest.TestCase):
+    """Planning-rate carry-over across consecutive assessments (state chaining)."""
+
+    @staticmethod
+    def _run(stress, overrides=None, hours=24):
+        params = {"stress_amplitude_mpa": stress}
+        params.update(overrides or {})
+        model = ModelRunner("Rul", params)
+        start = (model.get("rul_days"), model.get("planning_rate_per_day"))
+        model.advance(hours * 3600.0)
+        return model, start
+
+    def test_default_keeps_design_or_smoothed_rule(self):
+        model = ModelRunner("Rul", {"stress_amplitude_mpa": 55.0})
+        expected = max(model.get("design_damage_rate_per_day"), model.get("damage_rate_per_day"))
+        self.assertEqual(model.get("initial_planning_rate_per_day"), 0.0)
+        self.assertEqual(model.get("planning_rate_per_day"), expected)
+
+    def test_planning_rate_output_is_monotone_and_drives_rul(self):
+        model, _ = self._run(60.0)
+        rate = model.get("planning_rate_per_day")
+        self.assertGreaterEqual(rate, model.get("design_damage_rate_per_day"))
+        self.assertAlmostEqual(model.get("rul_days"), (1.0 - model.get("damage_index")) / rate)
+
+    def test_carried_rate_prevents_rul_jump_at_run_boundary(self):
+        first, _ = self._run(60.0)
+        damage = first.get("damage_index")
+        carried_rate = first.get("planning_rate_per_day")
+        rul_end = first.get("rul_days")
+        self.assertGreater(carried_rate, first.get("design_damage_rate_per_day"))
+
+        # Second assessment with a calmer load: without carry-over the planning
+        # rate restarts from max(design, smoothed) and the RUL jumps up.
+        _, (rul_reset, _) = self._run(40.0, {"initial_damage": damage})
+        self.assertGreater(rul_reset, rul_end)
+
+        _, (rul_carried, rate_carried) = self._run(
+            40.0, {"initial_damage": damage, "initial_planning_rate_per_day": carried_rate}
+        )
+        self.assertEqual(rate_carried, carried_rate)
+        self.assertLessEqual(rul_carried, rul_end + 1e-9)
+
+    def test_lower_carried_rate_never_undercuts_the_rule(self):
+        model = ModelRunner("Rul", {"stress_amplitude_mpa": 0.0, "initial_planning_rate_per_day": 1e-6})
+        self.assertEqual(model.get("planning_rate_per_day"), model.get("design_damage_rate_per_day"))
+
+    def test_sediment_exposes_carry_over_variables(self):
+        spec = MODEL_SPECS["SedimentExposure"]
+        self.assertIn("hours_since_cleaning", spec["outputs"])
+        self.assertIn("initial_hours_since_cleaning", spec["parameters"])
+        self.assertIn("initial_exposure", spec["parameters"])
+
+
 class EventTests(unittest.TestCase):
     def test_deterministic_and_finite(self):
         _, first = run_event()

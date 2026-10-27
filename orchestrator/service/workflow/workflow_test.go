@@ -151,8 +151,8 @@ func TestBuildInputSeriesDownloadsS3Object(t *testing.T) {
 	}
 
 	cfg, err := exec.buildInputSeries(&inputSeriesSpec{
-			S3: &s3InputSeriesSpec{Key: "acoustic/latest.csv"},
-		})
+		S3: &s3InputSeriesSpec{Key: "acoustic/latest.csv"},
+	})
 	if err != nil {
 		t.Fatalf("buildInputSeries() error = %v", err)
 	}
@@ -199,9 +199,9 @@ func TestBuildInputSeriesRejectsConflictingSources(t *testing.T) {
 	}
 
 	_, err = exec.buildInputSeries(&inputSeriesSpec{
-			CSV: "data/samples.csv",
-			S3:  &s3InputSeriesSpec{Bucket: "demo", Key: "samples.csv"},
-		})
+		CSV: "data/samples.csv",
+		S3:  &s3InputSeriesSpec{Bucket: "demo", Key: "samples.csv"},
+	})
 	if err == nil || !strings.Contains(err.Error(), "exactly one source") {
 		t.Fatalf("buildInputSeries() error = %v, want conflicting source rejection", err)
 	}
@@ -217,8 +217,8 @@ func TestBuildInputSeriesRequiresS3BucketOrEnv(t *testing.T) {
 	}
 
 	_, err = exec.buildInputSeries(&inputSeriesSpec{
-			S3: &s3InputSeriesSpec{Key: "samples.csv"},
-		})
+		S3: &s3InputSeriesSpec{Key: "samples.csv"},
+	})
 	if err == nil || !strings.Contains(err.Error(), "S3_BUCKET") {
 		t.Fatalf("buildInputSeries() error = %v, want missing bucket rejection", err)
 	}

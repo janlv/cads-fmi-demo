@@ -296,6 +296,7 @@ RUL_CAP_DAYS = 20000.0
 def _rul_outputs(v):
     v["damage_index"] = v["_damage"]
     v["damage_rate_per_day"] = v["_rate"]
+    v["planning_rate_per_day"] = v["_planning_rate"]
     # Conservative planning rate: never lower than the design rate nor than the
     # worst smoothed rate seen so far, so the RUL estimate only ever falls.
     v["rul_days"] = clamp((1.0 - v["_damage"]) / max(v["_planning_rate"], 1e-12), 0.0, RUL_CAP_DAYS)
@@ -318,11 +319,26 @@ def rul_damage_rate_per_day(v):
     return per_cycle * v["cycles_per_hour"] * 24.0 * condition
 
 
+def rul_initial_planning_rate(v):
+    """Planning rate at start: design/smoothed rule, raised to a carried-over rate.
+
+    ``initial_planning_rate_per_day`` <= 0 (the default) keeps the plain
+    max(design, smoothed) rule; a positive value (the previous assessment's
+    ``planning_rate_per_day``) is a floor so the RUL does not jump up at run
+    boundaries.
+    """
+    rule = max(v["design_damage_rate_per_day"], v["_smoothed_rate"])
+    carried = float(v["initial_planning_rate_per_day"])
+    if carried > 0.0:
+        return max(rule, carried)
+    return rule
+
+
 def rul_init(v, start_time):
     v["_damage"] = clamp(v["initial_damage"], 0.0, 1.0)
     v["_rate"] = rul_damage_rate_per_day(v)
     v["_smoothed_rate"] = v["_rate"]
-    v["_planning_rate"] = max(v["design_damage_rate_per_day"], v["_smoothed_rate"])
+    v["_planning_rate"] = rul_initial_planning_rate(v)
     _rul_outputs(v)
 
 
@@ -608,6 +624,11 @@ MODEL_SPECS = {
             "condition_gain": (FLOAT64, 1.5, "Damage multiplier per unit condition indicator [-]"),
             "design_damage_rate_per_day": (FLOAT64, 0.0015, "Design damage rate, RUL floor [1/d]"),
             "rate_smoothing_s": (FLOAT64, 21600.0, "Smoothing time constant for the planning rate [s]"),
+            "initial_planning_rate_per_day": (
+                FLOAT64,
+                0.0,
+                "Planning rate carried over from a previous assessment; 0 uses max(design, smoothed rate) [1/d]",
+            ),
             "demo_acceleration": (
                 FLOAT64,
                 1.0,
@@ -623,6 +644,7 @@ MODEL_SPECS = {
             "damage_index": (FLOAT64, 0.0, "Accumulated Miner damage [-]"),
             "rul_days": (FLOAT64, 0.0, "Remaining useful life at the planning rate [d]"),
             "damage_rate_per_day": (FLOAT64, 0.0, "Instantaneous damage rate [1/d]"),
+            "planning_rate_per_day": (FLOAT64, 0.0, "Conservative damage rate used for the RUL [1/d]"),
             "status_code": (INT32, 0, "0 ok, 1 watch, 2 alarm"),
         },
         "init": rul_init,

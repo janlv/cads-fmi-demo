@@ -75,9 +75,50 @@ type SeriesReader interface {
 	ReadSeries(ctx context.Context, site string, channels []string, from, to time.Time) ([]Row, error)
 }
 
+// StoredRun is one <site>.runs row as listed by ListRuns.
+type StoredRun struct {
+	RunID            string
+	WorkflowPath     string
+	Status           string
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	WallSeconds      *float64
+	SimulatedSeconds *float64
+	// Provenance is the stored `_run` record (decoded jsonb).
+	Provenance map[string]any
+}
+
+// PreviousRun is the newest succeeded run of a workflow that recorded a data window, as used
+// to continue assessments from where the previous one stopped.
+type PreviousRun struct {
+	RunID      string
+	Mode       string
+	From, To   time.Time
+	FinishedAt *time.Time
+	// Outputs has the runner result shape: step -> flattened output name -> value (scalar
+	// outputs only; no traces, no `_run`).
+	Outputs map[string]map[string]any
+}
+
+// WindowReader is the read side the executor uses to resolve `data_window` assessment windows
+// and `carry_over` state.
+type WindowReader interface {
+	SeriesReader
+	// LatestSamples returns the newest sample time per channel. Channels without samples are
+	// absent from the map; a site without measurements yields an empty map.
+	LatestSamples(ctx context.Context, site string, channels []string) (map[string]time.Time, error)
+	// LatestSucceededRun returns the succeeded run of workflowPath whose data window (of the
+	// given mode) ends last, or nil, nil when there is none.
+	LatestSucceededRun(ctx context.Context, site, workflowPath, mode string) (*PreviousRun, error)
+}
+
 // Store is the full CADS Data interface.
 type Store interface {
-	SeriesReader
+	WindowReader
+	ReadSeriesBinned(ctx context.Context, site string, channels []string, from, to time.Time, binSeconds float64) ([]Row, error)
+	ListRuns(ctx context.Context, site string, limit int) ([]StoredRun, error)
+	ReadRunOutputs(ctx context.Context, site string, runIDs []string) ([]OutputRow, error)
+	ReadRunSeries(ctx context.Context, site string, runIDs, steps, signals []string) ([]RunSeriesRow, error)
 	EnsureSiteSchema(ctx context.Context, site string) error
 	ChannelStatus(ctx context.Context, site string) ([]ChannelInfo, error)
 	WriteRun(ctx context.Context, site, runID string, results map[string]map[string]any) (*WriteSummary, error)

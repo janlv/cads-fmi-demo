@@ -3,6 +3,7 @@ package cadsdb
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func sampleResults() map[string]map[string]any {
@@ -124,5 +125,98 @@ func TestValidSite(t *testing.T) {
 		if ValidSite(site) != want {
 			t.Fatalf("ValidSite(%q) = %v, want %v", site, !want, want)
 		}
+	}
+}
+
+func TestRunWindow(t *testing.T) {
+	started := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+	sim := 3600.0
+	zero := 0.0
+	ts := func(s string) time.Time {
+		v, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	input := func(from, to any) map[string]any {
+		return map[string]any{"steps": []any{
+			map[string]any{"fmus": []any{
+				map[string]any{"inputs": []any{
+					"not-a-map",
+					map[string]any{"name": "no window"},
+					map[string]any{"from": "", "to": "2026-05-02T00:00:00Z"},
+					map[string]any{"from": from, "to": to},
+				}},
+			}},
+		}}
+	}
+	withDataWindow := func(base map[string]any, dw any) map[string]any {
+		base["data_window"] = dw
+		return base
+	}
+
+	cases := []struct {
+		name       string
+		provenance map[string]any
+		started    *time.Time
+		sim        *float64
+		from, to   time.Time
+		source     string
+		ok         bool
+	}{
+		{
+			name: "data_window wins",
+			provenance: withDataWindow(input("2026-05-01T00:00:00Z", "2026-05-02T00:00:00Z"),
+				map[string]any{"mode": "since_previous_run", "from": "2026-06-01T00:00:00+02:00", "to": "2026-06-02T00:00:00Z"}),
+			started: &started, sim: &sim,
+			from: ts("2026-05-31T22:00:00Z"), to: ts("2026-06-02T00:00:00Z"), source: WindowSourceDataWindow, ok: true,
+		},
+		{
+			name:       "input when data_window is malformed",
+			provenance: withDataWindow(input("2026-05-01T00:00:00Z", "2026-05-02T00:00:00Z"), map[string]any{"from": "yesterday", "to": 5.0}),
+			started:    &started, sim: &sim,
+			from: ts("2026-05-01T00:00:00Z"), to: ts("2026-05-02T00:00:00Z"), source: WindowSourceInput, ok: true,
+		},
+		{
+			name:       "input when data_window is not an object",
+			provenance: withDataWindow(input("2026-05-01T00:00:00Z", "2026-05-02T00:00:00Z"), "nope"),
+			from:       ts("2026-05-01T00:00:00Z"), to: ts("2026-05-02T00:00:00Z"), source: WindowSourceInput, ok: true,
+		},
+		{
+			name:       "started_at plus simulated seconds",
+			provenance: input(nil, "2026-05-02T00:00:00Z"),
+			started:    &started, sim: &sim,
+			from: started, to: started.Add(time.Hour), source: WindowSourceStartedAt, ok: true,
+		},
+		{
+			name:       "started_at without positive simulated seconds",
+			provenance: map[string]any{"steps": "garbage"},
+			started:    &started, sim: &zero,
+			from: started, to: started, source: WindowSourceStartedAt, ok: true,
+		},
+		{
+			name:       "nil provenance falls back to started_at",
+			provenance: nil,
+			started:    &started,
+			from:       started, to: started, source: WindowSourceStartedAt, ok: true,
+		},
+		{
+			name:       "malformed steps shapes",
+			provenance: map[string]any{"steps": []any{nil, "x", map[string]any{"fmus": "x"}, map[string]any{"fmus": []any{map[string]any{"inputs": 3}}}}},
+			ok:         false,
+		},
+		{name: "nothing", provenance: nil, ok: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			from, to, source, ok := RunWindow(tc.provenance, tc.started, tc.sim)
+			if ok != tc.ok || source != tc.source || !from.Equal(tc.from) || !to.Equal(tc.to) {
+				t.Fatalf("RunWindow() = %v, %v, %q, %v; want %v, %v, %q, %v", from, to, source, ok, tc.from, tc.to, tc.source, tc.ok)
+			}
+			if ok && (from.Location() != time.UTC || to.Location() != time.UTC) {
+				t.Fatalf("RunWindow() times not UTC: %v %v", from, to)
+			}
+		})
 	}
 }

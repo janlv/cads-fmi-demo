@@ -4,7 +4,7 @@ metadata:
   category: monitoring
   result_family: storhy_mock
   summary: >-
-    Every 15 minutes the sediment model takes the next measured turbidity sample and updates its exposure; the runtime raises a cleaning event when exposure crosses 0.8, and the RUL model accumulates erosion damage from the exposure.
+    Every 15 minutes SedimentExposure takes the next measured turbidity sample (channel turbidity_g_l from the STOR-HY database) and updates its sediment exposure; the runtime raises a cleaning event when that exposure crosses 0.8, and Rul accumulates erosion damage from SedimentExposure's exposure.
 
   description: >-
     Event-driven Gauss-Seidel co-simulation of two FMI 3.0 FMUs: a sediment exposure model
@@ -13,17 +13,19 @@ metadata:
     pump/turbine cycling and dewatering head profile feeds its exposure to a Miner-rule RUL model
     as the condition indicator. The master raises a high_exposure event when exposure exceeds 0.8
     and pulses the sediment model's own cleaning trigger for one 15-minute interval; the cleaning
-    resets exposure and adds cost and downtime. Deterministic placeholder models, not validated
-    physics.
+    resets exposure and adds cost and downtime. Each assessment covers the measurements since the
+    previous one and continues the accumulated state: exposure, hours since the last cleaning and
+    damage start from the previous run's values (first run: the last 24 hours of data from the
+    start values; at most 7 days per run when catching up). Deterministic placeholder models, not
+    validated physics.
   tags: [cheylas, monitoring, sediment, erosion, cleaning, rul, fmi3, cosim, event-driven, gauss-seidel]
   limits: {max_runtime_seconds: 300}
+data_window: {mode: since_previous_run, initial_span: 24h, max_span: 7d}
 synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
 steps:
   - name: sediment_erosion
     cosim:
       scheme: gauss_seidel
-      start_time: 0
-      stop_time: 86400
       communication_step: 900
       models:
         - name: sediment
@@ -35,15 +37,18 @@ steps:
             initial_exposure: 0.3
             min_cleaning_interval_h: 4.0
             cleaning_cost_eur: 18000.0
+          carry_over:
+            initial_exposure: sediment_erosion.sediment.sediment_exposure
+            initial_hours_since_cleaning: sediment_erosion.sediment.hours_since_cleaning
           input_series:
             db:
               site: cheylas
               channels: {measured_concentration_g_l: turbidity_g_l}
-              window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
               fallback: {csv: data/storhy/cheylas/measurements/turbidity_g_l.csv}
         - name: rul
           fmu: fmu/models/Rul.fmu
-          start_values: {stress_amplitude_mpa: 55.0, initial_damage: 0.3, demo_acceleration: 100.0}
+          start_values: {stress_amplitude_mpa: 55.0, initial_damage: 0.3, demo_acceleration: 20.0}
+          carry_over: {initial_damage: sediment_erosion.rul.damage_index}
       connections:
         - {from: sediment.sediment_exposure, to: rul.condition_indicator}
       events:
@@ -56,6 +61,7 @@ steps:
       outputs:
         - sediment.sediment_exposure
         - sediment.cleaning_count
+        - sediment.hours_since_cleaning
         - sediment.cumulative_cleaning_cost_eur
         - sediment.downtime_h
         - rul.damage_index

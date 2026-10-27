@@ -73,7 +73,9 @@ Acceleration and simplifications worth knowing before quoting numbers:
   planning rate (never below the design rate or the worst smoothed rate seen),
   so its RUL estimate only falls. `demo_acceleration` (default 1) multiplies
   the accumulated damage only; `damage_rate_per_day` and `rul_days` stay at
-  real rates.
+  real rates. The Cheylas Sediment Erosion Events workflow sets it to 20 so
+  the damage trend is visible over a few replayed days (a demo setting, not a
+  calibrated value).
 - `RunnerStress.energy_mwh` integrates `load_pu * rated_power_mw`
   (default 240 MW) over turbine-mode intervals only.
 - `SedimentExposure.profile_mode` selects the La Rance tidal profile (0)

@@ -35,6 +35,10 @@ type Executor struct {
 	// connection itself (from CADS_DB_URL) and closes it after the run.
 	seriesReader cadsdb.SeriesReader
 	ownedStore   *cadsdb.PG
+	// window and prevRun are per-run: the resolved `data_window` (nil for workflows without
+	// one) and the previous assessment it continues from, which also feeds `carry_over`.
+	window  *activeWindow
+	prevRun *cadsdb.PreviousRun
 }
 
 // Option configures the executor.
@@ -122,8 +126,10 @@ func (e *Executor) Run(workflowPath string) (map[string]map[string]any, error) {
 	results := make(map[string]map[string]any)
 	// The cancel flag is deliberately NOT reset here: a cancellation requested before Run starts
 	// (e.g. SIGTERM delivered between signal.Notify and Run) must still take effect.
+	e.window, e.prevRun = nil, nil
 	err := e.run(workflowPath, results, rec)
 	e.closeOwnedStore()
+	e.window, e.prevRun = nil, nil
 	results[RunInfoStepName] = rec.finish(err)
 	return results, err
 }
@@ -137,11 +143,11 @@ func (e *Executor) run(workflowPath string, results map[string]map[string]any, r
 	if err != nil {
 		return fmt.Errorf("read workflow %s: %w", absPath, err)
 	}
+	workflowRel := workflowPath
 	if rel, relErr := filepath.Rel(e.root, absPath); relErr == nil {
-		rec.setWorkflow(rel, data)
-	} else {
-		rec.setWorkflow(workflowPath, data)
+		workflowRel = rel
 	}
+	rec.setWorkflow(workflowRel, data)
 
 	var doc workflowFile
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -151,8 +157,22 @@ func (e *Executor) run(workflowPath string, results map[string]map[string]any, r
 	if len(doc.Steps) == 0 {
 		return fmt.Errorf("workflow %s does not define any steps", absPath)
 	}
-	if err := validateSteps(absPath, doc.Steps); err != nil {
+	if err := validateSteps(absPath, doc.Steps, doc.DataWindow != nil); err != nil {
 		return err
+	}
+	plan, err := validateDataWindow(&doc)
+	if err != nil {
+		return err
+	}
+	if plan != nil {
+		if err := e.resolveDataWindow(plan, filepath.ToSlash(workflowRel), rec); err != nil {
+			if errors.Is(err, ErrNoNewData) {
+				for _, step := range doc.Steps {
+					rec.stepSkipped(step.Name, stepKind(step))
+				}
+			}
+			return err
+		}
 	}
 
 	if doc.SyntheticCase != nil {
@@ -204,7 +224,8 @@ func stepKind(step workflowStep) string {
 }
 
 // validateSteps checks names and the fmu/cosim exclusivity for every step before anything runs.
-func validateSteps(workflowPath string, steps []workflowStep) error {
+// windowed workflows (data_window) may omit cosim start/stop times; the window supplies them.
+func validateSteps(workflowPath string, steps []workflowStep, windowed bool) error {
 	seen := make(map[string]struct{}, len(steps))
 	for _, step := range steps {
 		if step.Name == "" {
@@ -222,11 +243,11 @@ func validateSteps(workflowPath string, steps []workflowStep) error {
 		seen[step.Name] = struct{}{}
 		if step.CoSim != nil {
 			if step.FMU != "" || step.StepSize != nil || step.StartTime != nil || step.StopTime != nil ||
-				len(step.StartValues) > 0 || len(step.StartFrom) > 0 || step.InputSeries != nil ||
+				len(step.StartValues) > 0 || len(step.StartFrom) > 0 || len(step.CarryOver) > 0 || step.InputSeries != nil ||
 				step.Trace != nil || len(step.Outputs) > 0 {
 				return fmt.Errorf("step %s: cosim steps must not also set fmu, timing, start values, input_series, trace or outputs at step level", step.Name)
 			}
-			if err := ValidateCoSim(step.Name, step.CoSim); err != nil {
+			if err := ValidateCoSimWithWindow(step.Name, step.CoSim, windowed); err != nil {
 				return err
 			}
 			continue
@@ -255,10 +276,11 @@ func (e *Executor) runFMUStep(step workflowStep, results map[string]map[string]a
 	}
 	info.FMUs = []FMUDescriptor{rec.describeFMU(step.Name, fmuPath)}
 
-	startVals, err := e.buildStartValues(step.StartValues, step.StartFrom, results)
+	startVals, carryInfo, err := e.buildStartValues(step.StartValues, step.CarryOver, step.StartFrom, results)
 	if err != nil {
 		return fail(fmt.Errorf("start values invalid: %w", err))
 	}
+	info.FMUs[0].CarryOver = carryInfo
 	inputSeries, err := e.buildInputSeries(step.InputSeries)
 	if err != nil {
 		return fail(fmt.Errorf("input series invalid: %w", err))
@@ -276,6 +298,10 @@ func (e *Executor) runFMUStep(step workflowStep, results map[string]map[string]a
 		StartTime:   step.StartTime,
 		StopTime:    step.StopTime,
 		StepSize:    step.StepSize,
+	}
+	if e.window != nil && step.StartTime == nil && step.StopTime == nil {
+		start, stop := e.window.simStart, e.window.simStop
+		cfg.StartTime, cfg.StopTime = &start, &stop
 	}
 	if inputSeries != nil {
 		cfg.InputSeries = inputSeries.Config
@@ -324,6 +350,7 @@ func (e *Executor) runCoSimStep(step workflowStep, results map[string]map[string
 		if inputs := resolved.Inputs[model.Name]; inputs != nil {
 			desc.Inputs = inputs
 		}
+		desc.CarryOver = resolved.CarryOver[model.Name]
 		info.FMUs = append(info.FMUs, desc)
 	}
 
@@ -382,8 +409,9 @@ type workflowFile struct {
 	Metadata struct {
 		SiteID string `yaml:"site_id"`
 	} `yaml:"metadata"`
-	SyntheticCase any            `yaml:"synthetic_case"`
-	Steps         []workflowStep `yaml:"steps"`
+	SyntheticCase any             `yaml:"synthetic_case"`
+	DataWindow    *DataWindowSpec `yaml:"data_window"`
+	Steps         []workflowStep  `yaml:"steps"`
 }
 
 type workflowStep struct {
@@ -396,6 +424,7 @@ type workflowStep struct {
 	ResultPath  string            `yaml:"result"`
 	StartValues map[string]any    `yaml:"start_values"`
 	StartFrom   map[string]string `yaml:"start_from"`
+	CarryOver   map[string]string `yaml:"carry_over"`
 	InputSeries *inputSeriesSpec  `yaml:"input_series"`
 	Trace       *traceSpec        `yaml:"trace"`
 	CoSim       *CoSimSpec        `yaml:"cosim"`
@@ -484,17 +513,26 @@ func normalizeSyntheticCaseValue(value any) (any, error) {
 	}
 }
 
-// buildStartValues encodes literal start values and resolves `start_from` references of the form
+// buildStartValues encodes literal start values, applies `carry_over` values from the previous
+// assessment (overriding literals), and resolves `start_from` references of the form
 // `step.variable` against earlier results. Cosim results use flattened `model.variable` keys, so a
 // reference like `cosim_step.battery.soc_percent` splits into step `cosim_step` and key
-// `battery.soc_percent`.
-func (e *Executor) buildStartValues(literal map[string]any, from map[string]string, results map[string]map[string]any) (map[string]string, error) {
+// `battery.soc_percent`. The returned CarryOverInfo is nil when carry is empty.
+func (e *Executor) buildStartValues(literal map[string]any, carry map[string]string, from map[string]string, results map[string]map[string]any) (map[string]string, *CarryOverInfo, error) {
 	values := make(map[string]string)
 	for _, key := range sortedKeys(literal) {
 		encoded, err := encodeScalar(literal[key])
 		if err != nil {
-			return nil, fmt.Errorf("start_values[%s]: %w", key, err)
+			return nil, nil, fmt.Errorf("start_values[%s]: %w", key, err)
 		}
+		values[key] = encoded
+	}
+
+	carried, carryInfo, err := e.resolveCarryOver(carry, literal)
+	if err != nil {
+		return nil, nil, err
+	}
+	for key, encoded := range carried {
 		values[key] = encoded
 	}
 
@@ -502,24 +540,24 @@ func (e *Executor) buildStartValues(literal map[string]any, from map[string]stri
 		reference := from[target]
 		stepName, variable, ok := strings.Cut(reference, ".")
 		if !ok || stepName == "" || variable == "" {
-			return nil, fmt.Errorf("start_from[%s] must use format step.variable", target)
+			return nil, nil, fmt.Errorf("start_from[%s] must use format step.variable", target)
 		}
 		stepResult, exists := results[stepName]
 		if !exists {
-			return nil, fmt.Errorf("start_from[%s] references unknown step %s", target, stepName)
+			return nil, nil, fmt.Errorf("start_from[%s] references unknown step %s", target, stepName)
 		}
 		value, ok := stepResult[variable]
 		if !ok {
-			return nil, fmt.Errorf("start_from[%s] missing variable %s in step %s", target, variable, stepName)
+			return nil, nil, fmt.Errorf("start_from[%s] missing variable %s in step %s", target, variable, stepName)
 		}
 		encoded, err := encodeScalar(value)
 		if err != nil {
-			return nil, fmt.Errorf("start_from[%s]: %w", target, err)
+			return nil, nil, fmt.Errorf("start_from[%s]: %w", target, err)
 		}
 		values[target] = encoded
 	}
 
-	return values, nil
+	return values, carryInfo, nil
 }
 
 type resolvedInputSeries struct {

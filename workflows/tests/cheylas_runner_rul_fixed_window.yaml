@@ -1,0 +1,77 @@
+# Regression copy of the Cheylas runner RUL workflow before it moved to a relative
+# data_window: fixed absolute window 2026-05-20..2026-05-21, start/stop 0..86400 and literal
+# initial_damage. A first windowed run on the bundled batch must reproduce this configuration.
+metadata:
+  display_name: Cheylas Runner RUL Lock-step
+  site_id: cheylas
+  category: maintenance
+  result_family: storhy_mock
+  summary: >-
+    Every 15 minutes the runner model produces load and stress for the current duty cycle, the IoT indicator model turns the measured vibration into a condition indicator, and the RUL model accumulates fatigue damage from both; afterwards the cost model weighs the consumed runner life against the energy produced.
+
+  description: >-
+    Jacobi (parallel lock-step) co-simulation of three FMI 3.0 FMUs with a one-way coupling graph:
+    a runner duty-cycle model feeds load to an IoT vibration indicator model and stress to a
+    Miner-rule RUL model, which also reads the condition indicator. The IoT model filters the
+    measured vibration channel vibration_rms_mm_s, read from the Cheylas schema of the STOR-HY
+    database (the bundled measurement file when no database is configured), and sub-steps at
+    5 minutes inside the 15-minute communication step. A degradation-cost model then weighs
+    the consumed runner life against the value of the generated energy. Deterministic placeholder
+    models, not validated physics.
+  tags: [cheylas, maintenance, rul, iot, degradation-cost, fmi3, cosim, jacobi, lock-step, one-way]
+  limits: {max_runtime_seconds: 300}
+synthetic_case: data/storhy/synthetic/cheylas_sediment_cycling.yaml
+steps:
+  - name: runner_health
+    cosim:
+      scheme: jacobi
+      start_time: 0
+      stop_time: 86400
+      communication_step: 900
+      models:
+        - name: runner
+          fmu: fmu/models/RunnerStress.fmu
+          start_values: {flow_demand_pu: 0.75}
+        - name: iot
+          fmu: fmu/models/IoTIndicator.fmu
+          input_series:
+            db:
+              site: cheylas
+              channels: {vibration_rms_measured_mm_s: vibration_rms_mm_s}
+              window: {from: "2026-05-20T00:00:00Z", to: "2026-05-21T00:00:00Z"}
+              fallback: {csv: data/storhy/cheylas/measurements/vibration_rms_mm_s.csv}
+        - name: rul
+          fmu: fmu/models/Rul.fmu
+          start_values: {initial_damage: 0.35}
+      connections:
+        - {from: runner.load_pu, to: iot.load_pu}
+        - {from: runner.stress_amplitude_mpa, to: rul.stress_amplitude_mpa}
+        - {from: iot.condition_indicator, to: rul.condition_indicator}
+      outputs:
+        - runner.start_stop_count
+        - runner.energy_mwh
+        - iot.vibration_rms_mm_s
+        - iot.condition_indicator
+        - rul.damage_index
+        - rul.rul_days
+        - rul.damage_rate_per_day
+        - rul.status_code
+      trace:
+        signals:
+          - runner.load_pu
+          - runner.stress_amplitude_mpa
+          - runner.energy_mwh
+          - iot.vibration_rms_mm_s
+          - iot.condition_indicator
+          - rul.damage_index
+          - rul.rul_days
+        sample_every: 900
+  - name: degradation_cost
+    fmu: fmu/models/DegradationCost.fmu
+    start_time: 0
+    stop_time: 86400
+    start_from:
+      rul_days: runner_health.rul.rul_days
+      damage_rate_per_day: runner_health.rul.damage_rate_per_day
+      energy_mwh: runner_health.runner.energy_mwh
+    outputs: [degradation_cost_eur, gross_revenue_eur, net_benefit_eur, benefit_cost_ratio, status_code, recommendation_code]
