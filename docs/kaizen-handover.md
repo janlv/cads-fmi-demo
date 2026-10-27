@@ -64,7 +64,7 @@ The steps are:
    from the database and draws them.
 6. `run_db.sh --next --notify` replays the next day of synthetic data. After
    loading, it calls the dashboard (`POST /api/sites/<site>/runs`), which runs
-   that site's assessment workflows. This gives a near-real-time loop:
+   that site's assessment workflows. This gives a continuous loop:
    ingest a day, assess it, plot the trend.
 
 The demo currently has database-backed workflows for the Le Cheylas site

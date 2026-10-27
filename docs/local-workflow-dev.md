@@ -12,7 +12,7 @@ It is intentionally CLI-only and does not start a dashboard. The browser
 dashboard normally runs against the Kaizen Playground; to use it without
 Kaizen, start the service with `--execution local` so it runs the workflows
 on this machine (see the
-[near-realtime demo](user-paths.md#near-realtime-assessment-demo-local-database)).
+[local demo](user-paths.md#local-demo)).
 
 ## Prepare Local Development
 

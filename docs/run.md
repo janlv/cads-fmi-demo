@@ -1,8 +1,9 @@
 # Run Pipelines
 
-This repository has three user-path entrypoints:
+The [local demo](#local-demo) runs the dashboard and the workflows on your own
+machine with a local database. The Kaizen paths have their own entrypoints:
 
-- `run_playground.sh` for the default Playground dashboard path
+- `run_playground.sh` for the Playground dashboard
 - `run_publish.sh` for build/publish/update of the Playground image
 - `run_local_dev.sh` for CLI-only local Minikube workflow/model development
 
@@ -12,12 +13,12 @@ The lower-level execution scripts remain available:
 - `scripts/commands/run_remote.sh` for direct submissions to the hosted Kaizen playground
 - `scripts/commands/run_dashboard.sh` for the browser UI that launches the same hosted runs
 
-All three paths execute the same workflow YAML files through the same Go/FMIL
-runtime. The difference is where Argo runs the workflow and how you interact
+All paths execute the same workflow YAML files through the same Go/FMIL
+runtime. The difference is who schedules the workflow and how you interact
 with it.
 
-See [`user-paths.md`](user-paths.md) for the OS-independent user paths:
-Playground Dashboard, Publish to Playground, and CLI-only Local Dev.
+See [`user-paths.md`](user-paths.md) for the user paths: Local demo, Kaizen
+Playground, and CLI-only Local Dev.
 
 ## Local flow
 
@@ -110,10 +111,10 @@ The dashboard remembers the last view; `?view=plots`, `?view=workflow` or
 `?view=runs` in the URL opens a view directly. The full description is in
 [`architecture.md`](architecture.md#dashboard-path).
 
-## Near-realtime local flow
+## Local demo
 
 With a local database the service can run the workflows itself and the Plots
-view becomes a near-realtime loop: ingest a day, assess it, plot the trend.
+view becomes a loop: ingest a day, assess it, plot the trend.
 
 ```bash
 scripts/commands/run_db.sh
@@ -141,7 +142,7 @@ and continue its state; with nothing new, Run assessment reports "Up to date"
 and a run that starts anyway finishes as `skipped` ("no new data"). The
 Alqueva workflow has no `data_window`, so it reruns its fixed window every
 time. See
-[`user-paths.md`](user-paths.md#near-realtime-assessment-demo-local-database)
+[`user-paths.md`](user-paths.md#local-demo)
 for the step-by-step demo and
 [`workflows.md`](workflows.md#assessment-windows-and-state-carry-over-data_window-carry_over)
 for the window rules.

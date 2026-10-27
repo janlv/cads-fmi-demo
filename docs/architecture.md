@@ -158,7 +158,7 @@ Workflow card's "Data in" line uses.
 
 **Local execution.** The service can execute runs itself instead of submitting
 them to Argo (`cads-workflow-service --execution auto|argo|local`; flag table
-in [`run.md`](run.md#near-realtime-local-flow)). In local mode it starts the
+in [`run.md`](run.md#local-demo)). In local mode it starts the
 runner binary (`--runner-bin`, default `bin/cads-workflow-runner`) as a child
 process per run with `CADS_RUN_ID` and the database URL, or runs it inside a
 container image (`--local-runner-image IMAGE`, env `CADS_LOCAL_RUNNER_IMAGE`)

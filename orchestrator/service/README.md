@@ -85,7 +85,7 @@ Flags (`./cads-workflow-service --help`):
 | `--kubeconfig PATH` | kubeconfig used when `ARGO_TOKEN` is not set |
 | `--max-runtime-seconds N` | deadline of workflows without `limits.max_runtime_seconds` (default `CADS_MAX_RUNTIME_SECONDS` or 900, capped by `CADS_MAX_RUNTIME_CEILING_SECONDS`) |
 | `--db-url URL` | CADS database (default `CADS_DB_URL`) |
-| `--execution auto\|argo\|local` | where dashboard runs execute; see [`docs/run.md`](../../docs/run.md#near-realtime-local-flow) |
+| `--execution auto\|argo\|local` | where dashboard runs execute; see [`docs/run.md`](../../docs/run.md#local-demo) |
 | `--runner-bin PATH` | runner binary for local runs (default `<workdir>/bin/cads-workflow-runner`) |
 | `--local-runner-image IMAGE` | run local runs inside this image (env `CADS_LOCAL_RUNNER_IMAGE`) |
 | `--local-db-url URL` | database URL inside that container (env `CADS_LOCAL_DB_URL`) |

@@ -3,7 +3,7 @@
 This guide is for users who want to run their own local browser dashboard while
 launching workflows into the shared Kaizen Argo playground.
 
-For the OS-independent user paths, see [`user-paths.md`](user-paths.md).
+For the user paths, see [`user-paths.md`](user-paths.md).
 
 The dashboard itself runs on your laptop at `http://localhost:8080/`. Workflow
 pods run remotely in Kaizen using the configured container image.

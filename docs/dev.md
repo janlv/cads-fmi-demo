@@ -18,7 +18,7 @@ go build -o ../../bin/cads-workflow-service ./cmd/cads-workflow-service
 ```
 
 The service is cgo-free and needs no FMIL, so it can also be built on its own
-(for example on macOS for the local near-realtime demo):
+(for example on macOS for the local demo):
 
 ```bash
 cd orchestrator/service

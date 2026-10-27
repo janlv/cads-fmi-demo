@@ -17,7 +17,7 @@ state and problems, database state, run-refresh errors, dashboard version).
   has neither Argo access nor local runs. Fix the Kaizen credentials (see
   [Playground or hosted Argo problems](#playground-or-hosted-argo-problems)),
   or start the service with `--execution local` and a runner image or binary
-  (see [`run.md`](run.md#near-realtime-local-flow)).
+  (see [`run.md`](run.md#local-demo)).
 - **Launch workflow** submits to the hosted playground only, so it stays
   disabled without Argo access even when local runs work.
 - An amber pill is usable: "Ready, no database" means the Plots view shows only

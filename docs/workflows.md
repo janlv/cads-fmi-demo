@@ -319,7 +319,7 @@ export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
 python3 scripts/ingest_measurements.py --batch data/storhy/cheylas/measurements/batch-2026-05-20
 python3 scripts/ingest_measurements.py --dry-run --batch <dir> [--batch <dir> ...] [--site <id>]
 
-# near-realtime replay: load the next upcoming day and ask the dashboard to assess it
+# local demo replay: load the next upcoming day and ask the dashboard to assess it
 scripts/commands/run_db.sh --next --notify
 scripts/commands/run_db.sh --batch data/storhy/cheylas/measurements/upcoming/batch-2026-05-21
 ```
@@ -404,8 +404,8 @@ signal and `SedimentExposure` to its profile concentration.
 
 ## Assessment windows and state carry-over (`data_window`, `carry_over`)
 
-A fixed `window` assesses the same day on every run. For repeated, near-realtime
-assessments a workflow instead declares a workflow-level `data_window`: the
+A fixed `window` assesses the same day on every run. For repeated assessments
+as new data arrives, a workflow instead declares a workflow-level `data_window`: the
 runtime resolves the window against the newest data in the database, so every
 run covers the measurements that arrived since the previous one, and
 `carry_over` continues cumulative model state from that previous run. Both
