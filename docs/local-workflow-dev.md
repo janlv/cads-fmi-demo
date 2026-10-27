@@ -10,8 +10,8 @@ to the hosted Kaizen Playground.
 This is the **Local Dev** path in [`user-paths.md`](user-paths.md).
 It is intentionally CLI-only and does not start a dashboard. The browser
 dashboard normally runs against the Kaizen Playground; to use it without
-Kaizen, start the service with `--execution local` so it runs the workflows
-on this machine (see the
+Kaizen, run `./run_local_demo.sh`, which starts the service with
+`--execution local` so it runs the workflows on this machine (see the
 [local demo](user-paths.md#local-demo)).
 
 ## Prepare Local Development

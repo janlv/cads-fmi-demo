@@ -86,7 +86,8 @@ state and problems, database state, run-refresh errors, dashboard version).
 
 ### `Release file ... is not valid yet` during the image build
 - The Podman VM clock on macOS has drifted behind (it can lag days after the
-  laptop sleeps), so apt rejects Debian's package lists. Compare
+  laptop sleeps), so apt rejects Debian's package lists.
+  `./run_local_demo.sh` corrects this itself; for other builds compare
   `podman machine ssh date -u` with `date -u`, then set the VM clock and
   rebuild:
   ```bash
@@ -167,7 +168,7 @@ state and problems, database state, run-refresh errors, dashboard version).
   previous succeeded run. With nothing new (less than one 15-minute
   communication step for the Cheylas workflows) the runner finishes with
   `_run.status: skipped`, exit code 0, and writes nothing.
-- Load more data: `scripts/commands/run_db.sh --next` ingests the next
+- Load more data: `./run_local_demo.sh --next` ingests the next
   `upcoming/batch-<date>/`. If it says no upcoming batch is newer, generate
   more days with `python3 scripts/dev/generate_synthetic_measurements.py --days N`.
 - If `data/storhy/cheylas/measurements/upcoming/` is missing, recreate the
@@ -180,7 +181,7 @@ state and problems, database state, run-refresh errors, dashboard version).
 - The previous run of that workflow does not have the output that
   `carry_over` reads, typically after editing a workflow's `outputs` or the
   model. Add the variable to the step's `outputs`, then reset the assessment
-  chain with `scripts/commands/run_db.sh --reset` so the next run starts from
+  chain with `./run_local_demo.sh --reset` so the next run starts from
   the literal `start_values` again. The runner fails on purpose instead of
   silently resetting accumulated damage.
 
@@ -189,7 +190,7 @@ state and problems, database state, run-refresh errors, dashboard version).
   needs a sample exactly at the window's `from` (the previous run's `to`).
   Batches whose timestamps are off the 300 s grid, or channels with gaps at
   that instant, break this. Ingest batches on the common grid (the generator's
-  are), or reset the chain with `run_db.sh --reset`.
+  are), or reset the chain with `./run_local_demo.sh --reset`.
 
 ### Local runs fail to start or cannot reach the database
 - On macOS the demo FMUs are Linux builds: start the service with
@@ -213,16 +214,16 @@ state and problems, database state, run-refresh errors, dashboard version).
 - Another PostgreSQL runs on the default port. Pick another one and use the
   URL the script prints:
   ```bash
-  CADS_DB_PORT=55432 scripts/commands/run_db.sh
-  export CADS_DB_URL=postgres://cads:cads@127.0.0.1:55432/storhy
+  CADS_DB_PORT=55432 ./run_local_demo.sh
   ```
-  Pass the same `CADS_DB_PORT` to later `run_db.sh --next` calls.
+  Pass the same `CADS_DB_PORT` to later `./run_local_demo.sh --next` calls.
 
 ### Plots show a note instead of history
 - "No CADS database configured" means the service has no `CADS_DB_URL`
   (or `--db-url`). The Plots view then shows only the latest finished run of
-  each workflow. Export the URL printed by `scripts/commands/run_db.sh` and
-  restart the service.
+  each workflow. Start the demo with `./run_local_demo.sh`, which sets it;
+  when starting the service by hand, export the URL printed by
+  `scripts/commands/run_db.sh` and restart the service.
 
 ---
 

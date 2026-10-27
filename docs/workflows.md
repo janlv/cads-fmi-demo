@@ -320,6 +320,7 @@ python3 scripts/ingest_measurements.py --batch data/storhy/cheylas/measurements/
 python3 scripts/ingest_measurements.py --dry-run --batch <dir> [--batch <dir> ...] [--site <id>]
 
 # local demo replay: load the next upcoming day and ask the dashboard to assess it
+# (./run_local_demo.sh --next does the same)
 scripts/commands/run_db.sh --next --notify
 scripts/commands/run_db.sh --batch data/storhy/cheylas/measurements/upcoming/batch-2026-05-21
 ```

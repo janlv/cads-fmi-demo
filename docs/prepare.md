@@ -9,7 +9,9 @@ The repository has one main host preparation path:
 
 `prepare.sh` auto-detects Linux vs macOS but keeps the workflow the same on both
 systems. It installs repo-local Go, Argo CLI, and kubectl under `./.local/` and
-checks that `age` is available for encrypted kubeconfig exchange.
+checks that `age` is available for encrypted kubeconfig exchange
+(`--skip-age` skips that check; `./run_local_demo.sh` uses it, since the local
+demo needs no kubeconfig).
 
 ## Host preparation
 

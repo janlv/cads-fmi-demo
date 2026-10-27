@@ -41,7 +41,8 @@ Everything below runs on one laptop.
  cads-workflow-service + browser dashboard   (reads history from the database)
 ```
 
-The steps are:
+`./run_local_demo.sh` performs steps 1 and 2 (`--next` is step 6). The steps
+are:
 
 1. `scripts/commands/run_db.sh` starts a `timescale/timescaledb` (PostgreSQL 16)
    container and ingests the bundled measurement batches. Each batch is a

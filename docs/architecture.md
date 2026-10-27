@@ -273,6 +273,7 @@ hosted setup are in [`kaizen-handover.md`](kaizen-handover.md).
 
 The supported commands now map cleanly to responsibilities:
 
+- **Local demo**: `./run_local_demo.sh`
 - **Playground dashboard**: `./run_playground.sh`
 - **Publish to Playground**: `./run_publish.sh`
 - **Local Dev**: `./run_local_dev.sh`

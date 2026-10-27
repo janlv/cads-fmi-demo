@@ -249,5 +249,9 @@ elif ((next_batch == 1 || notify == 1 || ${#explicit_batches[@]} > 0)); then
     log_warn "--no-ingest given: ignoring --batch/--next/--notify"
 fi
 
-log_ok "STOR-HY database is up. Point the runtime at it with:"
-printf '  export CADS_DB_URL=%s\n' "$DB_URL"
+if [[ "${CADS_DB_URL:-}" == "$DB_URL" ]]; then
+    log_ok "STOR-HY database is up at $DB_URL"
+else
+    log_ok "STOR-HY database is up. Point the runtime at it with:"
+    printf '  export CADS_DB_URL=%s\n' "$DB_URL"
+fi

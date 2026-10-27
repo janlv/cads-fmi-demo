@@ -19,6 +19,7 @@ SKIP_CA=0
 WITH_LOCAL_MINIKUBE=0
 REQUIRE_CONTAINER_RUNTIME=0
 QUIET=0
+SKIP_AGE=0
 CERTS_DIR="$(cads_select_host_cert_dir "$ROOT_DIR")"
 
 usage() {
@@ -42,6 +43,7 @@ Options:
   --skip-runtime-start      Do not try to start a stopped Podman machine.
   --skip-podman-start       Alias for --skip-runtime-start.
   --skip-ca                 Do not sync company CA files into Podman/Minikube.
+  --skip-age                Do not require age (only needed for the Kaizen kubeconfig).
   --quiet                   Suppress explanatory progress text and next steps.
   -h, --help                Show this help.
 
@@ -163,6 +165,9 @@ while (($#)); do
         --skip-ca)
             SKIP_CA=1
             ;;
+        --skip-age)
+            SKIP_AGE=1
+            ;;
         --quiet)
             QUIET=1
             ;;
@@ -188,7 +193,9 @@ if [[ "$QUIET" != "1" ]]; then
 fi
 
 install_linux_system_packages
-ensure_age
+if [[ "$SKIP_AGE" != "1" ]]; then
+    ensure_age
+fi
 if ((REQUIRE_CONTAINER_RUNTIME)); then
     ensure_container_runtime "$os_name"
     sync_podman_ca_if_needed

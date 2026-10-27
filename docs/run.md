@@ -1,8 +1,9 @@
 # Run Pipelines
 
-The [local demo](#local-demo) runs the dashboard and the workflows on your own
-machine with a local database. The Kaizen paths have their own entrypoints:
+This repository has four user-path entrypoints:
 
+- `run_local_demo.sh` for the [local demo](#local-demo): dashboard, workflows
+  and database on your own machine
 - `run_playground.sh` for the Playground dashboard
 - `run_publish.sh` for build/publish/update of the Playground image
 - `run_local_dev.sh` for CLI-only local Minikube workflow/model development
@@ -117,12 +118,20 @@ With a local database the service can run the workflows itself and the Plots
 view becomes a loop: ingest a day, assess it, plot the trend.
 
 ```bash
+./run_local_demo.sh          # database, runner image, dashboard on :8080
+# browser: Le Cheylas -> Plots -> Run assessment
+./run_local_demo.sh --next   # next synthetic day, assessed automatically
+./run_local_demo.sh --reset  # start the chain over
+```
+
+`run_local_demo.sh` is a wrapper; by hand the same steps are:
+
+```bash
 scripts/commands/run_db.sh
 export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
 scripts/commands/build.sh --image cads-fmi-demo:dev   # runner image + bin/cads-workflow-service
 bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev
-# browser: Le Cheylas -> Plots -> Run assessment
-scripts/commands/run_db.sh --next --notify      # next synthetic day, assessed automatically
+scripts/commands/run_db.sh --next --notify
 ```
 
 Service options for local execution (`bin/cads-workflow-service --help` lists
@@ -173,6 +182,7 @@ Common patterns:
 Run `--help` on any entrypoint for the current interface:
 
 - `./prepare.sh --help`
+- `./run_local_demo.sh --help`
 - `./run_playground.sh --help`
 - `./run_publish.sh --help`
 - `./run_local_dev.sh --help`

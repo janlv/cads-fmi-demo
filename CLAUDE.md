@@ -60,9 +60,10 @@ python3 -m unittest discover -s scripts/tests -p 'test_*.py' # data generator + 
 ./create_fmu/build_python_fmus.sh                           # builds FMUs into fmu/models/
 ```
 
-### The three user paths
+### The user paths
 
 ```bash
+./run_local_demo.sh                                       # local DB + dashboard + local runs (--next, --reset)
 ./run_playground.sh                                       # dashboard against the published Playground image
 ./run_publish.sh                                          # build + push to GHCR + prepare Playground + dashboard
 ./run_local_dev.sh workflows/tests/python_chain.yaml      # Minikube + Argo, no dashboard

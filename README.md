@@ -38,49 +38,32 @@ available.
 You need Git, Python 3, and Podman running (Podman Desktop, or
 `podman machine start` on macOS). Tested on macOS with Podman.
 
-1. Clone the repository and install the repo-local tools (Go, Argo CLI,
-   kubectl under `.local/`):
+1. Clone the repository and start the demo:
 
    ```bash
    git clone https://github.com/janlv/cads-fmi-demo.git
    cd cads-fmi-demo
-   ./prepare.sh
+   ./run_local_demo.sh
    ```
 
-2. Start the local database and load the first day of synthetic Le Cheylas
-   measurements:
+   This installs the repo-local tools under `.local/`, starts a local
+   database with the first day of synthetic Le Cheylas measurements, builds
+   the runner image (the first build takes several minutes; later starts
+   reuse it until the next commit), and starts the dashboard.
 
-   ```bash
-   scripts/commands/run_db.sh
-   export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
-   ```
-
-3. Build the runner image and the dashboard service for this checkout (the
-   first build takes several minutes):
-
-   ```bash
-   scripts/commands/build.sh --image cads-fmi-demo:dev
-   ```
-
-4. Start the dashboard service with local runs:
-
-   ```bash
-   bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev
-   ```
-
-5. Open `http://127.0.0.1:8080`, pick **Le Cheylas** and press **Run
+2. Open `http://127.0.0.1:8080`, pick **Le Cheylas** and press **Run
    assessment**. Both Le Cheylas workflows run on the first day and the charts
    fill in.
 
-6. In another terminal, replay the next day:
+3. In another terminal, replay the next day:
 
    ```bash
-   scripts/commands/run_db.sh --next --notify
+   ./run_local_demo.sh --next
    ```
 
    The service assesses only the new day and continues the models' state from
    the previous run, and the trend in the Plots view grows by one day. Repeat
-   for up to seven days; `scripts/commands/run_db.sh --reset` starts over.
+   for up to seven days; `./run_local_demo.sh --reset` starts over.
 
 The full walkthrough is in
 [`docs/user-paths.md`](docs/user-paths.md#local-demo); problems such as a
@@ -148,6 +131,7 @@ runs changes. Details are in [`docs/architecture.md`](docs/architecture.md).
 
 ## Main Files
 
+- `run_local_demo.sh`: the local demo entry point.
 - `run_playground.sh`, `run_publish.sh`, `run_local_dev.sh`: the Playground
   and Minikube entry points.
 - `scripts/commands/`: lower-level commands (build, database, dashboard,

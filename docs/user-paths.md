@@ -20,25 +20,23 @@ A local TimescaleDB stands in for the STOR-HY database, the dashboard service
 runs the workflows itself, and new measurement days are replayed one at a
 time. The models are deterministic placeholders and the data is synthetic.
 
-This path needs Podman (or Docker on macOS) running, in addition to
-`./prepare.sh`. It has been tested on macOS with Podman.
+This path needs Podman (or Docker on macOS) running. It has been tested on
+macOS with Podman.
 
 ```bash
-scripts/commands/run_db.sh                              # database + the bundled first day
-export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
-
-# runner image for this checkout (host architecture) plus bin/cads-workflow-service
-scripts/commands/build.sh --image cads-fmi-demo:dev
-
-bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev
+./run_local_demo.sh
 ```
 
-Use `scripts/commands/build.sh` rather than a plain `podman build`: it finds
-the repo-local Go from `./prepare.sh`, builds the image for the host
-architecture, and stages company CA certificates under `scripts/certs/` when
-the network intercepts TLS. The first build takes several minutes. If
-port 5432 is taken, start the database with `CADS_DB_PORT=55432
-scripts/commands/run_db.sh` and use the URL it prints.
+The script installs the repo-local tools under `.local/` (as `./prepare.sh`
+does, but without requiring `age`), corrects a drifted Podman VM clock on
+macOS, starts the database container with the first measurement day, builds
+the runner image `cads-fmi-demo:dev` and `bin/cads-workflow-service`, and
+starts the dashboard with local runs and `CADS_DB_URL` set. The first build
+takes several minutes; later starts reuse the image until the checked-out
+commit changes (pass `--rebuild` after uncommitted edits to workflows, FMUs or
+Go code). Stop the dashboard with Ctrl+C; the database keeps running. If
+port 5432 is taken, use `CADS_DB_PORT=55432 ./run_local_demo.sh` (and the
+same variable for `--next`).
 
 Then:
 
@@ -53,7 +51,7 @@ Then:
 3. Replay the next day and let the service assess it without clicking:
 
    ```bash
-   scripts/commands/run_db.sh --next --notify
+   ./run_local_demo.sh --next
    ```
 
    Each call loads one `upcoming/batch-<date>/`; the new runs continue the
@@ -62,9 +60,9 @@ Then:
    slider under the last chart, to zoom all of them. The seven
    `upcoming/` days come from
    `python3 scripts/dev/generate_synthetic_measurements.py --days 8`; rerun it
-   if they are missing, or pass a larger `--days` when `run_db.sh --next`
-   reports no newer upcoming batch.
-4. To start the chain over, run `scripts/commands/run_db.sh --reset`.
+   if they are missing, or pass a larger `--days` when `--next`
+   says there is no newer upcoming batch.
+4. To start the chain over, run `./run_local_demo.sh --reset`.
 
 Le Cheylas is the site that shows the chain. The Alqueva Battery-EMS workflow
 has no `data_window`: Run assessment reruns its fixed window every time, so it
@@ -72,8 +70,8 @@ never continues from the previous run and never reports "Up to date".
 
 On Linux with FMIL installed the image is optional: build with
 `scripts/commands/build.sh` and start the service with `--execution local`
-only, which runs `bin/cads-workflow-runner` directly. All service flags are in
-the table in [`run.md`](run.md#local-demo). Without `CADS_DB_URL` the Plots
+only, which runs `bin/cads-workflow-runner` directly. The individual commands
+behind the script and all service flags are in [`run.md`](run.md#local-demo). Without `CADS_DB_URL` the Plots
 view shows the latest finished run of each workflow with a note, and the
 data-window runs fall back to the bundled CSVs and do not chain. Run
 assessment is disabled when the service has neither Argo access nor local runs
