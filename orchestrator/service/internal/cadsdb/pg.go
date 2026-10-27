@@ -133,7 +133,21 @@ func (p *PG) EnsureSiteSchema(ctx context.Context, site string) error {
 		return nil
 	}
 
-	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+	// When every table already exists (for example created in advance by the database
+	// operator), skip the DDL: a least-privilege runtime role without CREATE rights fails
+	// on CREATE ... IF NOT EXISTS even for existing objects.
+	present, err := p.siteTablesExist(ctx, site)
+	if err != nil {
+		return fmt.Errorf("ensure schema %s: %w", site, err)
+	}
+	if present {
+		p.mu.Lock()
+		p.ensured[site] = true
+		p.mu.Unlock()
+		return nil
+	}
+
+	err = pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
 		// Serialise concurrent creators (parallel runs, ingestion) of the same site schema.
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "cads-site-schema:"+site); err != nil {
 			return err
@@ -162,6 +176,21 @@ func (p *PG) EnsureSiteSchema(ctx context.Context, site string) error {
 	p.ensured[site] = true
 	p.mu.Unlock()
 	return nil
+}
+
+// siteTables lists the tables SchemaStatements creates for a site.
+var siteTables = []string{"channels", "measurements", "runs", "run_outputs", "run_series"}
+
+// siteTablesExist reports whether all of a site's tables exist.
+func (p *PG) siteTablesExist(ctx context.Context, site string) (bool, error) {
+	names := make([]string, len(siteTables))
+	for i, name := range siteTables {
+		names[i] = table(site, name)
+	}
+	var missing int
+	err := p.pool.QueryRow(ctx,
+		`SELECT count(*) FROM unnest($1::text[]) AS t(name) WHERE to_regclass(name) IS NULL`, names).Scan(&missing)
+	return missing == 0, err
 }
 
 func (p *PG) tableExists(ctx context.Context, site, name string) (bool, error) {

@@ -255,6 +255,9 @@ results back to the database):
 
 Per-site schemas are the storage-side prerequisite for per-demonstrator
 authorisation (ARCH-DATA-006); role-based grants per schema are the next step.
+The runner only runs schema DDL when a site table is missing, so a runtime
+role with DML grants on tables created in advance is enough; grants and the
+hosted setup are in [`kaizen-handover.md`](kaizen-handover.md).
 
 ## Main repo boundaries
 

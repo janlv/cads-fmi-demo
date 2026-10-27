@@ -5,9 +5,14 @@ package cadsdb
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Run with:
@@ -373,5 +378,61 @@ func TestPostgresHistoryAndWindowReads(t *testing.T) {
 	}
 	if none, err := store.LatestSucceededRun(ctx, site, "workflows/none.yaml", "since_previous_run"); err != nil || none != nil {
 		t.Fatalf("LatestSucceededRun(none) = %+v, %v", none, err)
+	}
+}
+
+// A runtime role with only DML grants on tables created in advance can write runs:
+// EnsureSiteSchema must not run DDL it has no rights for.
+func TestPostgresLeastPrivilegeWriter(t *testing.T) {
+	admin, site := openThrowawaySite(t)
+	ctx := context.Background()
+	if err := admin.EnsureSiteSchema(ctx, site); err != nil {
+		t.Fatalf("EnsureSiteSchema(admin) error = %v", err)
+	}
+
+	role := site + "_writer"
+	t.Cleanup(func() {
+		ctx := context.Background()
+		admin.pool.Exec(ctx, `DROP OWNED BY `+role)
+		admin.pool.Exec(ctx, `DROP ROLE IF EXISTS `+role)
+	})
+	for _, stmt := range []string{
+		`CREATE ROLE ` + role + ` LOGIN PASSWORD 'it-writer'`,
+		`GRANT USAGE ON SCHEMA ` + site + ` TO ` + role,
+		`GRANT SELECT ON ` + site + `.channels, ` + site + `.measurements TO ` + role,
+		`GRANT SELECT, INSERT, DELETE ON ` + site + `.runs, ` + site + `.run_outputs, ` + site + `.run_series TO ` + role,
+	} {
+		if _, err := admin.pool.Exec(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	cfg, err := pgx.ParseConfig(os.Getenv(EnvURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writerURL := (&url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(role, "it-writer"),
+		Host:   net.JoinHostPort(cfg.Host, strconv.Itoa(int(cfg.Port))),
+		Path:   "/" + cfg.Database,
+		// Also exercise the mode recommended behind a transaction-mode pooler.
+		RawQuery: "sslmode=disable&default_query_exec_mode=exec",
+	}).String()
+	writer, err := Open(ctx, writerURL)
+	if err != nil {
+		t.Fatalf("Open(writer) error = %v", err)
+	}
+	t.Cleanup(writer.Close)
+
+	results := map[string]map[string]any{
+		"_run": {
+			"status":   "succeeded",
+			"workflow": map[string]any{"path": "workflows/demo.yaml", "site": site},
+		},
+		"step": {"y": 1.5},
+	}
+	if _, err := writer.WriteRun(ctx, site, "cads-it-writer", results); err != nil {
+		t.Fatalf("WriteRun(writer) error = %v", err)
 	}
 }
