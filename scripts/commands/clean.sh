@@ -64,7 +64,7 @@ ensure_dir "create_fmu/artifacts"
 
 if [[ -d scripts/certs ]]; then
     log_step "Clearing exported certificates"
-    find scripts/certs -mindepth 1 -type f -delete
+    find scripts/certs -mindepth 1 -type f ! -name .gitkeep -delete
 fi
 
 for VENV in ".venv" "create_fmu/.venv"; do

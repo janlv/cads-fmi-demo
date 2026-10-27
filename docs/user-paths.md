@@ -105,16 +105,25 @@ A local TimescaleDB stands in for the STOR-HY database, the dashboard service
 runs the workflows itself, and new measurement days are replayed one at a
 time. The models are deterministic placeholders and the data is synthetic.
 
+This path needs Podman (or Docker on macOS) running, in addition to
+`./prepare.sh`.
+
 ```bash
 scripts/commands/run_db.sh                              # database + the bundled first day
 export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
 
-# a runner image that matches this checkout (Apple silicon: native arm64 build)
-podman build --platform linux/arm64 -t cads-fmi-demo:dev-arm64 "$PWD"
-(cd orchestrator/service && CGO_ENABLED=0 GOWORK=off go build -o ../../bin/cads-workflow-service ./cmd/cads-workflow-service)
+# runner image for this checkout (host architecture) plus bin/cads-workflow-service
+scripts/commands/build.sh --image cads-fmi-demo:dev
 
-bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev-arm64
+bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev
 ```
+
+Use `scripts/commands/build.sh` rather than a plain `podman build`: it finds
+the repo-local Go from `./prepare.sh`, builds the image for the host
+architecture, and stages company CA certificates under `scripts/certs/` when
+the network intercepts TLS. The first build takes several minutes. If
+port 5432 is taken, start the database with `CADS_DB_PORT=55432
+scripts/commands/run_db.sh` and use the URL it prints.
 
 Then:
 

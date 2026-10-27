@@ -61,8 +61,8 @@ Run these commands in order on the checkout that should host the dashboard.
    ```
 
    Podman or Docker is only needed for the **Publish to Playground** and
-   **Local Dev** paths. It is not needed for the default
-   **Playground Dashboard** path.
+   **Local Dev** paths and the **near-realtime demo** (local database). It is
+   not needed for the default **Playground Dashboard** path.
 
 3. Set up Kaizen credentials using the default non-SSH handoff. First,
    on the checkout that should host the dashboard, run:
@@ -173,9 +173,10 @@ scripts/commands/run_remote.sh workflows/demonstrators/cheylas/maintenance/runne
 # Near-realtime demo: local TimescaleDB with the bundled first day ...
 scripts/commands/run_db.sh
 export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
-# ... a dashboard service that runs workflows on this machine (build the
-# service and the image first, see docs/user-paths.md) ...
-bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev-arm64
+# ... the runner image and service binary for this checkout ...
+scripts/commands/build.sh --image cads-fmi-demo:dev
+# ... a dashboard service that runs workflows on this machine ...
+bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev
 # ... and the next synthetic day, assessed automatically.
 scripts/commands/run_db.sh --next --notify
 

@@ -118,7 +118,8 @@ view becomes a near-realtime loop: ingest a day, assess it, plot the trend.
 ```bash
 scripts/commands/run_db.sh
 export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
-bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev-arm64
+scripts/commands/build.sh --image cads-fmi-demo:dev   # runner image + bin/cads-workflow-service
+bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev
 # browser: Le Cheylas -> Plots -> Run assessment
 scripts/commands/run_db.sh --next --notify      # next synthetic day, assessed automatically
 ```

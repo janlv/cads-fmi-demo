@@ -170,7 +170,7 @@ the service's URL with a `127.0.0.1`/`localhost` host rewritten to
 runs get ids `local-...`, appear in the run list merged with Argo and stored
 runs, and their results come from memory or the database. `/api/config`
 reports `remoteEnabled`, `databaseConfigured`, `localRunsEnabled`,
-`executionMode`, `localRunner` (for example `podman image cads-fmi-demo:dev-arm64`
+`executionMode`, `localRunner` (for example `podman image cads-fmi-demo:dev`
 or `runner binary cads-workflow-runner`), `problems` and `version`.
 
 ## S3-backed workflow inputs

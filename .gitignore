@@ -1,6 +1,8 @@
-# Do not add sensitive certificates to the repo
-scripts/certs/
-certs/
+# Do not add sensitive certificates to the repo (the placeholder keeps the
+# directory the Dockerfile copies)
+scripts/certs/*
+!scripts/certs/.gitkeep
+/certs/
 
 __pycache__/
 *.py[cod]

@@ -84,6 +84,22 @@ state and problems, database state, run-refresh errors, dashboard version).
   connection refused, the Podman VM/socket is stale; restart or recreate the
   Podman machine before rerunning the repo scripts.
 
+### `Release file ... is not valid yet` during the image build
+- The Podman VM clock on macOS has drifted behind (it can lag days after the
+  laptop sleeps), so apt rejects Debian's package lists. Compare
+  `podman machine ssh date -u` with `date -u`, then set the VM clock and
+  rebuild:
+  ```bash
+  podman machine ssh "sudo date -u -s @$(date +%s)"
+  ```
+- The same drift shifts the `started_at` stamps of local runs.
+
+### `COPY scripts/certs/` fails or `SSL certificate problem` during the image build
+- Build with `scripts/commands/build.sh`, not a plain `podman build`. The
+  script stages company CA certificates under `scripts/certs/` (exported from
+  the host when the network intercepts TLS) before building; a plain build in
+  a network that intercepts TLS fails on the Go, pip or FMIL downloads.
+
 ### Podman pull fails with `x509: certificate signed by unknown authority`
 - The TLS error happens inside the Podman VM before bootstrap containers start.
   Put your corporate CA `.crt`/`.pem` files under `scripts/certs/`, then run:
@@ -184,10 +200,23 @@ state and problems, database state, run-refresh errors, dashboard version).
   `host.docker.internal` (docker) by default; on a non-default network pass
   `--local-db-url` (or `CADS_LOCAL_DB_URL`) with a host name the container
   can reach.
+- Docker on Linux does not define `host.docker.internal`, and `run_db.sh`
+  publishes the database on `127.0.0.1` only, so the runner container cannot
+  reach it. Use Podman, or on Linux run the runner binary instead of an image
+  (next point).
 - Without the image, `--execution local` needs `bin/cads-workflow-runner`
   built against FMIL on the host (`scripts/commands/build.sh`); the service
   refuses to start with `--execution local needs --local-runner-image or a
   runner binary` otherwise. Use `--execution argo` instead.
+
+### `run_db.sh` cannot start the database: port 5432 already in use
+- Another PostgreSQL runs on the default port. Pick another one and use the
+  URL the script prints:
+  ```bash
+  CADS_DB_PORT=55432 scripts/commands/run_db.sh
+  export CADS_DB_URL=postgres://cads:cads@127.0.0.1:55432/storhy
+  ```
+  Pass the same `CADS_DB_PORT` to later `run_db.sh --next` calls.
 
 ### Plots show a note instead of history
 - "No CADS database configured" means the service has no `CADS_DB_URL`
