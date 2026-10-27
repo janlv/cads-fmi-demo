@@ -57,3 +57,6 @@ missing. That is not a workflow build and does not publish anything.
 This can show existing Playground runs if the kubeconfig is valid. New launches
 use `CADS_WORKFLOW_IMAGE` from `config/playground.env` unless `--image` is
 provided.
+
+Hosted runs have no database until the `storhy-cads-db` secret exists in the
+Playground, so the hosted Plots view shows only the latest-run fallback.

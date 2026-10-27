@@ -8,6 +8,8 @@ For the OS-independent user paths, see [`user-paths.md`](user-paths.md).
 The dashboard itself runs on your laptop at `http://localhost:8080/`. Workflow
 pods run remotely in Kaizen using the configured container image.
 You can launch new workflow runs from the dashboard and inspect recent runs.
+Hosted runs have no database until the `storhy-cads-db` secret exists in the
+Playground, so the hosted Plots view shows only the latest-run fallback.
 
 ## Prerequisites
 
@@ -90,10 +92,14 @@ The launcher resolves Kaizen credentials in this order:
 3. `--kubeconfig ...`
 4. `.local/kaizen/kubeconfig`
 
-### Optional: Encrypted Kubeconfig Handoff With age
+### Encrypted Kubeconfig Handoff With age (default)
 
 Use this when one colleague needs to send another colleague a kubeconfig without
-emailing the credential in plaintext.
+emailing the credential in plaintext. It is the default handoff: `age`
+public-key encryption lets two users exchange the kubeconfig remotely without
+sharing SSH passwords or the plaintext credential, and neither user needs to
+SSH into the other's account. If `prepare.sh` says `age` is missing, install it
+with your system package manager and run `./prepare.sh` again.
 
 The receiving colleague first installs `age` on the dashboard machine, creates
 an identity there, and sends only the printed public recipient key:
@@ -119,6 +125,9 @@ Copy the public key to the clipboard:
 ./scripts/age_create_identity.sh --copy
 ```
 
+If clipboard copy is not available, run `./scripts/age_create_identity.sh` and
+copy the printed public recipient key manually.
+
 Send the public key directly to the sender's machine over SSH:
 
 ```bash
@@ -137,11 +146,20 @@ at `~/.config/cads/age-recipient.txt` so the decrypt helper can use it later.
 If that public key file is missing but the private key exists, the decrypt
 helper recreates it locally.
 
-The person who has the kubeconfig should follow
-[`age-sender.md`](age-sender.md). They will either send back an encrypted
-`.age` file or keep their plaintext kubeconfig available for the receiver's
-`--get-from` SSH flow. Do not commit kubeconfigs or encrypted handoff files to
-git.
+The person who has the kubeconfig encrypts it for that public key, on the
+checkout that already has the Kaizen kubeconfig:
+
+```bash
+./scripts/age_encrypt_kubeconfig.sh \
+    --recipient age1_receiver_public_key_here \
+    --input .local/kaizen/kubeconfig
+```
+
+This writes `.local/kaizen/kubeconfig.age`, which they send back through their
+normal file-transfer channel; never the plaintext kubeconfig. The sender-side
+details are in [`age-sender.md`](age-sender.md). Alternatively the sender keeps
+the plaintext kubeconfig available for the receiver's `--get-from` SSH flow
+below. Do not commit kubeconfigs or encrypted handoff files to git.
 
 The receiving colleague decrypts it into the dashboard default location:
 
@@ -169,8 +187,11 @@ They can then run:
 ./run_playground.sh
 ```
 
-If the receiver cannot SSH to the sender, but the sender can SSH to the
-receiver, run this on the receiver:
+If the receiver cannot SSH to the sender, but the sender already has SSH
+access to the receiver's account, the sender can push instead. For example,
+`./scripts/age_send_kubeconfig.sh ella@osl-1013` requires the sender to
+authenticate as `ella` on `osl-1013`; the sender should not ask for Ella's
+password. Run this on the receiver first and leave it running:
 
 ```bash
 ./scripts/age_receive_kubeconfig.sh --send-target receiver_user@receiver_host

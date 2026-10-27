@@ -56,6 +56,7 @@ the service must stay cgo-free so the dashboard runs without FMIL, which is why
 
 ```bash
 python3 -m unittest discover -s create_fmu -p 'test_*.py'   # stdlib only, no venv needed
+python3 -m unittest discover -s scripts/tests -p 'test_*.py' # data generator + ingest --notify
 ./create_fmu/build_python_fmus.sh                           # builds FMUs into fmu/models/
 ```
 
@@ -95,7 +96,9 @@ surface change.
 JSON on stdout, **also on failure** (then with exit code 1, or 130 when
 cancelled). Two pseudo-steps are reserved: `_synthetic_case` (fixture echo) and
 `_run` (status, failed step, wall/simulated time, workflow sha256, per-FMU
-identity and statistics; built by `workflow/runinfo.go`). Step names starting
+identity and statistics, `data_window` and per-FMU `carry_over` provenance;
+built by `workflow/runinfo.go`). Status `skipped` (a `data_window` run with no
+new data) exits 0 and writes nothing to the database. Step names starting
 with `_` are rejected. The dashboard does **not** read a database or artifact
 store: it shells out to `argo` and recovers results by parsing that JSON back
 out of pod logs (`extractRunResultsFromLogs` in `remote.go`, which prefers the
@@ -118,6 +121,14 @@ abstraction. FMI 3.0 demo FMUs are built with `pythonfmu3` from
 `create_fmu/storhy_models/`; the shared logic there must stay in plain functions
 because pythonfmu3 discovers `class X(Fmi3Slave):` by regex.
 
+A workflow-level `data_window` (`workflow/datawindow.go`; `since_previous_run`
+or `latest`) resolves the `input_series.db` window from the newest data and the
+previous succeeded run found via `runs.provenance->'data_window'`, sets
+start/stop to time-of-day seconds, and `carry_over` seeds start values from that
+previous run's outputs (unlike `start_from`, which reads an earlier step of the
+same run). Without `CADS_DB_URL` it falls back to the bundled CSVs over 0..span.
+Rules in `docs/workflows.md`.
+
 ### Repo root discovery
 
 Both binaries walk up from the cwd looking for a directory containing both
@@ -132,7 +143,11 @@ Vanilla HTML/CSS/JS in `orchestrator/service/web/`, embedded with `go:embed`
 (`ui_assets.go`) — no npm, no build step, so editing `web/static/app.js`
 requires only a service rebuild. The browser never talks to Argo directly; it
 uses `/api/config`, `/api/workflows`, `/api/runs[/{name}[/results]]` served by
-`server.go`, plus `POST /run` for local in-process execution.
+`server.go`, plus `POST /run` for local in-process execution and
+`GET /api/sites/{site}/history` (`history.go`: measurements and stored run
+outputs/traces from the database for the Plots view). With
+`--execution local` (optionally `--local-runner-image`) the service runs the
+runner itself instead of Argo; such runs have ids `local-...`.
 
 `workflows/tests/` and `workflows/archive/` are skipped by the catalog: the
 former holds runtime test workflows, the latter the retired pre-matrix FMI 2
@@ -147,8 +162,14 @@ never displayed); a new *demonstrator site* also needs an entry in the
 hardcoded `DEMONSTRATORS` array in `app.js` (labels, facts), a `sites` entry in
 that file (partners), and inclusion in its `demo_scope.sites`. The dashboard
 navigates with two data-driven tab rows (site tabs from `demo_scope.sites`,
-workflow tabs from the catalog) above a fixed-shape content area (site strip,
-workflow title, model chain, Workflow and Model cards) and the runs/results.
+workflow tabs from the catalog), a site strip between them (name, partners,
+status, recommendation), and a Plots/Workflow/Runs view row. Plots (default)
+holds the assessment line and condition table followed by the Run-assessment
+button, span buttons and history charts declared in `sites[].plots.charts[]`
+of the matrix file (series kinds `measurement`, `trace`, `output`); Workflow
+holds the workflow tabs, header, port-level wiring diagram and the Workflow
+and FMU cards; Runs holds the workflow tabs, the history rail and the run
+record (`?view=` deep-links a view).
 
 ### Auth model
 

@@ -91,5 +91,69 @@ This path:
 - does not publish to GHCR
 - does not require Kaizen Playground credentials
 
-This is intentionally a local CLI workflow path. The browser dashboard is only
-for the Kaizen Playground paths.
+This is intentionally a local CLI workflow path. The browser dashboard is
+normally used with the Kaizen Playground paths, but it also works without
+Kaizen: started with `--execution local`, the service runs the workflows on
+this machine instead of submitting them to Argo, as in the near-realtime demo
+below.
+
+## Near-realtime assessment demo (local database)
+
+**For showing the operator Plots view with a growing trend, without Kaizen.**
+
+A local TimescaleDB stands in for the STOR-HY database, the dashboard service
+runs the workflows itself, and new measurement days are replayed one at a
+time. The models are deterministic placeholders and the data is synthetic.
+
+```bash
+scripts/commands/run_db.sh                              # database + the bundled first day
+export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
+
+# a runner image that matches this checkout (Apple silicon: native arm64 build)
+podman build --platform linux/arm64 -t cads-fmi-demo:dev-arm64 "$PWD"
+(cd orchestrator/service && CGO_ENABLED=0 GOWORK=off go build -o ../../bin/cads-workflow-service ./cmd/cads-workflow-service)
+
+bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev-arm64
+```
+
+Then:
+
+1. Open `http://127.0.0.1:8080`, pick Le Cheylas; the site opens on the
+   **Plots** view with the measured vibration and turbidity of the first day.
+   The status pill in the header reads "Ready, local runs" (amber: workflows
+   run on this machine, the hosted playground is not used).
+2. Press **Run assessment**: both Cheylas workflows run locally on the newest
+   data (status Submitting, Running, Updated), the runs appear in the **Runs**
+   view with a "ran locally" badge, and the RUL, damage, condition and cost
+   charts fill in. Pressing Run assessment again reports "Up to date".
+3. Replay the next day and let the service assess it without clicking:
+
+   ```bash
+   scripts/commands/run_db.sh --next --notify
+   ```
+
+   Each call loads one `upcoming/batch-<date>/`; the new runs continue the
+   damage and exposure of the previous ones. After a few days switch the span
+   to **7d** to see the trend; pinch or Ctrl+scroll in any chart, or drag the
+   slider under the last chart, to zoom all of them. The seven
+   `upcoming/` days come from
+   `python3 scripts/dev/generate_synthetic_measurements.py --days 8`; rerun it
+   if they are missing, or pass a larger `--days` when `run_db.sh --next`
+   reports no newer upcoming batch.
+4. To start the chain over, run `scripts/commands/run_db.sh --reset`.
+
+Le Cheylas is the site that shows the chain. The Alqueva Battery-EMS workflow
+has no `data_window`: Run assessment reruns its fixed window every time, so it
+never continues from the previous run and never reports "Up to date".
+
+On Linux with FMIL installed the image is optional: build with
+`scripts/commands/build.sh` and start the service with `--execution local`
+only, which runs `bin/cads-workflow-runner` directly. All service flags are in
+the table in [`run.md`](run.md#near-realtime-local-flow). Without
+`CADS_DB_URL` the Plots view shows the latest finished run of each workflow
+with a note, and the data-window runs fall back to the bundled CSVs and do not
+chain. Run assessment is disabled when the service has neither Argo access nor
+local runs (the status pill then shows red "Attention"). On the Playground
+paths above, Run assessment submits the site's workflows to hosted Argo
+instead; trends there need the `storhy-cads-db` secret (see
+[`architecture.md`](architecture.md#database-backed-data-interface)).

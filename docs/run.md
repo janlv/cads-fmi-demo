@@ -97,6 +97,54 @@ Useful variants:
 ./run_playground.sh --kubeconfig .local/kaizen/kubeconfig
 ```
 
+Each site has three views. **Plots** (the default) shows the assessment line,
+the condition table, history charts from the database, span buttons (6h to
+All) and **Run assessment**, which runs every workflow of the site on the
+newest data; on the Playground it submits those workflows to hosted Argo.
+**Workflow** shows the per-workflow wiring diagram and the Workflow and FMU
+cards, with a **Launch workflow** button for a single hosted run. **Runs**
+shows the run history and the run record. The status pill in the header tells
+whether runs and the database are available.
+
+The dashboard remembers the last view; `?view=plots`, `?view=workflow` or
+`?view=runs` in the URL opens a view directly. The full description is in
+[`architecture.md`](architecture.md#dashboard-path).
+
+## Near-realtime local flow
+
+With a local database the service can run the workflows itself and the Plots
+view becomes a near-realtime loop: ingest a day, assess it, plot the trend.
+
+```bash
+scripts/commands/run_db.sh
+export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
+bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev-arm64
+# browser: Le Cheylas -> Plots -> Run assessment
+scripts/commands/run_db.sh --next --notify      # next synthetic day, assessed automatically
+```
+
+Service options for local execution (`bin/cads-workflow-service --help` lists
+all flags):
+
+| Flag | Meaning |
+| --- | --- |
+| `--execution auto\|argo\|local` | `auto` (default) uses Argo when hosted access is configured, else local runs when `--local-runner-image` is set or the runner binary exists, else Argo; `local` fails at startup when neither the image nor the binary exists |
+| `--runner-bin PATH` | runner binary for local runs (default `<workdir>/bin/cads-workflow-runner`) |
+| `--local-runner-image IMAGE` | run the runner inside this image with `workflows/` mounted (env `CADS_LOCAL_RUNNER_IMAGE`); needed on macOS, where the demo FMUs are Linux builds |
+| `--local-db-url URL` | database URL inside that container (env `CADS_LOCAL_DB_URL`; default the service URL with a `127.0.0.1`/`localhost` host rewritten to `host.containers.internal` for podman or `host.docker.internal` for docker) |
+| `--db-url URL` | CADS database for input data status, stored runs and history (default `CADS_DB_URL`) |
+| `--max-runtime-seconds N` | deadline of workflows without `limits.max_runtime_seconds` (default `CADS_MAX_RUNTIME_SECONDS` or 900) |
+
+Workflows with a `data_window` assess only the data since their previous run
+and continue its state; with nothing new, Run assessment reports "Up to date"
+and a run that starts anyway finishes as `skipped` ("no new data"). The
+Alqueva workflow has no `data_window`, so it reruns its fixed window every
+time. See
+[`user-paths.md`](user-paths.md#near-realtime-assessment-demo-local-database)
+for the step-by-step demo and
+[`workflows.md`](workflows.md#assessment-windows-and-state-carry-over-data_window-carry_over)
+for the window rules.
+
 ## S3 helpers
 
 The repo also includes helper entrypoints for inspecting S3-backed inputs from

@@ -7,7 +7,8 @@ The dashboard uses simple placeholder models and synthetic local data. Those
 models imitate the shape of a CADS workflow, but they do not represent validated
 engineering, forecasting, or operational models.
 
-The repo is organized around three OS-independent user paths:
+The repo is organized around three OS-independent user paths, plus a local
+database demo:
 
 - **Playground Dashboard**: connect a local dashboard to an existing Kaizen
   Playground image. This is the default path for most users.
@@ -15,8 +16,32 @@ The repo is organized around three OS-independent user paths:
   and connect the dashboard to the Playground.
 - **Local Dev**: build and test one workflow/model quickly in local Minikube
   without Kaizen Playground, GHCR publishing, or a dashboard.
+- **Near-realtime demo (local database)**: a local TimescaleDB with synthetic
+  measurements and a dashboard service that runs the workflows on this machine
+  (`--execution local`), without Kaizen.
 
 See [`docs/user-paths.md`](docs/user-paths.md) for the support matrix.
+
+## What You Will See
+
+The dashboard has a tab per demonstrator site, a strip with the site's status
+and recommendation, and three views:
+
+- **Plots** (default): the latest assessment, a condition table, a **Run
+  assessment** button and history charts of measured channels and model
+  outputs (6h to All, zoomable).
+- **Workflow**: the wiring diagram of the selected workflow's FMUs with the
+  latest values, plus Workflow and FMU cards.
+- **Runs**: the run history and the record of each run.
+
+A status pill under the logo shows whether runs and the database are
+available. With a local database the near-realtime loop runs without Kaizen:
+
+1. `scripts/commands/run_db.sh --next --notify` ingests one more synthetic day;
+2. the service assesses only the new data and continues the models' state;
+3. the trend in the Plots view grows by one day.
+
+See [`docs/user-paths.md`](docs/user-paths.md#near-realtime-assessment-demo-local-database).
 
 ## Bring Up The Dashboard
 
@@ -83,89 +108,16 @@ different published image, pass it explicitly:
 
 ## Kaizen Credentials
 
-The dashboard needs access to the hosted Kaizen Argo playground. The default
-handoff uses `age` public-key encryption so two users can exchange the
-kubeconfig remotely without sharing SSH passwords or the plaintext credential.
-
-If `prepare.sh` says `age` is missing, install it with your system package
-manager and run `./prepare.sh` again.
-
-### Default: Exchange Public Key And Encrypted File
-
-Use this when one person already has the Kaizen kubeconfig and another person
-needs it for their dashboard. This flow does not require either user to SSH into
-the other user's account.
-
-Run this on the receiving dashboard machine:
-
-```bash
-./scripts/age_create_identity.sh --copy
-```
-
-If clipboard copy is not available, run `./scripts/age_create_identity.sh` and
-copy the printed public recipient key manually. Send only the public key that
-starts with `age1...` to the person who has the kubeconfig. The private key
-stays on the receiving dashboard machine and must not be shared.
-
-Run this on the checkout that already has the Kaizen kubeconfig, replacing the
-recipient value with the receiver's public key:
-
-```bash
-./scripts/age_encrypt_kubeconfig.sh \
-    --recipient age1_receiver_public_key_here \
-    --input .local/kaizen/kubeconfig
-```
-
-This writes `.local/kaizen/kubeconfig.age`. Send that encrypted file back to the
-receiver through your normal file-transfer channel. Do not send the plaintext
-kubeconfig.
-
-Run this on the receiving dashboard machine:
-
-```bash
-./scripts/age_decrypt_kubeconfig.sh /path/to/kubeconfig.age
-```
-
-When the decrypt command prints that the kubeconfig is ready, start the
-dashboard with `./run_playground.sh`.
-
-### Optional: Sender Pushes Over SSH
-
-Use this only when the sender already has SSH access to the receiver's account.
-For example, `./scripts/age_send_kubeconfig.sh ella@osl-1013` requires the
-sender to authenticate as `ella` on `osl-1013`; the sender should not ask for
-Ella's password.
-
-Run the receiver first on the machine that needs the credential, replacing
-`USER@HOST` with the receiver's SSH target:
-
-```bash
-./scripts/age_receive_kubeconfig.sh --send-target USER@HOST --force
-```
-
-Leave it running. Then run this on the checkout that already has the Kaizen
-kubeconfig:
-
-```bash
-./scripts/age_send_kubeconfig.sh USER@HOST
-```
-
-Use the detailed documents when you need to troubleshoot, use a different
-credential source, or customize the flow:
-
-- [`docs/user-paths.md`](docs/user-paths.md) for the three supported user paths.
-- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) for the default
-  Playground Dashboard path.
-- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) for the full dashboard setup.
-- [`docs/local-workflow-dev.md`](docs/local-workflow-dev.md) for local Minikube workflow
-  development.
-- [`docs/troubleshooting.md`](docs/troubleshooting.md) for common failures.
-- [`docs/prepare.md`](docs/prepare.md) for setup details and optional local Minikube.
-- [`docs/run.md`](docs/run.md) for direct workflow submission without the dashboard.
-- [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md) for
-  workflow/model publishing architecture options.
-- [`docs/age-sender.md`](docs/age-sender.md) if you are sending the kubeconfig to someone
-  else.
+The dashboard needs access to the hosted Kaizen Argo playground, through
+`ARGO_TOKEN` or a kubeconfig at `.local/kaizen/kubeconfig`. The default handoff
+is the `age` public-key exchange shown in step 3 above: the receiver sends only
+the public `age1...` key, the sender returns an encrypted `.age` file, and
+nobody shares SSH passwords or the plaintext credential. If `prepare.sh` says
+`age` is missing, install it and run `./prepare.sh` again. Optional SSH-based
+variants (`age_send_kubeconfig.sh`, `age_receive_kubeconfig.sh`,
+`age_decrypt_kubeconfig.sh --get-from`) and the credential lookup order are in
+[`docs/dashboard-setup.md`](docs/dashboard-setup.md#encrypted-kubeconfig-handoff-with-age-default);
+the sender side is in [`docs/age-sender.md`](docs/age-sender.md).
 
 ## Credential Policy
 
@@ -197,6 +149,11 @@ place where those workflow images are stored so the Playground can pull them.
 For the current demo, the GHCR image is a bundled artifact: it contains the
 runner, dependencies, mock models/FMUs, and workflow YAML files.
 
+The service can also run the workflows itself (`--execution local`) instead
+of submitting them to Argo, and with a database configured measured data
+reaches the models from it; see [`docs/architecture.md`](docs/architecture.md#database-backed-data-interface)
+and [`docs/workflows.md`](docs/workflows.md#assessment-windows-and-state-carry-over-data_window-carry_over).
+
 ## Useful Commands
 
 ```bash
@@ -211,7 +168,16 @@ runner, dependencies, mock models/FMUs, and workflow YAML files.
 ./run_local_dev.sh workflows/tests/python_chain.yaml
 
 # Submit one workflow directly to the hosted playground.
-scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/cleaning_interval.yaml
+scripts/commands/run_remote.sh workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml
+
+# Near-realtime demo: local TimescaleDB with the bundled first day ...
+scripts/commands/run_db.sh
+export CADS_DB_URL=postgres://cads:cads@127.0.0.1:5432/storhy
+# ... a dashboard service that runs workflows on this machine (build the
+# service and the image first, see docs/user-paths.md) ...
+bin/cads-workflow-service --serve --execution local --local-runner-image cads-fmi-demo:dev-arm64
+# ... and the next synthetic day, assessed automatically.
+scripts/commands/run_db.sh --next --notify
 
 # Build demo FMUs.
 ./create_fmu/build_python_fmus.sh
@@ -254,33 +220,44 @@ scripts/commands/run_remote.sh workflows/demonstrators/la_rance/maintenance/clea
   FMUs.
 - `data/storhy/synthetic/` contains synthetic operating cases used by the demo
   workflows.
+- `data/storhy/<site>/measurements/` contains the synthetic measurement
+  batches (`batch-*/`, plus `upcoming/` days for replay) and the bundled
+  fallback CSVs.
+- `scripts/commands/run_db.sh` starts a local TimescaleDB and ingests the
+  measurement batches; `scripts/ingest_measurements.py` validates and loads one
+  batch and can notify the dashboard service.
+- `scripts/tests/` holds the Python tests for the data generator and the
+  ingest notification.
 - `orchestrator/service/` contains the Go/FMIL runner and dashboard service.
 
 ## Documentation
 
+- [`docs/user-paths.md`](docs/user-paths.md) – OS-independent supported user paths,
+  current support status and the near-realtime demo.
+- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) – connect a local
+  dashboard to an existing published Playground workflow image (the default path).
+- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) – full local dashboard setup
+  and credential handling, including the `age` kubeconfig handoff.
 - [`docs/age-sender.md`](docs/age-sender.md) – sender-side age encryption workflow for a
   Kaizen kubeconfig.
-- [`docs/user-paths.md`](docs/user-paths.md) – OS-independent supported user paths and
-  current support status.
-- [`docs/playground-dashboard.md`](docs/playground-dashboard.md) – connect a local
-  dashboard to an existing published Playground workflow image.
 - [`docs/local-workflow-dev.md`](docs/local-workflow-dev.md) – local Minikube workflow
   development path.
-- [`docs/dashboard-setup.md`](docs/dashboard-setup.md) – local dashboard setup and
-  credential handling.
+- [`docs/run.md`](docs/run.md) – run pipelines (local, hosted, dashboard,
+  near-realtime local flow) and the service flags.
 - [`docs/workflows.md`](docs/workflows.md) – STOR-HY demonstrator workflow and model
-  mapping.
-- [`docs/run.md`](docs/run.md) – direct workflow submission paths and runtime behavior.
+  mapping, measurement data and assessment windows.
+- [`docs/architecture.md`](docs/architecture.md) – system structure, design intent and
+  the dashboard reference.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) – common setup and runtime issues.
+- [`docs/prepare.md`](docs/prepare.md) – local and remote environment preparation,
+  including optional local Minikube.
 - [`docs/build.md`](docs/build.md) – image and binary build details.
 - [`docs/workflow-publishing-approaches.md`](docs/workflow-publishing-approaches.md) –
   options for separating workflow publishing from runtime/model publishing.
-- [`docs/prepare.md`](docs/prepare.md) – local and remote environment preparation.
-- [`docs/troubleshooting.md`](docs/troubleshooting.md) – common setup and runtime issues.
-- [`docs/architecture.md`](docs/architecture.md) – system structure and design intent.
 - [`docs/dev.md`](docs/dev.md) – contributor notes.
 - [`create_fmu/README.md`](create_fmu/README.md) – FMU generation details.
 - [`orchestrator/service/README.md`](orchestrator/service/README.md) – Go
-  service and CLI details.
+  service and CLI details, routes and flags.
 
 ## Future Publishing Layouts
 

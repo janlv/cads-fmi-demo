@@ -17,8 +17,17 @@ go build -o ../../bin/cads-workflow-runner ./cmd/cads-workflow-runner
 go build -o ../../bin/cads-workflow-service ./cmd/cads-workflow-service
 ```
 
-Make sure the FMIL environment variables are exported; the helper scripts do this
-automatically, but if you are running the commands manually you need:
+The service is cgo-free and needs no FMIL, so it can also be built on its own
+(for example on macOS for the local near-realtime demo):
+
+```bash
+cd orchestrator/service
+CGO_ENABLED=0 GOWORK=off go build -o ../../bin/cads-workflow-service ./cmd/cads-workflow-service
+```
+
+For the runner, make sure the FMIL environment variables are exported; the
+helper scripts do this automatically, but if you are running the commands
+manually you need:
 
 ```bash
 export FMIL_HOME=/path/to/fmil
@@ -33,8 +42,17 @@ export GOWORK=off
 
 Useful extras:
 
-- `go test ./...` from `orchestrator/service` runs the unit tests (add more as
-  the workflow runner evolves).
+- `CGO_ENABLED=0 GOWORK=off go test ./...` from `orchestrator/service` runs
+  the unit tests without FMIL (add more as the workflow runner evolves). With
+  `scripts/commands/run_db.sh` running and `CADS_DB_URL` exported,
+  `go test -tags dbintegration ./internal/cadsdb/` also exercises the database
+  reads and writes.
+- Python tests need only the standard library:
+
+  ```bash
+  python3 -m unittest discover -s create_fmu -p 'test_*.py'     # FMU model logic
+  python3 -m unittest discover -s scripts/tests -p 'test_*.py'  # synthetic data generator, ingest --notify
+  ```
 - Set `GODEBUG=cgocheck=2` while iterating on the FMIL bindings to surface cgo
   misuse early.
 - When working with alternative FMIL installs, pass `--fmil-home` to

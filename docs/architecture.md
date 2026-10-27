@@ -63,12 +63,115 @@ assumptions used by the Minikube flow.
 
 `./run_playground.sh` starts a local browser UI that talks to the hosted Kaizen
 playground through the local Go service without building or publishing. The
-browser never talks directly to the Argo server. Instead:
+same service can instead run workflows on this machine (see *Local execution*
+below). The browser never talks directly to the Argo server or the database.
+Instead:
 
-1. the local service resolves auth and configuration
-2. the service lists workflows and hosted runs
-3. button clicks generate and submit hosted manifests
-4. the UI renders recent run state and AECIS results
+1. the local service resolves auth, execution mode and configuration
+2. the service lists workflows and runs (Argo, local and stored runs merged)
+3. button clicks submit hosted manifests or start local runs
+4. the UI renders run state, results and the history charts
+
+This section is the reference description of the dashboard; the other guides
+link here.
+
+**Header.** "STOR-HY Demonstrator Dashboard" with a one-paragraph CADS lede,
+the logo at the right and a traffic-light status pill under it:
+
+| Pill | Meaning |
+| --- | --- |
+| grey, pulsing | loading the configuration |
+| green "Ready" | runs are possible and the database is connected |
+| amber "Ready, no database" / "Ready, local runs" | usable with limits: no database (Plots show only the latest finished run), or local runs with the hosted playground unused |
+| red "Attention" | no way to run workflows (no Argo access and no local runs), or refreshing the run list fails |
+
+Hovering the pill shows a one-line summary; clicking it opens a details panel
+with the execution mode (for local runs the runner description from
+`/api/config` `localRunner`), the hosted playground state and its `problems`,
+the database state, run-refresh errors and the dashboard version.
+
+**Site strip.** Under the demonstrator tabs (one per site in
+`demo_scope.sites`) a strip shows the site name, operator | location, partner
+chips, a **Status** badge with its description and the workflows that raised
+it, and the **Recommendation**. It stays visible in every view.
+
+**Views.** A view row switches between **Plots** (the default), **Workflow**
+and **Runs**. `?view=plots|workflow|runs` deep-links a view; otherwise the last
+choice is remembered in `localStorage` (a remembered legacy `details` value
+maps to Workflow).
+
+- **Plots** holds the assessment line (last assessment, up-to-date text,
+  errors), the condition table (two columns of indicator / source / value from
+  `sites[].operator_view.indicators` in `web/static/cads-model-matrix.json`),
+  then a toolbar with the **Run assessment** button (runs every workflow of
+  the site through `POST /api/sites/{site}/runs`), the span buttons 6h, 24h,
+  7d, 30d and All, a status text and a zoom hint, then the history charts.
+  All charts share an identical time axis and synchronised zoom (pinch or
+  Ctrl+scroll inside a chart, or the slider under the last chart; plain
+  scrolling moves the page), and each chart header shows the latest value of
+  every series. The charts are declared per site under
+  `sites[].plots.charts[]` (`id`, `title`, `unit`, optional `thresholds` with
+  `value`, `label` and `severity` alarm|warning|reference, drawn as dashed
+  limit lines taken from the placeholder models' own thresholds, the axis
+  extended to include them, and `series` of kind `measurement` (a database
+  channel), `trace` (a run trace signal of `workflow`/`step`) or `output` (one
+  end-of-run value per run)). The data comes from
+  `GET /api/sites/{site}/history`, see below. **Run assessment** is disabled
+  when the service has neither Argo access nor local runs.
+- **Workflow** holds the workflow tabs (from the catalog), a header row
+  (title, coupling badges, one-sentence summary and an outlined **Launch
+  workflow** button that submits only that workflow to the hosted playground;
+  it needs Argo access), the port-level wiring diagram and its badge legend as
+  caption. Each FMU box lists input ports, output ports with the latest run's
+  values, and folded parameters; co-simulation connections are solid wires,
+  `start_from` hand-overs dashed; measured-series inputs, event targets and
+  carried-over state are colour-coded; outputs exchanged only inside the step
+  are shown dashed; hovering a port highlights its wires; the chain scrolls
+  inside its panel. Below it a **Workflow** card (Data in, Latest run with the
+  assessed window and a "run record ▸" link that opens the Runs view, Steps ·
+  max runtime) sits beside an **FMU** card for the FMU picked in the chain
+  (file name as title, what it models, owners, role in this workflow, FMI
+  identity line, inputs, outputs, parameters).
+- **Runs** holds the workflow tabs, the history rail (runs of the selected
+  workflow; local runs carry a "ran locally" badge) and the run record: run
+  name, collected-from badge (database or pod logs), CSV export, timing strip,
+  an "Assessed data" block (window, previous run, backlog) with the "Carried
+  over" values, the FMU step chain, the synthetic case and scalar output
+  cards. Clicking a run in the rail pins it in the record ("Selected run"
+  header, "from history" pill, **show latest** button); clicking it again or
+  **show latest** returns to the newest run.
+
+**Site runs.** `POST /api/sites/{site}/runs` starts every workflow whose
+`metadata.site_id` matches and answers
+`{site, runs[], errors[], upToDate[{workflow, reason, coveredTo, latestSample}]}`:
+200 when anything started or is up to date, 502 when everything failed, 404
+when the site has no workflows. In local mode the service first resolves each
+`data_window` workflow's next window and lists it under `upToDate` instead of
+starting a run when there is no new data (the dashboard shows "Up to date").
+In Argo mode there is no pre-check: the workflows are submitted and the
+runner's `skipped` status is authoritative.
+
+**Data status.** `GET /api/data?site=` reports `configured` and, with a
+database, the site's ingested channels (`channel`, `unit`, `source`,
+`samplingIntervalS`, `points`, `from`, `to`, `ingestedAt`, `batch`), which the
+Workflow card's "Data in" line uses.
+
+**Local execution.** The service can execute runs itself instead of submitting
+them to Argo (`cads-workflow-service --execution auto|argo|local`; flag table
+in [`run.md`](run.md#near-realtime-local-flow)). In local mode it starts the
+runner binary (`--runner-bin`, default `bin/cads-workflow-runner`) as a child
+process per run with `CADS_RUN_ID` and the database URL, or runs it inside a
+container image (`--local-runner-image IMAGE`, env `CADS_LOCAL_RUNNER_IMAGE`)
+with `workflows/` mounted; the image route is the one to use on macOS, where
+the demo FMUs (Linux builds) cannot load natively. Inside the container the
+database URL comes from `--local-db-url` (env `CADS_LOCAL_DB_URL`), by default
+the service's URL with a `127.0.0.1`/`localhost` host rewritten to
+`host.containers.internal` (podman) or `host.docker.internal` (docker). Local
+runs get ids `local-...`, appear in the run list merged with Argo and stored
+runs, and their results come from memory or the database. `/api/config`
+reports `remoteEnabled`, `databaseConfigured`, `localRunsEnabled`,
+`executionMode`, `localRunner` (for example `podman image cads-fmi-demo:dev-arm64`
+or `runner binary cads-workflow-runner`), `problems` and `version`.
 
 ## S3-backed workflow inputs
 
@@ -109,15 +212,46 @@ results back to the database):
   provenance records `source: db` and the dataset. Without a database the
   bundled fallback CSV is used and recorded as `db-fallback-csv`, which the
   dashboard flags.
+- **Relative windows and the assessment chain.** A workflow-level
+  `data_window` (`since_previous_run` or `latest`) resolves the window from the
+  newest samples and the previous succeeded run (found through
+  `runs.provenance->'data_window'`, no extra tables); `carry_over` seeds start
+  values from that run's outputs, and a run with no new data finishes as
+  `skipped` without writing anything. Rules in
+  [`workflows.md`](workflows.md#assessment-windows-and-state-carry-over-data_window-carry_over).
 - **Results.** After every run (also failed ones) the runner writes the run
   record, scalar outputs and traces to `<site>.runs`, `run_outputs` and
   `run_series` under the run id `CADS_RUN_ID` (the Argo workflow name on the
   playground), and reports the outcome in `_run.results_sink`
   (ARCH-COMP-007, ARCH-DATA-010). The dashboard reads results from the
   database first and falls back to pod logs.
+- **History.** `GET /api/sites/{site}/history` serves the Plots view from the
+  database: `span` (`6h`, `24h` default, `7d`, `30d`, `all`), `channels`
+  (comma-separated or repeated, at most 16), `series` (`step:signal`, at most
+  32) and `max_points` (100..5000, default 1500). The range ends at the newest
+  sample of the requested channels (`anchor`; else the newest run window), and
+  measurements are averaged into `binSeconds` buckets when the raw samples
+  would exceed `max_points`. The response carries `configured`, `site`,
+  `span`, `anchor`, `from`/`to` (also as `fromMs`/`toMs`), `binSeconds`,
+  `truncated`, `measurements[]` (`channel`, `unit`, `points` as
+  `[epochMs, value]`) and `runs[]`: the succeeded runs whose assessed window
+  overlaps the range, newest per workflow and window start, at most 200, each
+  with `runId`, `workflowPath`, `source` (`argo` or `local`), `windowFromMs`,
+  `windowToMs`, `simStartTime`, `anchorSource`, `outputs` and the requested
+  `series` (simulation seconds; wall time is `windowFromMs + (t -
+  simStartTime) * 1000`). Without a database it returns
+  `{"configured": false}` and the Plots view falls back to the latest finished
+  run of each workflow with a note; invalid queries get 400, database errors
+  502.
+- **Local execution.** A service started with the database URL and local
+  execution runs **Run assessment** through the runner binary or image (see
+  the dashboard path above), so the whole loop (ingest, assess, plot) works
+  without Argo.
 - **Hosted runs** receive `CADS_DB_URL` from the Kubernetes secret
   `storhy-cads-db` (key `url`, optional). Until that secret exists in the
-  playground, hosted runs use the bundled fallback and write nothing.
+  playground, hosted runs use the bundled fallback and write nothing; a
+  `data_window` workflow then runs its unresolved fallback window
+  (`data_window.resolved: false`) and does not chain from one run to the next.
 
 Per-site schemas are the storage-side prerequisite for per-demonstrator
 authorisation (ARCH-DATA-006); role-based grants per schema are the next step.

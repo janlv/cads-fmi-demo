@@ -6,6 +6,26 @@ probable cause, and recommended fix.
 
 ---
 
+## Start with the dashboard status pill
+
+The traffic-light pill under the logo is the first diagnostic. Hover it for a
+one-line summary, click it for the details (execution mode, hosted playground
+state and problems, database state, run-refresh errors, dashboard version).
+
+### Why is Run assessment (or Launch workflow) disabled?
+- A red "Attention" pill saying "No way to run workflows" means the service
+  has neither Argo access nor local runs. Fix the Kaizen credentials (see
+  [Playground or hosted Argo problems](#playground-or-hosted-argo-problems)),
+  or start the service with `--execution local` and a runner image or binary
+  (see [`run.md`](run.md#near-realtime-local-flow)).
+- **Launch workflow** submits to the hosted playground only, so it stays
+  disabled without Argo access even when local runs work.
+- An amber pill is usable: "Ready, no database" means the Plots view shows only
+  the latest finished run; "Ready, local runs" means workflows run on this
+  machine.
+
+---
+
 ## Host preparation fails
 
 ### `age` is missing
@@ -121,6 +141,59 @@ probable cause, and recommended fix.
   `ghcr.io`.
 - If using environment tokens, set both `GHCR_USERNAME` and `GHCR_TOKEN`; the
   token must have package write access for the target image owner.
+
+---
+
+## Database, Plots and assessment runs
+
+### Run assessment says "Up to date" or a run shows "no new data" (`skipped`)
+- A workflow with `data_window` assesses only data that arrived after its
+  previous succeeded run. With nothing new (less than one 15-minute
+  communication step for the Cheylas workflows) the runner finishes with
+  `_run.status: skipped`, exit code 0, and writes nothing.
+- Load more data: `scripts/commands/run_db.sh --next` ingests the next
+  `upcoming/batch-<date>/`. If it says no upcoming batch is newer, generate
+  more days with `python3 scripts/dev/generate_synthetic_measurements.py --days N`.
+- If `data/storhy/cheylas/measurements/upcoming/` is missing, recreate the
+  seven demo days with
+  `python3 scripts/dev/generate_synthetic_measurements.py --days 8`.
+- The Alqueva workflow has no `data_window`; it reruns its fixed window and
+  never reports "Up to date".
+
+### `carry_over[...] missing variable ... of previous run ...`
+- The previous run of that workflow does not have the output that
+  `carry_over` reads, typically after editing a workflow's `outputs` or the
+  model. Add the variable to the step's `outputs`, then reset the assessment
+  chain with `scripts/commands/run_db.sh --reset` so the next run starts from
+  the literal `start_values` again. The runner fails on purpose instead of
+  silently resetting accumulated damage.
+
+### `have no sample exactly at the window start`
+- Consecutive `data_window` assessments join on a shared sample: every channel
+  needs a sample exactly at the window's `from` (the previous run's `to`).
+  Batches whose timestamps are off the 300 s grid, or channels with gaps at
+  that instant, break this. Ingest batches on the common grid (the generator's
+  are), or reset the chain with `run_db.sh --reset`.
+
+### Local runs fail to start or cannot reach the database
+- On macOS the demo FMUs are Linux builds: start the service with
+  `--local-runner-image IMAGE` and make sure the image exists locally
+  (`podman images`) and matches the checkout's FMUs and runner.
+- Inside the container `127.0.0.1` is the container itself. The service
+  rewrites a loopback host to `host.containers.internal` (podman) or
+  `host.docker.internal` (docker) by default; on a non-default network pass
+  `--local-db-url` (or `CADS_LOCAL_DB_URL`) with a host name the container
+  can reach.
+- Without the image, `--execution local` needs `bin/cads-workflow-runner`
+  built against FMIL on the host (`scripts/commands/build.sh`); the service
+  refuses to start with `--execution local needs --local-runner-image or a
+  runner binary` otherwise. Use `--execution argo` instead.
+
+### Plots show a note instead of history
+- "No CADS database configured" means the service has no `CADS_DB_URL`
+  (or `--db-url`). The Plots view then shows only the latest finished run of
+  each workflow. Export the URL printed by `scripts/commands/run_db.sh` and
+  restart the service.
 
 ---
 
