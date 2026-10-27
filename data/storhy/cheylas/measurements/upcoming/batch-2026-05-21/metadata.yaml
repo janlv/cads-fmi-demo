@@ -1,0 +1,14 @@
+site: cheylas
+batch: 2026-05-21-iot
+source: NORCE AE/vibration edge box (synthetic placeholder)
+description: >-
+  Synthetic placeholder batch for the CADS demo; deterministic, not plant data.
+channels:
+  - channel: vibration_rms_mm_s
+    unit: mm/s
+    sampling_interval_s: 300
+    file: vibration_rms_mm_s.csv
+  - channel: turbidity_g_l
+    unit: g/l
+    sampling_interval_s: 300
+    file: turbidity_g_l.csv

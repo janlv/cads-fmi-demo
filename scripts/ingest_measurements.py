@@ -17,6 +17,11 @@ after the site id (ARCH-DATA-001/007)::
 Re-ingesting a batch is idempotent: channels are upserted and measurement rows
 that already exist are skipped.
 
+With ``--notify URL`` (default ``$CADS_DASHBOARD_URL``), every site that got new
+rows triggers one ``POST {URL}/api/sites/{site}/runs`` on the dashboard service
+after loading, so assessments follow new data without a click. Notification
+failures are warnings only and never change the exit code.
+
 Exit codes: 0 all batches loaded (or validated with --dry-run), 2 at least one
 batch rejected, 1 usage or connection error.
 """
@@ -28,7 +33,10 @@ import csv
 import math
 import os
 import re
+import json
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +48,7 @@ REQUIRED_BATCH_KEYS = ("site", "batch", "source", "channels")
 REQUIRED_CHANNEL_KEYS = ("channel", "unit", "sampling_interval_s", "file")
 IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 CADENCE_TOLERANCE = 0.01
+NOTIFY_TIMEOUT_S = 10.0
 
 
 class BatchRejected(Exception):
@@ -71,6 +80,13 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("--site", help="Override the site id (database schema) from metadata.yaml.")
     parser.add_argument("--dry-run", action="store_true", help="Validate only; do not connect to the database.")
+    parser.add_argument(
+        "--notify",
+        metavar="URL",
+        default=os.environ.get("CADS_DASHBOARD_URL") or None,
+        help="Dashboard service base URL; after loading, POST {URL}/api/sites/{site}/runs once per site that "
+        "got new rows (default: $CADS_DASHBOARD_URL; unset = no notification; never on --dry-run).",
+    )
     return parser.parse_args(argv)
 
 
@@ -261,6 +277,54 @@ def load_batch(conn, batch) -> dict:
     return summary
 
 
+def _count(value) -> int:
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    return 0
+
+
+def notify_sites(url, new_rows_by_site, timeout=NOTIFY_TIMEOUT_S) -> int:
+    """POST ``{url}/api/sites/{site}/runs`` for every site with new rows.
+
+    Returns the number of sites notified successfully. Failures are logged as
+    warnings and never raised.
+    """
+    if not url:
+        return 0
+    base = url.rstrip("/")
+    notified = 0
+    for site in sorted(new_rows_by_site):
+        if new_rows_by_site[site] <= 0:
+            continue
+        endpoint = f"{base}/api/sites/{site}/runs"
+        request = urllib.request.Request(endpoint, data=b"", method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = response.read()
+        except urllib.error.HTTPError as exc:
+            log("warn", f"notify {endpoint} failed: HTTP {exc.code} {exc.reason}")
+            continue
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            reason = getattr(exc, "reason", exc)
+            log("warn", f"notify {endpoint} failed: {reason}")
+            continue
+        runs = up_to_date = 0
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+        except (UnicodeDecodeError, ValueError):
+            payload = {}
+        if isinstance(payload, dict):
+            runs = _count(payload.get("runs"))
+            up_to_date = _count(payload.get("upToDate"))
+        notified += 1
+        log("ok", f"notified {base} for site {site}: {runs} run(s) started, {up_to_date} up to date")
+    return notified
+
+
 def describe(batch, inserted=None) -> None:
     log("info", f"batch {batch['batch']} -> schema {batch['site']} ({batch['dir']})")
     for channel in batch["channels"]:
@@ -299,6 +363,7 @@ def main(argv=None) -> int:
             log("ok", f"batch {batch['batch']} is valid (dry run, nothing written)")
         return EXIT_REJECTED if rejected else EXIT_OK
 
+    new_rows_by_site = {}
     if accepted:
         try:
             import psycopg
@@ -311,9 +376,14 @@ def main(argv=None) -> int:
                     inserted = load_batch(conn, batch)
                     describe(batch, inserted)
                     log("ok", f"batch {batch['batch']} loaded into {batch['site']}.measurements")
+                    site = batch["site"]
+                    new_rows_by_site[site] = new_rows_by_site.get(site, 0) + sum(inserted.values())
         except psycopg.Error as exc:
             log("error", f"database error: {exc}")
+            notify_sites(args.notify, new_rows_by_site)
             return EXIT_ERROR
+
+    notify_sites(args.notify, new_rows_by_site)
 
     if rejected:
         log("error", f"{rejected} batch(es) rejected, {len(accepted)} loaded")
