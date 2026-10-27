@@ -109,6 +109,13 @@ type DashboardConfig struct {
 	// DatabaseConfigured is true when the service has a CADS database (CADS_DB_URL); set by the
 	// server, not by the remote client.
 	DatabaseConfigured bool `json:"databaseConfigured"`
+	// LocalRunsEnabled is true when runs execute on this machine (--execution local); set by
+	// the server. ExecutionMode is "argo" or "local".
+	LocalRunsEnabled bool `json:"localRunsEnabled"`
+	// LocalRunner describes the local executor (container image or host binary); empty
+	// when runs are not executed on this machine.
+	LocalRunner   string `json:"localRunner,omitempty"`
+	ExecutionMode string `json:"executionMode,omitempty"`
 }
 
 type RunSummary struct {
@@ -132,6 +139,11 @@ type RunSummary struct {
 	DashboardVersion string            `json:"dashboardVersion,omitempty"`
 	SubmittedFrom    string            `json:"submittedFrom,omitempty"`
 	Labels           map[string]string `json:"labels,omitempty"`
+
+	// Source is where the run executed: "argo" or "local".
+	Source string `json:"source,omitempty"`
+	// DataWindow is the run's resolved assessment window (`_run.data_window`), when known.
+	DataWindow *workflowpkg.DataWindowInfo `json:"dataWindow,omitempty"`
 }
 
 type RunResults struct {

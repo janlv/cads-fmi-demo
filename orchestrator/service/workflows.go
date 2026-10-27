@@ -30,18 +30,20 @@ type WorkflowSummary struct {
 	SHA256 string `json:"sha256"`
 	// Problems lists catalog-level issues (for example invalid limits) that do not hide the workflow.
 	Problems []string `json:"problems,omitempty"`
+	// DataWindow is the workflow's `data_window` (relative assessment window), when it has one.
+	DataWindow *workflowpkg.DataWindowSpec `json:"dataWindow,omitempty"`
 }
 
 type WorkflowMetadata struct {
-	DisplayName  string          `json:"displayName,omitempty" yaml:"display_name"`
-	SiteID       string          `json:"siteId,omitempty" yaml:"site_id"`
-	Category     string          `json:"category,omitempty" yaml:"category"`
-	ResultFamily string          `json:"resultFamily,omitempty" yaml:"result_family"`
-	Description  string          `json:"description,omitempty" yaml:"description"`
+	DisplayName  string `json:"displayName,omitempty" yaml:"display_name"`
+	SiteID       string `json:"siteId,omitempty" yaml:"site_id"`
+	Category     string `json:"category,omitempty" yaml:"category"`
+	ResultFamily string `json:"resultFamily,omitempty" yaml:"result_family"`
+	Description  string `json:"description,omitempty" yaml:"description"`
 	// Summary is the one-sentence "what happens each communication step" shown above the model chain.
-	Summary      string          `json:"summary,omitempty" yaml:"summary"`
-	Tags         []string        `json:"tags,omitempty" yaml:"tags"`
-	Limits       *WorkflowLimits `json:"limits,omitempty" yaml:"limits"`
+	Summary string          `json:"summary,omitempty" yaml:"summary"`
+	Tags    []string        `json:"tags,omitempty" yaml:"tags"`
+	Limits  *WorkflowLimits `json:"limits,omitempty" yaml:"limits"`
 	// SyntheticCase is the display name of the workflow's synthetic_case fixture (not a YAML
 	// metadata field; filled by the catalog from the top-level synthetic_case entry).
 	SyntheticCase string `json:"syntheticCase,omitempty" yaml:"-"`
@@ -65,8 +67,10 @@ type WorkflowModel struct {
 	Outputs     []string             `json:"outputs,omitempty"`
 	Parameters  []string             `json:"parameters,omitempty"`
 	InputSeries string               `json:"inputSeries,omitempty"`
-	CoSim       *WorkflowCoSim       `json:"cosim,omitempty"`
-	Problems    []string             `json:"problems,omitempty"`
+	// CarryOver maps a start value to the result key of the previous run that seeds it.
+	CarryOver map[string]string `json:"carryOver,omitempty"`
+	CoSim     *WorkflowCoSim    `json:"cosim,omitempty"`
+	Problems  []string          `json:"problems,omitempty"`
 }
 
 // WorkflowCoSim describes a `cosim:` step for the dashboard coupling view.
@@ -107,9 +111,10 @@ type WorkflowModelInput struct {
 var ErrWorkflowOutsideDirectory = errors.New("workflow path must stay within workflows/")
 
 type workflowCatalogFile struct {
-	Metadata      WorkflowMetadata      `yaml:"metadata"`
-	SyntheticCase any                   `yaml:"synthetic_case"`
-	Steps         []workflowCatalogStep `yaml:"steps"`
+	Metadata      WorkflowMetadata            `yaml:"metadata"`
+	SyntheticCase any                         `yaml:"synthetic_case"`
+	DataWindow    *workflowpkg.DataWindowSpec `yaml:"data_window"`
+	Steps         []workflowCatalogStep       `yaml:"steps"`
 }
 
 // syntheticCaseName resolves the display name of a workflow's synthetic_case entry: the `name`
@@ -153,6 +158,7 @@ type workflowCatalogStep struct {
 	FMU         string                      `yaml:"fmu"`
 	Outputs     []string                    `yaml:"outputs"`
 	StartFrom   map[string]string           `yaml:"start_from"`
+	CarryOver   map[string]string           `yaml:"carry_over"`
 	StartValues map[string]any              `yaml:"start_values"`
 	InputSeries *workflowCatalogInputSeries `yaml:"input_series"`
 	CoSim       *workflowpkg.CoSimSpec      `yaml:"cosim"`
@@ -234,13 +240,14 @@ func ListWorkflows(root string) ([]WorkflowSummary, error) {
 		base := filepath.Base(rel)
 		doc.Metadata.SyntheticCase = syntheticCaseName(root, doc.SyntheticCase)
 		workflows = append(workflows, WorkflowSummary{
-			Path:      rel,
-			Name:      strings.TrimSuffix(base, filepath.Ext(base)),
-			StepCount: len(doc.Steps),
-			Metadata:  doc.Metadata,
-			Models:    workflowModelSummaries(doc.Steps, doc.coSimSeries),
-			SHA256:    digest,
-			Problems:  validateWorkflowLimits(doc.Metadata.Limits),
+			Path:       rel,
+			Name:       strings.TrimSuffix(base, filepath.Ext(base)),
+			StepCount:  len(doc.Steps),
+			Metadata:   doc.Metadata,
+			Models:     workflowModelSummaries(doc.Steps, doc.coSimSeries, doc.DataWindow != nil),
+			SHA256:     digest,
+			Problems:   validateWorkflowLimits(doc.Metadata.Limits),
+			DataWindow: doc.DataWindow,
 		})
 	}
 
@@ -338,11 +345,12 @@ func validateWorkflowLimits(limits *WorkflowLimits) []string {
 	return problems
 }
 
-func workflowModelSummaries(steps []workflowCatalogStep, coSimSeries map[string]map[string]*workflowCatalogInputSeries) []WorkflowModel {
+// windowed is set for workflows with `data_window`, whose cosim steps may omit start/stop times.
+func workflowModelSummaries(steps []workflowCatalogStep, coSimSeries map[string]map[string]*workflowCatalogInputSeries, windowed bool) []WorkflowModel {
 	models := make([]WorkflowModel, 0, len(steps))
 	for _, step := range steps {
 		if step.CoSim != nil {
-			models = append(models, workflowCoSimSummary(step, coSimSeries[strings.TrimSpace(step.Name)]))
+			models = append(models, workflowCoSimSummary(step, coSimSeries[strings.TrimSpace(step.Name)], windowed))
 			continue
 		}
 		model := WorkflowModel{
@@ -354,6 +362,7 @@ func workflowModelSummaries(steps []workflowCatalogStep, coSimSeries map[string]
 			Parameters:  sortedMapKeys(step.StartValues),
 			InputSeries: workflowInputSeriesLabel(step.InputSeries),
 			Inputs:      workflowModelInputs(step.StartFrom, ""),
+			CarryOver:   step.CarryOver,
 		}
 		models = append(models, model)
 	}
@@ -384,7 +393,7 @@ func workflowModelInputs(startFrom map[string]string, prefix string) []WorkflowM
 
 // workflowCoSimSummary keeps a cosim step as ONE catalog entry so neighbour-arrow rendering keeps
 // working: outputs are the flattened `model.var` keys and inputs the prefixed model start_from.
-func workflowCoSimSummary(step workflowCatalogStep, series map[string]*workflowCatalogInputSeries) WorkflowModel {
+func workflowCoSimSummary(step workflowCatalogStep, series map[string]*workflowCatalogInputSeries, windowed bool) WorkflowModel {
 	spec := step.CoSim
 	name := strings.TrimSpace(step.Name)
 	label := titleCaseWords(prettifyIdentifier(name))
@@ -400,7 +409,7 @@ func workflowCoSimSummary(step workflowCatalogStep, series map[string]*workflowC
 	if strings.TrimSpace(step.FMU) != "" || len(step.StartFrom) > 0 || len(step.StartValues) > 0 || step.InputSeries != nil {
 		summary.Problems = append(summary.Problems, fmt.Sprintf("step %s: cosim cannot be combined with fmu, start_values, start_from or input_series", name))
 	}
-	if err := workflowpkg.ValidateCoSim(name, spec); err != nil {
+	if err := workflowpkg.ValidateCoSimWithWindow(name, spec, windowed); err != nil {
 		summary.Problems = append(summary.Problems, err.Error())
 	}
 
@@ -424,6 +433,7 @@ func workflowCoSimSummary(step workflowCatalogStep, series map[string]*workflowC
 			Parameters:  sortedMapKeys(member.StartValues),
 			InputSeries: workflowInputSeriesLabel(series[memberName]),
 			Inputs:      workflowModelInputs(member.StartFrom, ""),
+			CarryOver:   member.CarryOver,
 		}
 		for _, output := range spec.Outputs {
 			if modelName, variable, ok := strings.Cut(output, "."); ok && modelName == memberName {

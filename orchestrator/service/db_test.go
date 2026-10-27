@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,36 @@ type fakeDataStore struct {
 	reads    []string
 	writes   []string
 	written  map[string]map[string]any
+
+	// History reads (in-memory, any site).
+	rows     []cadsdb.Row
+	runList  []cadsdb.StoredRun
+	outputs  []cadsdb.OutputRow
+	series   []cadsdb.RunSeriesRow
+	binCalls []float64
+	histErr  error
+
+	// Window reads (data_window pre-check).
+	latest   map[string]time.Time
+	previous map[string]*cadsdb.PreviousRun // workflow path -> previous run
+}
+
+func (f *fakeDataStore) ReadSeries(_ context.Context, _ string, _ []string, _, _ time.Time) ([]cadsdb.Row, error) {
+	return nil, nil
+}
+
+func (f *fakeDataStore) LatestSamples(_ context.Context, _ string, channels []string) (map[string]time.Time, error) {
+	out := map[string]time.Time{}
+	for _, channel := range channels {
+		if at, ok := f.latest[channel]; ok {
+			out[channel] = at
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeDataStore) LatestSucceededRun(_ context.Context, _ string, workflowPath, _ string) (*cadsdb.PreviousRun, error) {
+	return f.previous[workflowPath], nil
 }
 
 func (f *fakeDataStore) ReadRun(_ context.Context, site, runID string) (map[string]map[string]any, error) {
@@ -37,7 +68,106 @@ func (f *fakeDataStore) ReadRun(_ context.Context, site, runID string) (map[stri
 }
 
 func (f *fakeDataStore) ChannelStatus(_ context.Context, site string) ([]cadsdb.ChannelInfo, error) {
+	if f.histErr != nil {
+		return nil, f.histErr
+	}
 	return f.channels[site], nil
+}
+
+// ReadSeriesBinned filters rows to channels and [from, to); bin > 0 averages per bucket aligned
+// to from (ordered by bucket, then channel) like the PostgreSQL date_bin query.
+func (f *fakeDataStore) ReadSeriesBinned(_ context.Context, _ string, channels []string, from, to time.Time, bin float64) ([]cadsdb.Row, error) {
+	f.binCalls = append(f.binCalls, bin)
+	if f.histErr != nil {
+		return nil, f.histErr
+	}
+	wanted := map[string]bool{}
+	for _, c := range channels {
+		wanted[c] = true
+	}
+	var raw []cadsdb.Row
+	for _, row := range f.rows {
+		if wanted[row.Channel] && !row.Time.Before(from) && row.Time.Before(to) {
+			raw = append(raw, row)
+		}
+	}
+	if bin <= 0 {
+		sort.SliceStable(raw, func(i, j int) bool { return raw[i].Time.Before(raw[j].Time) })
+		return raw, nil
+	}
+	type key struct {
+		bucket  int64
+		channel string
+	}
+	sums, counts := map[key]float64{}, map[key]int{}
+	var keys []key
+	width := time.Duration(bin * float64(time.Second))
+	for _, row := range raw {
+		k := key{int64(row.Time.Sub(from) / width), row.Channel}
+		if counts[k] == 0 {
+			keys = append(keys, k)
+		}
+		sums[k] += row.Value
+		counts[k]++
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].bucket != keys[j].bucket {
+			return keys[i].bucket < keys[j].bucket
+		}
+		return keys[i].channel < keys[j].channel
+	})
+	out := make([]cadsdb.Row, len(keys))
+	for i, k := range keys {
+		out[i] = cadsdb.Row{Time: from.Add(time.Duration(k.bucket) * width), Channel: k.channel, Value: sums[k] / float64(counts[k])}
+	}
+	return out, nil
+}
+
+func (f *fakeDataStore) ListRuns(_ context.Context, _ string, limit int) ([]cadsdb.StoredRun, error) {
+	if f.histErr != nil {
+		return nil, f.histErr
+	}
+	out := append([]cadsdb.StoredRun{}, f.runList...)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *fakeDataStore) ReadRunOutputs(_ context.Context, _ string, runIDs []string) ([]cadsdb.OutputRow, error) {
+	if f.histErr != nil {
+		return nil, f.histErr
+	}
+	ids := stringSet(runIDs)
+	var out []cadsdb.OutputRow
+	for _, row := range f.outputs {
+		if ids[row.RunID] {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeDataStore) ReadRunSeries(_ context.Context, _ string, runIDs, steps, signals []string) ([]cadsdb.RunSeriesRow, error) {
+	if f.histErr != nil {
+		return nil, f.histErr
+	}
+	ids, stepSet, signalSet := stringSet(runIDs), stringSet(steps), stringSet(signals)
+	var out []cadsdb.RunSeriesRow
+	for _, row := range f.series {
+		if ids[row.RunID] && stepSet[row.Step] && signalSet[row.Signal] {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func stringSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, v := range values {
+		set[v] = true
+	}
+	return set
 }
 
 func (f *fakeDataStore) WriteRun(_ context.Context, site, runID string, results map[string]map[string]any) (*cadsdb.WriteSummary, error) {

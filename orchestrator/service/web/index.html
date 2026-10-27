@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kaizen Argo Dashboard</title>
+  <title>STOR-HY Demonstrator Dashboard</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -11,56 +11,57 @@
     <header class="hero">
       <div class="hero-row">
         <div class="hero-branding">
-          <div class="storhy-logo" aria-label="STOR-HY">
-            <img src="/static/storhy-logo.png" alt="STOR-HY">
-          </div>
           <div>
-            <p class="eyebrow">STOR-HY CADS Playground</p>
-            <h1>Workflow Dashboard</h1>
-            <p class="lede">Pick a demo workflow, launch it in Kaizen, then inspect its models, run history and latest output.</p>
+            <h1>STOR-HY Demonstrator Dashboard</h1>
+            <p class="lede">The Cyber-physical platform for Advanced Decision Support (CADS) runs each demonstrator's chained simulation models on the latest measured plant data and turns the results into condition, status and a recommendation for the operator. Placeholder models and synthetic data, not validated engineering.</p>
+          </div>
+          <div class="hero-side">
+            <div class="storhy-logo" aria-label="STOR-HY">
+              <img src="/static/storhy-logo-white.png" alt="STOR-HY">
+            </div>
+            <div class="status-light-row">
+              <button id="statusLight" class="status-light light-grey" type="button" aria-expanded="false" aria-controls="statusDetails" title="Loading dashboard configuration…">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusLightLabel">Loading…</span>
+        </button>
+              <div id="statusDetails" class="status-details" hidden></div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="hero-project">
-        <div class="hero-project-copy">
-          <p class="panel-kicker">STOR-HY Project</p>
-          <h2>Innovative Storage Technology And Operations In Hydropower</h2>
-          <p class="project-copy">STOR-HY develops monitoring, control, and decision-support tools for pumped-storage hydropower sites operating under higher cycling, harsh fluids, and unconventional storage schemes.</p>
-        </div>
-        <div class="project-facts hero-facts" aria-label="Project facts">
-          <span><strong>48</strong> months</span>
-          <span><strong>18</strong> partners</span>
-          <span><strong>8</strong> countries</span>
-          <span><strong>2</strong> demo sites</span>
-        </div>
-      </div>
-      <div id="statusBanner" class="status-banner status-loading">Loading dashboard configuration…</div>
     </header>
 
     <main class="dashboard-grid">
       <section id="selectedWorkflowPanel" class="panel workflow-shell" aria-label="Demo workflows">
         <div id="siteTabs" class="site-tabs" role="tablist" aria-label="Demonstrator sites"></div>
-        <section id="operatorView" class="operator-view" aria-label="Operator view" aria-live="polite"></section>
+        <div id="siteStatusStrip" class="site-status-strip" aria-live="polite" hidden></div>
+        <div id="siteViewTabs" class="site-tabs view-tabs" role="tablist" aria-label="Site view"></div>
+        <section id="plotsView" class="plots-view" role="tabpanel" aria-label="Operator">
+          <section id="operatorView" class="operator-view" aria-label="Operator view" aria-live="polite"></section>
+          <div id="plotsToolbar" class="plots-toolbar"></div>
+          <p id="plotsNote" class="plots-note" hidden></p>
+          <div id="plotsCharts" class="plots-grid"></div>
+        </section>
         <div id="workflowTabs" class="wf-tabs" role="tablist" aria-label="Workflows at this site"></div>
 
         <div id="workflowContent" class="workflow-content" role="tabpanel" aria-live="polite">
           <div class="wf-header">
-            <div id="siteStrip" class="site-strip"></div>
-            <button id="launchSelectedWorkflow" class="selected-launch-button" type="button" disabled>Launch this workflow only</button>
+            <div id="workflowTitleLine" class="wf-title-line"></div>
+            <button id="launchSelectedWorkflow" class="launch-button-secondary" type="button" disabled>Launch workflow</button>
           </div>
-          <div id="workflowTitleLine" class="wf-title-line"></div>
           <div id="demoWorkflowList" class="wf-chain-area"></div>
+          <div id="chainCaption" class="chain-caption"></div>
           <div class="wf-cards">
             <section class="wf-card" aria-label="Workflow">
               <h3 class="wf-card-title">Workflow</h3>
+              <div id="siteStrip" class="details-site-block"></div>
               <div id="workflowFactsBody"></div>
             </section>
             <section id="selectedModelPanel" class="wf-card" aria-label="Selected model">
-              <h3 class="wf-card-title">Model: <code id="selectedModelTitle">none</code></h3>
+              <h3 class="wf-card-title">FMU: <code id="selectedModelTitle">none</code></h3>
               <div id="selectedModelBody"></div>
             </section>
           </div>
-          <footer id="workflowFooter" class="wf-footer"></footer>
         </div>
       </section>
 

@@ -59,7 +59,7 @@ code,
 }
 
 .hero {
-  padding: 28px;
+  padding: 18px 24px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 28px;
   background:
@@ -95,23 +95,29 @@ code,
 .hero-branding {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 18px;
+  width: 100%;
   min-width: 0;
 }
 
+/* Logo and traffic light stacked at the right edge; the title block keeps the left. */
+.hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* The wordmark sits directly on the header (white-on-transparent asset), no box. */
 .storhy-logo {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  width: 150px;
-  min-height: 78px;
-  padding: 15px;
-  border-radius: 18px;
-  border: 1px solid rgba(0, 28, 99, 0.14);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(232, 254, 116, 0.42)),
-    rgba(255, 255, 255, 0.82);
-  box-shadow: 0 12px 30px rgba(0, 28, 99, 0.12);
+  width: 200px;
+  padding: 6px 0;
   color: var(--accent-deep);
 }
 
@@ -128,8 +134,8 @@ h2 {
 }
 
 h1 {
-  font-size: clamp(2.3rem, 5vw, 4.2rem);
-  line-height: 0.96;
+  font-size: clamp(1.5rem, 2.6vw, 2.2rem);
+  line-height: 1.05;
   font-weight: 750;
 }
 
@@ -170,20 +176,6 @@ h2 {
   border: 1px solid var(--line);
   font-size: 0.78rem;
   color: var(--muted);
-}
-
-.hero-project {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
-  gap: 18px;
-  align-items: end;
-  margin-top: 24px;
-}
-
-.hero-project-copy h2 {
-  max-width: 42rem;
-  font-size: clamp(1.35rem, 2.1vw, 2rem);
-  line-height: 1.08;
 }
 
 .hero .hero-facts {
@@ -242,6 +234,102 @@ h2 {
 .status-loading {
   border-style: dashed;
 }
+
+/* Header traffic light: a pill with a coloured dot; the details panel opens below it. */
+.status-light-row {
+  position: relative;
+  margin-top: 0;
+}
+
+.status-light {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.status-light:hover,
+.status-light:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+
+.status-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #9aa5b1;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14);
+}
+
+.light-green .status-dot { background: #3ddc84; box-shadow: 0 0 0 3px rgba(61, 220, 132, 0.25); }
+.light-amber .status-dot { background: #ffc145; box-shadow: 0 0 0 3px rgba(255, 193, 69, 0.25); }
+.light-red .status-dot { background: #ff5a4e; box-shadow: 0 0 0 3px rgba(255, 90, 78, 0.28); }
+.light-grey .status-dot { animation: status-pulse 1.4s ease-in-out infinite; }
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* Opens as an overlay under the light so the header keeps its height. */
+.status-details {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  width: min(44rem, 80vw);
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 20, 70, 0.96);
+  box-shadow: 0 18px 40px rgba(0, 28, 99, 0.35);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.86rem;
+  text-align: left;
+}
+
+.status-details-summary {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.status-details-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.status-details-list li {
+  padding-left: 18px;
+  position: relative;
+}
+
+.status-details-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.45em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa5b1;
+}
+
+.status-details-list li.ok::before { background: #3ddc84; }
+.status-details-list li.note::before { background: #ffc145; }
+.status-details-list li.bad::before { background: #ff5a4e; }
 
 .dashboard-grid {
   display: grid;
@@ -1689,10 +1777,6 @@ h2 {
   
   
   
-  .hero-project {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .dashboard-workspace,
   .dashboard-workspace.runs-collapsed {
     grid-template-columns: minmax(0, 1fr);
@@ -1778,7 +1862,21 @@ h2 {
   
   .storhy-logo {
     min-width: 0;
-    width: 100%;
+    width: 160px;
+  }
+
+  .hero-side {
+    align-items: flex-start;
+    margin-left: 0;
+  }
+
+  .op-kv {
+    column-count: 1;
+  }
+
+  .status-details {
+    right: auto;
+    left: 0;
   }
 
   .project-facts {
@@ -1817,6 +1915,130 @@ h2 {
 .dw-chain {
   min-width: 0;
   overflow-x: auto;
+}
+
+/* The chain scrolls inside the panel instead of widening it. */
+.workflow-content,
+.wf-chain-area {
+  min-width: 0;
+}
+
+/* Port-level wiring: boxes list their ports; an SVG overlay draws the wires. */
+.dw-chain-canvas {
+  position: relative;
+  display: inline-block;
+  min-width: 100%;
+}
+
+.dw-wires {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.dw-wire {
+  fill: none;
+  stroke: rgba(5, 66, 235, 0.55);
+  stroke-width: 1.6;
+  pointer-events: stroke;
+}
+
+.dw-wire.handover {
+  stroke: rgba(0, 28, 99, 0.45);
+  stroke-dasharray: 5 4;
+}
+
+.dw-wire.active {
+  stroke: #0542eb;
+  stroke-width: 2.6;
+}
+
+.dw-wire-head {
+  fill: rgba(5, 66, 235, 0.7);
+}
+
+.dw-link-gap {
+  display: inline-block;
+  width: 22px;
+}
+
+.dw-ports {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  gap: 2px 14px;
+  width: 100%;
+  margin-top: 5px;
+}
+
+.dw-port-col {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+
+.dw-port-col.out {
+  justify-items: end;
+}
+
+.dw-port {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(0, 28, 99, 0.06);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.dw-port.series { background: rgba(47, 118, 82, 0.14); color: #1f5c3b; }
+.dw-port.event { background: rgba(191, 95, 47, 0.16); color: #8a3d1a; }
+.dw-port.carry { background: rgba(122, 90, 248, 0.14); color: #4b35b8; }
+.dw-port.handover { background: rgba(0, 28, 99, 0.1); }
+.dw-port.internal { background: transparent; border: 1px dashed rgba(0, 28, 99, 0.25); color: var(--muted); }
+.dw-port.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.dw-port em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+
+.dw-port svg {
+  width: 11px;
+  height: 11px;
+}
+
+.dw-params-toggle {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.dw-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+  max-width: 320px;
+}
+
+.dw-param {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(0, 28, 99, 0.05);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--muted);
 }
 
 .dw-cosim {
@@ -1959,19 +2181,21 @@ h2 {
   background: rgba(0, 28, 99, 0.08);
 }
 
+/* Unselected tabs read as clickable: a pale filled pill that brightens on hover. */
 .site-tab {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  padding: 9px 16px;
-  border: 0;
+  padding: 8px 15px;
+  border: 1px solid rgba(0, 28, 99, 0.12);
   border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
   font: inherit;
   font-size: 0.92rem;
   font-weight: 750;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
 .site-tab small {
@@ -1985,12 +2209,13 @@ h2 {
 }
 
 .site-tab:hover {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.55);
+  background: #ffffff;
+  border-color: rgba(5, 66, 235, 0.45);
 }
 
 .site-tab.selected {
   background: var(--accent);
+  border-color: var(--accent);
   color: #ffffff;
 }
 
@@ -2083,12 +2308,69 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
 }
 
-.wf-header .site-strip {
+.wf-header .wf-title-line {
   flex: 1 1 420px;
+}
+
+/* Secondary action: one workflow only; the site assessment is the primary action. */
+.launch-button-secondary {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(5, 66, 235, 0.45);
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.launch-button-secondary:hover:not(:disabled) {
+  background: rgba(5, 66, 235, 0.08);
+}
+
+.launch-button-secondary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chain-caption {
+  margin: -2px 0 2px;
+  padding: 0 6px;
+}
+
+.details-site-block:empty {
+  display: none;
+}
+
+.details-subblock {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 28, 99, 0.08);
+}
+
+.details-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-deep);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.details-link:hover {
+  text-decoration: underline;
 }
 
 .wf-title-line {
@@ -2565,4 +2847,302 @@ h2 {
   .op-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ---- Site views (Plots | Details) and the Plots view ---- */
+
+[hidden] {
+  display: none !important;
+}
+
+.view-tabs {
+  margin-top: 6px;
+  border-radius: 14px;
+}
+
+.view-tabs::before {
+  content: "View";
+}
+
+.plots-view {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.plots-view .operator-view,
+.operator-panel .operator-view {
+  margin: 0;
+}
+
+/* Status and recommendation strip between the site tabs and the view tabs. */
+.site-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 28px;
+  padding: 10px 16px;
+  border-left: 1px solid rgba(0, 28, 99, 0.08);
+  border-right: 1px solid rgba(0, 28, 99, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.95rem;
+}
+
+.strip-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.strip-site {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 28, 99, 0.08);
+}
+
+/* Compact condition block in the Plots view. */
+.op-compact {
+  margin: 0;
+}
+
+.details-data-in {
+  display: grid;
+  gap: 4px;
+}
+
+.strip-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Condition indicators as a compact two-column key/value table. */
+.op-kv {
+  column-count: 2;
+  column-gap: 28px;
+  width: 100%;
+}
+
+.op-kv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label value" "source value";
+  column-gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0, 28, 99, 0.08);
+  break-inside: avoid;
+}
+
+.op-kv-label { grid-area: label; font-weight: 600; }
+.op-kv-source { grid-area: source; font-size: 0.8rem; }
+.op-kv-value {
+  grid-area: value;
+  align-self: center;
+  font-size: 1.15rem;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* Latest value of each series, shown in the chart header (the condition numbers). */
+.plot-latest {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 14px;
+  margin-left: auto;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.plot-latest-item {
+  white-space: nowrap;
+}
+
+.plot-latest-item .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+.plot-latest-item strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+/* A run chosen in the history rail, shown instead of the latest one. */
+.result-kind-pinned {
+  background: rgba(183, 121, 31, 0.14);
+  color: #7a4f10;
+}
+
+.result-latest-button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(5, 66, 235, 0.35);
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.result-latest-button:hover {
+  background: rgba(5, 66, 235, 0.08);
+}
+
+/* Assessed data window and carried-over state in the Details run record. */
+.run-window {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(5, 66, 235, 0.06);
+  border: 1px solid rgba(5, 66, 235, 0.14);
+  font-size: 0.9rem;
+}
+
+.run-window strong {
+  color: var(--ink);
+  margin-right: 4px;
+}
+
+.plots-grid.loading {
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.plots-hint {
+  flex-basis: 100%;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.plots-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.plots-refresh {
+  padding: 8px 14px;
+  font-size: 0.86rem;
+}
+
+.span-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(0, 28, 99, 0.08);
+}
+
+.span-btn {
+  padding: 4px 11px;
+  border: 1px solid rgba(0, 28, 99, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.span-btn:hover {
+  background: #ffffff;
+  border-color: rgba(5, 66, 235, 0.45);
+}
+
+.span-btn.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.span-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.plots-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.plots-status strong {
+  color: var(--ink);
+}
+
+.plots-status .op-error {
+  flex-basis: auto;
+}
+
+.plots-status-ok {
+  color: var(--ok);
+}
+
+.plots-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warning);
+  border-radius: 8px;
+  background: rgba(191, 95, 47, 0.08);
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.plots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr));
+  gap: 12px;
+}
+
+.plots-grid .echarts-chart {
+  height: 280px;
+  min-height: 240px;
+}
+
+.plots-grid .plot-card-last .echarts-chart {
+  height: 320px;
+}
+
+.plot-empty {
+  padding: 28px 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.run-source-badge {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(47, 118, 82, 0.14);
+  color: var(--ok);
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
 }

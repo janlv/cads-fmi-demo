@@ -113,6 +113,205 @@
             "key": "recommendation_code"
           }
         ]
+      },
+      "plots": {
+        "charts": [
+          {
+            "id": "vibration",
+            "title": "Measured vibration",
+            "description": "Runner vibration RMS from the IoT condition-monitoring batch.",
+            "unit": "mm/s",
+            "thresholds": [
+              {
+                "value": 4.25,
+                "label": "Watch 4.25 mm/s (condition indicator 0.5)",
+                "severity": "warning"
+              },
+              {
+                "value": 7.1,
+                "label": "Alarm 7.1 mm/s (condition indicator 1)",
+                "severity": "alarm"
+              }
+            ],
+            "series": [
+              {
+                "kind": "measurement",
+                "channel": "vibration_rms_mm_s",
+                "label": "Vibration RMS (measured)"
+              }
+            ]
+          },
+          {
+            "id": "turbidity",
+            "title": "Measured turbidity",
+            "description": "Suspended sediment concentration from the IoT condition-monitoring batch.",
+            "unit": "g/l",
+            "thresholds": [
+              {
+                "value": 0.4,
+                "label": "Base concentration 0.4 g/l",
+                "severity": "reference"
+              }
+            ],
+            "series": [
+              {
+                "kind": "measurement",
+                "channel": "turbidity_g_l",
+                "label": "Turbidity (measured)"
+              }
+            ]
+          },
+          {
+            "id": "rul",
+            "title": "Remaining useful life",
+            "description": "Runner life left per assessment (placeholder Miner-rule model).",
+            "unit": "days",
+            "thresholds": [
+              {
+                "value": 365,
+                "label": "Warning below 365 days",
+                "severity": "warning"
+              },
+              {
+                "value": 90,
+                "label": "Alarm below 90 days",
+                "severity": "alarm"
+              }
+            ],
+            "series": [
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+                "step": "runner_health",
+                "signal": "rul.rul_days",
+                "label": "Runner RUL (fatigue)",
+                "color": "#0542eb"
+              },
+              {
+                "kind": "output",
+                "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+                "step": "runner_health",
+                "name": "rul.rul_days",
+                "label": "Runner RUL, end of run",
+                "color": "#001c63"
+              },
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+                "step": "sediment_erosion",
+                "signal": "rul.rul_days",
+                "label": "Runner RUL (erosion)",
+                "color": "#bf5f2f"
+              }
+            ]
+          },
+          {
+            "id": "damage",
+            "title": "Damage index",
+            "description": "Accumulated damage from fatigue (runner RUL) and sediment erosion.",
+            "unit": "index",
+            "thresholds": [
+              {
+                "value": 0.8,
+                "label": "Alarm at damage 0.8",
+                "severity": "alarm"
+              }
+            ],
+            "series": [
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+                "step": "runner_health",
+                "signal": "rul.damage_index",
+                "label": "Fatigue damage",
+                "color": "#0542eb"
+              },
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+                "step": "sediment_erosion",
+                "signal": "rul.damage_index",
+                "label": "Erosion damage",
+                "color": "#bf5f2f"
+              }
+            ]
+          },
+          {
+            "id": "condition",
+            "title": "Condition and sediment exposure",
+            "description": "Vibration condition indicator and sediment exposure; a cleaning event is raised above 0.8.",
+            "unit": "0-1",
+            "thresholds": [
+              {
+                "value": 0.5,
+                "label": "Watch: condition indicator 0.5",
+                "severity": "warning"
+              },
+              {
+                "value": 0.8,
+                "label": "Cleaning event above exposure 0.8",
+                "severity": "alarm"
+              }
+            ],
+            "series": [
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+                "step": "runner_health",
+                "signal": "iot.condition_indicator",
+                "label": "Condition indicator",
+                "color": "#0542eb"
+              },
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+                "step": "sediment_erosion",
+                "signal": "sediment.sediment_exposure",
+                "label": "Sediment exposure",
+                "color": "#bf5f2f"
+              }
+            ]
+          },
+          {
+            "id": "cleanings",
+            "title": "Cleanings per assessed day",
+            "description": "Cleaning events counted by each sediment-erosion assessment.",
+            "unit": "count",
+            "series": [
+              {
+                "kind": "output",
+                "workflow": "workflows/demonstrators/cheylas/monitoring/sediment_erosion_events.yaml",
+                "step": "sediment_erosion",
+                "name": "sediment.cleaning_count",
+                "label": "Cleanings",
+                "color": "#bf5f2f"
+              }
+            ]
+          },
+          {
+            "id": "net-benefit",
+            "title": "Net benefit of operation",
+            "description": "Energy value minus consumed runner life, per assessment (placeholder cost model).",
+            "unit": "EUR",
+            "thresholds": [
+              {
+                "value": 0,
+                "label": "Break-even",
+                "severity": "reference"
+              }
+            ],
+            "series": [
+              {
+                "kind": "output",
+                "workflow": "workflows/demonstrators/cheylas/maintenance/runner_rul_lockstep.yaml",
+                "step": "degradation_cost",
+                "name": "net_benefit_eur",
+                "label": "Net benefit",
+                "color": "#2f7652"
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -208,6 +407,69 @@
             "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
             "step": "degradation_cost",
             "key": "recommendation_code"
+          }
+        ]
+      },
+      "plots": {
+        "charts": [
+          {
+            "id": "battery",
+            "title": "Battery state of charge and health",
+            "description": "State of charge and state of health from the Battery-EMS co-simulation (placeholder models).",
+            "unit": "%",
+            "thresholds": [
+              {
+                "value": 20,
+                "label": "SoC floor 20 %",
+                "severity": "reference"
+              },
+              {
+                "value": 90,
+                "label": "SoC ceiling 90 %",
+                "severity": "reference"
+              }
+            ],
+            "series": [
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+                "step": "battery_ems",
+                "signal": "battery.soc_percent",
+                "label": "State of charge",
+                "color": "#0542eb"
+              },
+              {
+                "kind": "trace",
+                "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+                "step": "battery_ems",
+                "signal": "battery.soh_percent",
+                "label": "State of health",
+                "color": "#2f7652"
+              }
+            ]
+          },
+          {
+            "id": "net-benefit",
+            "title": "Net benefit of operation",
+            "description": "Arbitrage value minus battery degradation cost, per assessment.",
+            "unit": "EUR",
+            "thresholds": [
+              {
+                "value": 0,
+                "label": "Break-even",
+                "severity": "reference"
+              }
+            ],
+            "series": [
+              {
+                "kind": "output",
+                "workflow": "workflows/demonstrators/alqueva/hybrid/battery_ems_cosim.yaml",
+                "step": "degradation_cost",
+                "name": "net_benefit_eur",
+                "label": "Net benefit",
+                "color": "#2f7652"
+              }
+            ]
           }
         ]
       }

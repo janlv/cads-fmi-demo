@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/norceresearch/cads-fmi-demo/orchestrator/service/internal/cadsdb"
 )
 
 type fakeRemoteClient struct {
@@ -226,7 +228,8 @@ func TestServerAPIsAndDashboard(t *testing.T) {
 			t.Fatalf("ServeHTTP() status = %d, want %d", rec.Code, http.StatusOK)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, "STOR-HY CADS Playground") ||
+		if !strings.Contains(body, "STOR-HY Demonstrator Dashboard") ||
+			!strings.Contains(body, "plotsView") ||
 			!strings.Contains(body, "demoWorkflowList") ||
 			!strings.Contains(body, "selectedWorkflowPanel") ||
 			!strings.Contains(body, "workflowOutput") ||
@@ -496,4 +499,176 @@ func TestSubmitSiteRunsLaunchesEveryWorkflowOfTheSite(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown site status = %d", rec.Code)
 	}
+}
+
+const windowedSiteWorkflow = `
+metadata: {display_name: Windowed, site_id: cheylas}
+data_window: {mode: since_previous_run, initial_span: 24h, max_span: 7d}
+steps:
+  - name: health
+    cosim:
+      scheme: jacobi
+      communication_step: 900
+      models:
+        - name: iot
+          fmu: fmu/a.fmu
+          input_series: {db: {site: cheylas, channels: {v: vib}}}
+        - name: rul
+          fmu: fmu/b.fmu
+          start_values: {initial_damage: 0.35}
+          carry_over: {initial_damage: health.rul.damage_index}
+`
+
+func TestLocalExecutionSiteRunsListAndResults(t *testing.T) {
+	root := writeDashboardRepoFixture(t)
+	write := func(rel, doc string) {
+		t.Helper()
+		path := filepath.Join(root, "workflows", "demonstrators", rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("cheylas/a/windowed.yaml", windowedSiteWorkflow)
+	write("cheylas/b/plain.yaml", "metadata:\n  display_name: Plain\n  site_id: cheylas\nsteps:\n  - name: s\n    fmu: fmu/models/Rul.fmu\n")
+
+	dayEnd := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
+	dbStarted := time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
+	argoStarted := dbStarted.Add(-time.Hour)
+	store := &fakeDataStore{
+		latest: map[string]time.Time{"vib": dayEnd},
+		previous: map[string]*cadsdb.PreviousRun{
+			"workflows/demonstrators/cheylas/a/windowed.yaml": {RunID: "local-db1", Mode: "since_previous_run", From: dayEnd.Add(-24 * time.Hour), To: dayEnd},
+		},
+		runList: []cadsdb.StoredRun{
+			{RunID: "local-db1", WorkflowPath: "workflows/demonstrators/cheylas/a/windowed.yaml", Status: "succeeded", StartedAt: &dbStarted,
+				Provenance: map[string]any{"data_window": map[string]any{"mode": "since_previous_run", "from": "2026-05-20T00:00:00Z", "to": "2026-05-21T00:00:00Z"}}},
+			{RunID: "local-db0", WorkflowPath: "workflows/demonstrators/cheylas/a/windowed.yaml", Status: "skipped", StartedAt: &argoStarted},
+			{RunID: "cads-hosted-x", WorkflowPath: "workflows/demonstrators/cheylas/b/plain.yaml", Status: "cancelled", StartedAt: &argoStarted},
+		},
+		runs: map[string]map[string]map[string]any{
+			"cheylas/local-db1": {
+				"health": {"rul.rul_days": 410.0},
+				"_run":   {"status": "succeeded", "workflow": map[string]any{"path": "workflows/demonstrators/cheylas/a/windowed.yaml"}},
+			},
+		},
+	}
+	fake := &fakeLocalExec{release: make(chan struct{}), stdout: `{"s":{"y":1},"_run":{"status":"succeeded"}}`}
+	local := NewLocalRunner(LocalRunnerOptions{WorkDir: root, RunnerBin: "runner"})
+	local.exec = fake.run
+	server := &Server{Runner: &Runner{WorkDir: root}, Data: store, Local: local, ExecutionMode: ExecutionLocal}
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	var cfg DashboardConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LocalRunsEnabled || cfg.ExecutionMode != "local" || cfg.RemoteEnabled || !cfg.DatabaseConfigured {
+		t.Fatalf("config = %+v", cfg)
+	}
+
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/sites/cheylas/runs", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("site runs status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var resp siteRunsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Runs) != 1 || resp.Runs[0].WorkflowPath != "workflows/demonstrators/cheylas/b/plain.yaml" || resp.Runs[0].Source != "local" || len(resp.Errors) != 0 {
+		t.Fatalf("response = %+v", resp)
+	}
+	if len(resp.UpToDate) != 1 || resp.UpToDate[0].Workflow != "workflows/demonstrators/cheylas/a/windowed.yaml" ||
+		resp.UpToDate[0].LatestSample != "2026-05-21T00:00:00Z" || resp.UpToDate[0].CoveredTo != "2026-05-21T00:00:00Z" ||
+		!strings.Contains(resp.UpToDate[0].Reason, "no new data") {
+		t.Fatalf("upToDate = %+v", resp.UpToDate)
+	}
+	localName := resp.Runs[0].Name
+
+	// While the run is in flight its results are not available yet.
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs/"+localName+"/results", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("in-flight results status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	// A second refresh does not start a second run of the same workflow.
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/sites/cheylas/runs", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "already has a local run in flight") {
+		t.Fatalf("second refresh = %d %s", rec.Code, rec.Body.String())
+	}
+
+	close(fake.release)
+	local.Wait()
+
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs?limit=10", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var runs []RunSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &runs); err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]RunSummary{}
+	for _, run := range runs {
+		if _, dup := byName[run.Name]; dup {
+			t.Fatalf("duplicate run %s in %+v", run.Name, runs)
+		}
+		byName[run.Name] = run
+	}
+	if len(runs) != 4 || runs[0].Name != localName {
+		t.Fatalf("runs = %+v, want the new local run first and 4 entries", runs)
+	}
+	if run := byName["local-db1"]; run.Source != "local" || run.Phase != "Succeeded" || run.DataWindow == nil || run.DataWindow.To != "2026-05-21T00:00:00Z" {
+		t.Fatalf("db run = %+v", run)
+	}
+	if run := byName["local-db0"]; run.Phase != "Succeeded" || run.Message != "no new data" {
+		t.Fatalf("skipped db run = %+v", run)
+	}
+	if run := byName["cads-hosted-x"]; run.Source != "argo" || run.Phase != "Failed" {
+		t.Fatalf("hosted db run = %+v", run)
+	}
+
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs/local-db1/results", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("db results status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var results RunResults
+	if err := json.Unmarshal(rec.Body.Bytes(), &results); err != nil {
+		t.Fatal(err)
+	}
+	if results.CollectedFrom != "database" || results.Status != "succeeded" || results.Partial ||
+		results.WorkflowPath != "workflows/demonstrators/cheylas/a/windowed.yaml" || results.StepResults["health"]["rul.rul_days"] != 410.0 {
+		t.Fatalf("db results = %+v", results)
+	}
+
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs/"+localName+"/results", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"collectedFrom":"local runner"`) {
+		t.Fatalf("local results = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs/"+localName, nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"phase":"Succeeded"`) {
+		t.Fatalf("local run = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/runs/local-missing/results", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing run status = %d", rec.Code)
+	}
+
+	// POST /api/runs also runs locally.
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"workflow":"workflows/demonstrators/cheylas/b/plain.yaml"}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"source":"local"`) {
+		t.Fatalf("submit run = %d %s", rec.Code, rec.Body.String())
+	}
+	local.Wait()
 }

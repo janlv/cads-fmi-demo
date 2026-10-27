@@ -22,11 +22,36 @@ type Server struct {
 	Remote RemoteClient
 	// Data is the CADS database (nil when CADS_DB_URL is not configured).
 	Data DataStore
+	// Local executes runs on this machine when ExecutionMode is "local".
+	Local *LocalRunner
+	// ExecutionMode is "argo" (default) or "local".
+	ExecutionMode string
+}
+
+const (
+	ExecutionArgo  = "argo"
+	ExecutionLocal = "local"
+)
+
+// localMode reports whether submissions run on this machine.
+func (s *Server) localMode() bool {
+	return s.Local != nil && s.ExecutionMode == ExecutionLocal
+}
+
+func (s *Server) executionMode() string {
+	if s.localMode() {
+		return ExecutionLocal
+	}
+	return ExecutionArgo
 }
 
 // DataStore is the part of the CADS Data interface the dashboard service reads.
 type DataStore interface {
 	ChannelStatus(ctx context.Context, site string) ([]cadsdb.ChannelInfo, error)
+	ReadSeriesBinned(ctx context.Context, site string, channels []string, from, to time.Time, binSeconds float64) ([]cadsdb.Row, error)
+	ListRuns(ctx context.Context, site string, limit int) ([]cadsdb.StoredRun, error)
+	ReadRunOutputs(ctx context.Context, site string, runIDs []string) ([]cadsdb.OutputRow, error)
+	ReadRunSeries(ctx context.Context, site string, runIDs, steps, signals []string) ([]cadsdb.RunSeriesRow, error)
 }
 
 // dataResponse is the `/api/data?site=<id>` payload.
@@ -72,6 +97,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleRuns(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/sites/") && strings.HasSuffix(r.URL.Path, "/runs") && r.Method == http.MethodPost:
 		s.handleSubmitSiteRuns(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/sites/") && strings.HasSuffix(r.URL.Path, "/history") && r.Method == http.MethodGet:
+		s.handleSiteHistory(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/runs/") && strings.HasSuffix(r.URL.Path, "/results") && r.Method == http.MethodGet:
 		s.handleRunResults(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/runs/") && r.Method == http.MethodGet:
@@ -98,6 +125,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.remoteClient().Config()
 	cfg.DatabaseConfigured = s.Data != nil
+	cfg.LocalRunsEnabled = s.localMode()
+	cfg.ExecutionMode = s.executionMode()
+	if cfg.LocalRunsEnabled && s.Local != nil {
+		cfg.LocalRunner = s.Local.Describe()
+	}
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -158,12 +190,136 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		limit = parsed
 	}
 
-	runs, err := s.remoteClient().ListRuns(r.Context(), limit)
-	if err != nil {
+	remote := s.remoteClient()
+	remoteEnabled := remote.Config().RemoteEnabled
+	if !remoteEnabled && s.Local == nil && s.Data == nil {
+		_, err := remote.ListRuns(r.Context(), limit)
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, runs)
+
+	// Priority order for duplicates: live Argo, in-flight local, recent local, stored runs.
+	var groups [][]RunSummary
+	if remoteEnabled {
+		runs, err := remote.ListRuns(r.Context(), limit)
+		if err != nil {
+			if s.Local == nil && s.Data == nil {
+				writeHandlerError(w, err)
+				return
+			}
+			log.Printf("list argo runs: %v", err)
+		}
+		for i := range runs {
+			if runs[i].Source == "" {
+				runs[i].Source = RunSourceArgo
+			}
+		}
+		groups = append(groups, runs)
+	}
+	if s.Local != nil {
+		groups = append(groups, s.Local.InFlight(), s.Local.Recent())
+	}
+	if s.Data != nil {
+		stored, err := s.storedRuns(r.Context(), limit)
+		if err != nil {
+			log.Printf("list stored runs: %v", err)
+		}
+		groups = append(groups, stored)
+	}
+	writeJSON(w, http.StatusOK, mergeRunLists(groups, limit))
+}
+
+// mergeRunLists dedupes by name (earlier groups win), sorts newest first and cuts to limit.
+func mergeRunLists(groups [][]RunSummary, limit int) []RunSummary {
+	seen := map[string]bool{}
+	merged := []RunSummary{}
+	for _, group := range groups {
+		for _, run := range group {
+			if run.Name == "" || seen[run.Name] {
+				continue
+			}
+			seen[run.Name] = true
+			merged = append(merged, run)
+		}
+	}
+	sortRunsNewestFirst(merged)
+	if limit > 0 && len(merged) > limit {
+		merged = merged[:limit]
+	}
+	return merged
+}
+
+// catalogSites lists the distinct metadata.site_id values of the workflow catalog.
+func (s *Server) catalogSites() []string {
+	workDir, err := s.requireWorkDir()
+	if err != nil {
+		return nil
+	}
+	workflows, err := ListWorkflows(workDir)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var sites []string
+	for _, wf := range workflows {
+		site := strings.TrimSpace(wf.Metadata.SiteID)
+		if site == "" || seen[site] || !cadsdb.ValidSite(site) {
+			continue
+		}
+		seen[site] = true
+		sites = append(sites, site)
+	}
+	return sites
+}
+
+// storedRuns lists the runs recorded in the CADS database for every catalog site.
+func (s *Server) storedRuns(ctx context.Context, limit int) ([]RunSummary, error) {
+	var out []RunSummary
+	var errs []error
+	for _, site := range s.catalogSites() {
+		runs, err := s.Data.ListRuns(ctx, site, limit)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("site %s: %w", site, err))
+			continue
+		}
+		for _, run := range runs {
+			out = append(out, storedRunSummary(run))
+		}
+	}
+	return out, errors.Join(errs...)
+}
+
+// storedRunSummary converts a <site>.runs row to a RunSummary.
+func storedRunSummary(run cadsdb.StoredRun) RunSummary {
+	summary := RunSummary{
+		Name:         run.RunID,
+		WorkflowPath: run.WorkflowPath,
+		Phase:        phaseFromStoredStatus(run.Status),
+		CreatedAt:    run.StartedAt,
+		StartedAt:    run.StartedAt,
+		FinishedAt:   run.FinishedAt,
+		Source:       runSourceForID(run.RunID),
+	}
+	if run.WallSeconds != nil {
+		summary.DurationSeconds = *run.WallSeconds
+	} else if run.FinishedAt != nil {
+		summary.DurationSeconds = computeDurationSeconds(run.StartedAt, run.FinishedAt, *run.FinishedAt)
+	}
+	if run.Provenance != nil {
+		summary.DataWindow = decodeDataWindow(run.Provenance["data_window"])
+		if message, ok := run.Provenance["error"].(string); ok {
+			summary.Message = strings.TrimSpace(message)
+		}
+		if wf, ok := run.Provenance["workflow"].(map[string]any); ok {
+			if digest, ok := wf["sha256"].(string); ok {
+				summary.WorkflowSHA256 = digest
+			}
+		}
+	}
+	if strings.EqualFold(run.Status, "skipped") && summary.Message == "" {
+		summary.Message = "no new data"
+	}
+	return summary
 }
 
 func (s *Server) handleSubmitRun(w http.ResponseWriter, r *http.Request) {
@@ -177,12 +333,144 @@ func (s *Server) handleSubmitRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := s.remoteClient().SubmitWorkflow(r.Context(), req.Workflow)
+	var run *RunSummary
+	var err error
+	if s.localMode() {
+		run, err = s.Local.Submit(req.Workflow)
+	} else {
+		run, err = s.remoteClient().SubmitWorkflow(r.Context(), req.Workflow)
+	}
 	if err != nil {
 		writeHandlerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
+}
+
+// servesLocally reports whether a run name is looked up locally (in memory, then the
+// database) rather than in Argo.
+func (s *Server) servesLocally(name string) bool {
+	if s.Local == nil && s.Data == nil {
+		return false
+	}
+	return strings.HasPrefix(name, "local-") || !s.remoteClient().Config().RemoteEnabled
+}
+
+// runReader is the database read side for single runs (nil without a database).
+func (s *Server) runReader() RunReader {
+	if s.Data == nil {
+		return nil
+	}
+	reader, _ := s.Data.(RunReader)
+	return reader
+}
+
+// readStoredRunAnySite reads a run from the database, trying every catalog site.
+func (s *Server) readStoredRunAnySite(ctx context.Context, name string) (map[string]map[string]any, error) {
+	reader := s.runReader()
+	if reader == nil {
+		return nil, fmt.Errorf("%w: %s", ErrRemoteRunNotFound, name)
+	}
+	for _, site := range s.catalogSites() {
+		results, err := reader.ReadRun(ctx, site, name)
+		if err == nil && len(results) > 0 {
+			return results, nil
+		}
+		if err != nil && !errors.Is(err, cadsdb.ErrRunNotFound) {
+			return nil, fmt.Errorf("read run %s (site %s): %w", name, site, err)
+		}
+	}
+	return nil, fmt.Errorf("%w: %s", ErrRemoteRunNotFound, name)
+}
+
+// summaryFromRunInfo builds a RunSummary from a stored result's `_run` record.
+func summaryFromRunInfo(name string, results map[string]map[string]any) RunSummary {
+	summary := RunSummary{Name: name, Source: runSourceForID(name)}
+	info := results[workflowpkg.RunInfoStepName]
+	status, _ := info["status"].(string)
+	summary.Phase = phaseFromStoredStatus(status)
+	if wf, ok := info["workflow"].(map[string]any); ok {
+		summary.WorkflowPath, _ = wf["path"].(string)
+		summary.WorkflowSHA256, _ = wf["sha256"].(string)
+	}
+	parse := func(key string) *time.Time {
+		raw, _ := info[key].(string)
+		if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(raw)); err == nil {
+			return &parsed
+		}
+		return nil
+	}
+	summary.StartedAt = parse("started_at")
+	summary.CreatedAt = summary.StartedAt
+	summary.FinishedAt = parse("finished_at")
+	if wall, ok := info["wall_seconds"].(float64); ok {
+		summary.DurationSeconds = wall
+	}
+	summary.Message = runInfoError(results)
+	summary.DataWindow = dataWindowFromResults(results)
+	return summary
+}
+
+// localRunByName serves a run from the local runner, then the database.
+func (s *Server) localRunByName(ctx context.Context, name string) (*RunSummary, error) {
+	if s.Local != nil {
+		if summary, _, _, ok := s.Local.lookup(name); ok {
+			return &summary, nil
+		}
+	}
+	results, err := s.readStoredRunAnySite(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	summary := summaryFromRunInfo(name, results)
+	return &summary, nil
+}
+
+// localRunResults serves results from the local runner, then the database.
+func (s *Server) localRunResults(ctx context.Context, name string) (*RunResults, error) {
+	if s.Local != nil {
+		if summary, results, inFlight, ok := s.Local.lookup(name); ok {
+			if inFlight {
+				return nil, fmt.Errorf("%w: workflow phase is %s", ErrRunResultsUnavailable, summary.Phase)
+			}
+			response := &RunResults{
+				RunName:       summary.Name,
+				WorkflowPath:  summary.WorkflowPath,
+				CollectedFrom: "local runner",
+				Phase:         summary.Phase,
+				Status:        strings.ToLower(summary.Phase),
+				Partial:       summary.Phase != "Succeeded",
+			}
+			if results == nil {
+				response.StepResults = map[string]map[string]any{}
+				response.Error = summary.Message
+				return response, nil
+			}
+			applyRunInfo(response, results, &summary)
+			if response.Status == "skipped" {
+				response.Partial = false
+			}
+			return response, nil
+		}
+	}
+	results, err := s.readStoredRunAnySite(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	summary := summaryFromRunInfo(name, results)
+	response := &RunResults{
+		RunName:       name,
+		WorkflowPath:  summary.WorkflowPath,
+		CollectedFrom: "database",
+		Phase:         summary.Phase,
+		Status:        strings.ToLower(summary.Phase),
+		Partial:       summary.Phase != "Succeeded",
+	}
+	applyRunInfo(response, results, &summary)
+	if response.Status == "skipped" {
+		response.Partial = false
+	}
+	return response, nil
 }
 
 func (s *Server) handleRunByName(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +480,13 @@ func (s *Server) handleRunByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := s.remoteClient().GetRun(r.Context(), name)
+	var run *RunSummary
+	var err error
+	if s.servesLocally(name) {
+		run, err = s.localRunByName(r.Context(), name)
+	} else {
+		run, err = s.remoteClient().GetRun(r.Context(), name)
+	}
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -208,7 +502,13 @@ func (s *Server) handleRunResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := s.remoteClient().GetRunResults(r.Context(), name)
+	var results *RunResults
+	var err error
+	if s.servesLocally(name) {
+		results, err = s.localRunResults(r.Context(), name)
+	} else {
+		results, err = s.remoteClient().GetRunResults(r.Context(), name)
+	}
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -233,6 +533,11 @@ func (s *Server) handleLocalRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results, err := s.Runner.Run(req.Workflow)
+	if err != nil && errors.Is(err, workflowpkg.ErrNoNewData) {
+		// Up to date: the run finished as "skipped", which is a successful no-op.
+		writeJSON(w, http.StatusOK, runResponse{Workflow: req.Workflow, Results: results})
+		return
+	}
 	if err != nil {
 		log.Printf("workflow %s failed: %v", req.Workflow, err)
 		if len(results) > 0 {
@@ -332,6 +637,16 @@ type siteRunsResponse struct {
 	Site   string           `json:"site"`
 	Runs   []RunSummary     `json:"runs"`
 	Errors []siteRunFailure `json:"errors,omitempty"`
+	// UpToDate lists the workflows not started because no new data arrived since their
+	// previous assessment (local execution only).
+	UpToDate []siteRunUpToDate `json:"upToDate,omitempty"`
+}
+
+type siteRunUpToDate struct {
+	Workflow     string `json:"workflow"`
+	Reason       string `json:"reason"`
+	CoveredTo    string `json:"coveredTo,omitempty"`
+	LatestSample string `json:"latestSample,omitempty"`
 }
 
 type siteRunFailure struct {
@@ -361,7 +676,20 @@ func (s *Server) handleSubmitSiteRuns(w http.ResponseWriter, r *http.Request) {
 		if wf.Metadata.SiteID != site {
 			continue
 		}
-		run, err := s.remoteClient().SubmitWorkflow(r.Context(), wf.Path)
+		var run *RunSummary
+		var err error
+		if s.localMode() {
+			if upToDate, planErr := s.planLocalRun(r.Context(), workDir, wf.Path); planErr != nil {
+				resp.Errors = append(resp.Errors, siteRunFailure{Workflow: wf.Path, Error: planErr.Error()})
+				continue
+			} else if upToDate != nil {
+				resp.UpToDate = append(resp.UpToDate, *upToDate)
+				continue
+			}
+			run, err = s.Local.Submit(wf.Path)
+		} else {
+			run, err = s.remoteClient().SubmitWorkflow(r.Context(), wf.Path)
+		}
 		if err != nil {
 			resp.Errors = append(resp.Errors, siteRunFailure{Workflow: wf.Path, Error: err.Error()})
 			continue
@@ -370,13 +698,39 @@ func (s *Server) handleSubmitSiteRuns(w http.ResponseWriter, r *http.Request) {
 			resp.Runs = append(resp.Runs, *run)
 		}
 	}
-	if len(resp.Runs) == 0 && len(resp.Errors) == 0 {
+	if len(resp.Runs) == 0 && len(resp.Errors) == 0 && len(resp.UpToDate) == 0 {
 		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("no workflows mapped to site %q", site))
 		return
 	}
 	status := http.StatusOK
-	if len(resp.Runs) == 0 {
+	if len(resp.Runs) == 0 && len(resp.UpToDate) == 0 {
 		status = http.StatusBadGateway
 	}
 	writeJSON(w, status, resp)
+}
+
+// planLocalRun resolves the workflow's data window before a local run. It returns an up-to-date
+// entry when there is no new data, nil, nil when the run should start (also for workflows without
+// data_window or without a database that can resolve windows).
+func (s *Server) planLocalRun(ctx context.Context, workDir, workflowPath string) (*siteRunUpToDate, error) {
+	if s.Data == nil {
+		return nil, nil
+	}
+	reader, ok := s.Data.(cadsdb.WindowReader)
+	if !ok {
+		return nil, nil
+	}
+	info, err := workflowpkg.PlanDataWindow(ctx, workDir, workflowPath, reader)
+	if err == nil {
+		return nil, nil
+	}
+	if !errors.Is(err, workflowpkg.ErrNoNewData) {
+		return nil, err
+	}
+	entry := &siteRunUpToDate{Workflow: workflowPath, Reason: err.Error()}
+	if info != nil {
+		entry.CoveredTo = info.PreviousTo
+		entry.LatestSample = info.LatestSample
+	}
+	return entry, nil
 }

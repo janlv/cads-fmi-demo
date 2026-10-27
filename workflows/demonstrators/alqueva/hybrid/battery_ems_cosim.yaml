@@ -4,7 +4,7 @@ metadata:
   category: hybrid
   result_family: storhy_mock
   summary: >-
-    Every 15 minutes the EMS decides to charge or discharge from the day-ahead price and the battery's state of charge, and the battery model follows the set-point and ages; afterwards the cost model compares the capacity fade against the arbitrage revenue.
+    Every 15 minutes EmsDispatch decides to charge or discharge from the day-ahead price and BatteryDegradation's state of charge, and BatteryDegradation follows that set-point and ages; afterwards DegradationCost compares BatteryDegradation's capacity fade against the arbitrage revenue from EmsDispatch.
 
   description: >-
     Gauss-Seidel (ping-pong) co-simulation of a price-driven EMS model and a BESS degradation model,

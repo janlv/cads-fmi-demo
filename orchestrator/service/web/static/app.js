@@ -27,9 +27,26 @@ const state = {
   traceCharts: new Map(),
   hiddenTraceSeries: new Set(),
   runtimeProblems: [],
+  // Header traffic light: whether its details panel is open.
+  statusDetailsOpen: false,
   pendingWorkflows: new Set(),
   poller: null,
   loadingRuns: false,
+  // Site view below the site tabs: "plots" (condition summary + history charts), "workflow"
+  // (wiring diagram, Workflow and FMU cards) or "runs" (history rail + run record).
+  siteView: "plots",
+  // Plots view: selected span, history per site id ({state: "loading"|"ready"|"fallback",
+  // span, seq, payload?, reason?, message?, previous?}), the key of the charts on screen,
+  // the newest finished run per site workflow (to refetch only on change), and the
+  // shared zoom window ({start, end} in percent of the span).
+  plots: {
+    span: "24h",
+    data: new Map(),
+    renderedKey: "",
+    finishedKey: {},
+    zoom: null,
+    seq: 0,
+  },
 };
 
 const SIMULINK_WORKFLOW_PATH = "workflows/tests/calculate_aecis.yaml";
@@ -49,6 +66,7 @@ const FINISHED_RUN_PHASES = ["succeeded", "failed", "error"];
 const COSIM_MODEL_LABELS = { ems: "EMS", iot: "IoT", rul: "RUL" };
 const SELECTED_WORKFLOW_STORAGE_KEY = "cads:selectedWorkflowPath";
 const RUNS_RAIL_COLLAPSED_STORAGE_KEY = "cads:runsRailCollapsed";
+const SITE_VIEW_STORAGE_KEY = "cads:siteView";
 const MODEL_MATRIX_URL = "/static/cads-model-matrix.json";
 const SEQUENTIAL_COUPLING_LABEL = "Sequential one-way hand-over (final values between steps)";
 // Fallback summary for a STOR-HY workflow without its own dashboard config.
@@ -317,6 +335,10 @@ const DEMONSTRATORS = [
 
 document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", resizeECharts);
+  window.addEventListener("resize", () => drawChainWiring(document.getElementById("demoWorkflowList")));
+  if (document.fonts?.ready) {
+    void document.fonts.ready.then(() => drawChainWiring(document.getElementById("demoWorkflowList")));
+  }
   window.addEventListener("load", () => initializeECharts(document));
   void initializeDashboard();
 });
@@ -324,6 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function initializeDashboard() {
   try {
     state.runsRailCollapsed = readPersistedRunsRailCollapsed();
+    state.siteView = readPersistedSiteView();
     const [config] = await Promise.all([fetchJSON("/api/config"), loadModelMatrix()]);
     state.config = config;
     applyDemoScope();
@@ -331,7 +354,7 @@ async function initializeDashboard() {
     renderBanner();
 
     await loadWorkflows();
-    if (state.config.remoteEnabled) {
+    if (runsEnabled()) {
       await loadRuns();
       startPolling();
     } else {
@@ -399,7 +422,7 @@ async function loadWorkflows() {
 }
 
 async function loadRuns() {
-  if (!state.config?.remoteEnabled || state.loadingRuns) {
+  if (!runsEnabled() || state.loadingRuns) {
     return;
   }
   state.loadingRuns = true;
@@ -414,7 +437,14 @@ async function loadRuns() {
     renderBanner();
     renderRuns();
     renderWorkflowOutput();
+    watchPlotsRefresh();
   }
+}
+
+// Runs can be listed and submitted through hosted Argo or, when the service has
+// the runner binary and a database, as local child processes.
+function runsEnabled() {
+  return Boolean(state.config?.remoteEnabled || state.config?.localRunsEnabled);
 }
 
 function startPolling() {
@@ -427,26 +457,84 @@ function startPolling() {
   }, intervalMs);
 }
 
+// Traffic light in the header: green = everything the current mode needs is in place,
+// amber = usable with limits, red = runs or data unavailable. Hover shows the summary;
+// click opens the details.
+function dashboardHealth() {
+  const config = state.config;
+  if (!config) {
+    return { level: "grey", label: "Loading…", summary: "Loading dashboard configuration…", details: [] };
+  }
+  const configProblems = config.problems ?? [];
+  const runtimeProblems = state.runtimeProblems;
+  const runs = Boolean(config.remoteEnabled || config.localRunsEnabled);
+  const details = [];
+  if (config.localRunsEnabled) {
+    details.push({ ok: true, text: `Execution: local${config.localRunner ? ` (${config.localRunner})` : ""}` });
+  } else if (config.remoteEnabled) {
+    details.push({ ok: true, text: `Execution: hosted playground${config.argoServer ? ` (${config.argoServer}, namespace ${config.namespace || "?"})` : ""}` });
+  } else {
+    details.push({ ok: false, text: "Execution: none — runs need Argo access or local runs" });
+  }
+  if (config.remoteEnabled) {
+    details.push({ ok: true, text: "Hosted playground: reachable" });
+  } else {
+    details.push({ ok: !config.localRunsEnabled ? false : null, text: `Hosted playground: not used${configProblems.length > 0 ? ` (${configProblems.join("; ")})` : ""}` });
+  }
+  details.push(config.databaseConfigured
+    ? { ok: true, text: "CADS database: connected (measured channels, run history, assessment chain)" }
+    : { ok: null, text: "CADS database: not configured — plots show only the latest finished run" });
+  for (const problem of runtimeProblems) {
+    details.push({ ok: false, text: `Run refresh: ${problem}` });
+  }
+  if (config.version) {
+    details.push({ ok: true, text: `Dashboard ${config.version}` });
+  }
+  let level = "green";
+  let label = "Ready";
+  let summary = "Ready: runs and data available.";
+  if (!runs || runtimeProblems.length > 0) {
+    level = "red";
+    label = "Attention";
+    summary = !runs ? "No way to run workflows: Argo access or local runs needed." : `Run refresh failing: ${runtimeProblems[0]}`;
+  } else if (!config.databaseConfigured || (config.localRunsEnabled && !config.remoteEnabled)) {
+    level = "amber";
+    label = config.localRunsEnabled && !config.remoteEnabled ? "Ready, local runs" : "Ready, no database";
+    summary = config.localRunsEnabled && !config.remoteEnabled
+      ? "Workflows run on this machine; the hosted playground is not used."
+      : "Runs work, but without a database the plots show only the latest finished run.";
+  }
+  return { level, label, summary, details };
+}
+
 function renderBanner() {
-  const banner = document.getElementById("statusBanner");
-  const configProblems = state.config?.problems ?? [];
-  const problems = [...configProblems, ...state.runtimeProblems];
-
-  if (!state.config) {
-    banner.className = "status-banner status-loading";
-    banner.innerHTML = "<strong>Loading dashboard…</strong>";
+  const light = document.getElementById("statusLight");
+  const labelElement = document.getElementById("statusLightLabel");
+  const panel = document.getElementById("statusDetails");
+  if (!light || !labelElement || !panel) {
     return;
   }
-
-  if (problems.length === 0) {
-    banner.className = "status-banner status-ready";
-    const version = state.config.version ? ` Dashboard ${escapeHTML(state.config.version)}.` : "";
-    banner.innerHTML = `<strong>Ready.</strong>Select a demo workflow below to inspect its models and recent outputs.${version}`;
-    return;
+  const health = dashboardHealth();
+  light.className = `status-light light-${health.level}`;
+  light.title = `${health.summary} Click for details.`;
+  labelElement.textContent = health.label;
+  panel.innerHTML = `
+    <p class="status-details-summary">${escapeHTML(health.summary)}</p>
+    <ul class="status-details-list">
+      ${health.details.map((item) => `
+        <li class="${item.ok === true ? "ok" : item.ok === false ? "bad" : "note"}">${escapeHTML(item.text)}</li>
+      `).join("")}
+    </ul>
+  `;
+  panel.hidden = !state.statusDetailsOpen;
+  light.setAttribute("aria-expanded", state.statusDetailsOpen ? "true" : "false");
+  if (!light.dataset.bound) {
+    light.dataset.bound = "1";
+    light.addEventListener("click", () => {
+      state.statusDetailsOpen = !state.statusDetailsOpen;
+      renderBanner();
+    });
   }
-
-  banner.className = "status-banner status-degraded";
-  banner.innerHTML = `<strong>Dashboard needs attention.</strong>${problems.map((problem) => escapeHTML(problem)).join("<br>")}`;
 }
 
 function renderConfigMeta() {
@@ -701,7 +789,7 @@ function selectWorkflow(workflowPath, options = {}) {
   renderRuns();
   renderWorkflowOutput();
 
-  if (options.loadResult !== false && state.config?.remoteEnabled) {
+  if (options.loadResult !== false && runsEnabled()) {
     void loadSelectedWorkflowResult().then(() => {
       renderRuns();
       renderWorkflowOutput();
@@ -1058,11 +1146,12 @@ function siteAssessmentSummary(siteId) {
 
 async function runSiteAssessment(siteId) {
   const current = state.siteAssessments[siteId] || {};
-  if (!siteId || current.pending || !state.config?.remoteEnabled) {
+  if (!siteId || current.pending || !runsEnabled()) {
     return;
   }
-  state.siteAssessments[siteId] = { pending: true, errors: [] };
+  state.siteAssessments[siteId] = { pending: true, errors: [], upToDate: [], submittedRuns: [], updatedAt: current.updatedAt };
   renderOperatorView();
+  renderPlotsStatus(siteId);
   try {
     const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/runs`, { method: "POST" });
     const text = await response.text();
@@ -1073,34 +1162,42 @@ async function runSiteAssessment(siteId) {
     if (!response.ok && errors.length === 0) {
       errors.push({ workflow: "", error: body?.error || text || `${response.status} ${response.statusText}` });
     }
-    state.siteAssessments[siteId] = { pending: false, errors, submitted: runs.length };
+    // Local mode reports workflows whose data is already assessed instead of submitting them.
+    const upToDate = Array.isArray(body?.upToDate) ? body.upToDate.filter((item) => item && typeof item === "object") : [];
+    state.siteAssessments[siteId] = {
+      pending: false,
+      errors,
+      submitted: runs.length,
+      submittedRuns: runs.map((run) => run?.name).filter(Boolean),
+      upToDate,
+      updatedAt: runs.length === 0 && upToDate.length > 0 ? Date.now() : current.updatedAt,
+    };
     renderRuns();
     await loadRuns();
   } catch (error) {
-    state.siteAssessments[siteId] = { pending: false, errors: [{ workflow: "", error: error.message }] };
+    state.siteAssessments[siteId] = { pending: false, errors: [{ workflow: "", error: error.message }], upToDate: [], submittedRuns: [], updatedAt: current.updatedAt };
   }
   renderOperatorView();
+  renderPlotsStatus(siteId);
 }
 
-function renderOperatorView() {
-  const container = document.getElementById("operatorView");
-  if (!container) {
-    return;
+// "Up to date — data through <date>" from the upToDate entries of a submission.
+function siteUpToDateText(siteId) {
+  const items = state.siteAssessments[siteId]?.upToDate || [];
+  if (items.length === 0) {
+    return "";
   }
-  const siteId = activeSiteId();
-  const view = operatorViewSpec(siteId);
-  const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
-  if (!view || !demo) {
-    container.innerHTML = "";
-    container.hidden = true;
-    return;
-  }
-  container.hidden = false;
-  const siteName = matrixSiteEntry(siteId)?.label || demo.shortLabel || demo.label;
-  const assessment = state.siteAssessments[siteId] || {};
-  const remoteEnabled = Boolean(state.config?.remoteEnabled);
+  const latest = items
+    .map((item) => item.latestSample || item.coveredTo || "")
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((left, right) => Date.parse(left) - Date.parse(right))
+    .pop();
+  return latest ? `Up to date — data through ${formatTimestampCompact(latest)}` : "Up to date — no new data to assess";
+}
 
-  const indicators = (Array.isArray(view.indicators) ? view.indicators : []).map((spec) => ({ spec, ...operatorMetric(spec) }));
+// Status (worst status code over the site's workflows) and de-duplicated recommendations
+// from the latest successful run of each workflow named in the operator_view spec.
+function siteAssessmentOutcome(view) {
   const statuses = (Array.isArray(view.status) ? view.status : [])
     .map((spec) => ({ spec, ...operatorMetric(spec) }))
     .filter((item) => item.value !== undefined && item.value !== null && Number.isFinite(Number(item.value)));
@@ -1123,66 +1220,1003 @@ function renderOperatorView() {
       recommendations.push({ label, description: storhyRecommendation(value).description, from: [from] });
     }
   }
-  const status = worst === null ? null : storhyStatus(worst);
+  return { worst, status: worst === null ? null : storhyStatus(worst), raisedBy, recommendations };
+}
+
+// Strip between the site tabs and the view tabs: status and recommendation of the
+// chosen demonstrator, visible whichever view is open.
+function renderSiteStatusStrip() {
+  const strip = document.getElementById("siteStatusStrip");
+  if (!strip) {
+    return;
+  }
+  const siteId = activeSiteId();
+  const view = operatorViewSpec(siteId);
+  const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
+  if (!view || !demo) {
+    strip.hidden = true;
+    strip.innerHTML = "";
+    return;
+  }
+  const { worst, status, raisedBy, recommendations } = siteAssessmentOutcome(view);
+  const partners = Array.isArray(matrixSiteEntry(siteId)?.partners) ? matrixSiteEntry(siteId).partners : [];
+  strip.hidden = false;
+  strip.innerHTML = `
+    <div class="strip-site">
+      <span class="dw-site">${escapeHTML(matrixSiteEntry(siteId)?.label || demo.shortLabel || demo.label)}</span>
+      <span class="site-strip-text">${escapeHTML([demo.operator, demo.location].filter(Boolean).join(" | "))}</span>
+      ${partners.length > 0 ? `
+        <span class="site-strip-partners" title="${escapeHTML(state.modelMatrix?.partners_source || "")}">
+          partners: ${partners.map((partner) => `<span class="partner-chip">${escapeHTML(partner)}</span>`).join("")}
+        </span>
+      ` : ""}
+    </div>
+    <div class="strip-item">
+      <span class="strip-label">Status</span>
+      ${status ? `
+        <span class="op-status op-status-${worst >= 2 ? "alarm" : worst >= 1 ? "warning" : "ok"}">${escapeHTML(status.label)}</span>
+        <span>${escapeHTML(status.description)}</span>
+        <span class="workflow-model-muted">from ${escapeHTML(raisedBy.join(", "))}</span>
+      ` : '<span class="workflow-model-muted">no finished assessment yet</span>'}
+    </div>
+    <div class="strip-item">
+      <span class="strip-label" title="CADS recommends; the operator decides. In operation the assessment runs after each ingested batch.">Recommendation</span>
+      ${recommendations.length > 0 ? recommendations.map((item) => `
+        <span title="${escapeHTML(item.description)}"><strong>${escapeHTML(item.label)}</strong> <span class="workflow-model-muted">from ${escapeHTML(item.from.join(", "))}</span></span>
+      `).join("") : '<span class="workflow-model-muted">—</span>'}
+    </div>
+  `;
+}
+
+function renderOperatorView() {
+  renderSiteStatusStrip();
+  const container = document.getElementById("operatorView");
+  if (!container) {
+    return;
+  }
+  const siteId = activeSiteId();
+  const view = operatorViewSpec(siteId);
+  const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
+  if (!view || !demo) {
+    container.innerHTML = "";
+    container.hidden = true;
+    return;
+  }
+  container.hidden = false;
+  const assessment = state.siteAssessments[siteId] || {};
+  const upToDate = siteUpToDateText(siteId);
+  const indicators = (Array.isArray(view.indicators) ? view.indicators : []).map((spec) => ({ spec, ...operatorMetric(spec) }));
 
   container.innerHTML = `
-    <div class="op-head">
-      <h2>Operator view: ${escapeHTML(siteName)}</h2>
-      <span class="workflow-model-muted">${escapeHTML([demo.operator, demo.location].filter(Boolean).join(" | "))}</span>
-    </div>
-    <div class="op-grid">
-      <div class="op-row">
-        <span class="op-label">Data in</span>
-        <div class="op-value op-data">${renderOperatorDataLines(siteId, view)}</div>
-      </div>
+    <div class="op-grid op-compact">
       <div class="op-row">
         <span class="op-label">Assessment</span>
         <div class="op-value op-assessment">
-          <button
-            id="runSiteAssessment"
-            class="selected-launch-button op-run-button"
-            type="button"
-            ${!remoteEnabled || assessment.pending ? "disabled" : ""}
-            title="${remoteEnabled ? `Submit every ${escapeHTML(siteName)} workflow` : "Remote launching is disabled in the current dashboard configuration."}"
-          >${assessment.pending ? "Submitting…" : `Run ${escapeHTML(siteName)} assessment`}</button>
-          <span>${escapeHTML(siteAssessmentSummary(siteId))}</span>
+          <span>${escapeHTML(assessment.pending ? "submitting the site workflows…" : siteAssessmentSummary(siteId))}</span>
+          ${upToDate ? `<span class="plots-status-ok">${escapeHTML(upToDate)}</span>` : ""}
           ${(assessment.errors || []).map((item) => `<span class="op-error">${escapeHTML([item.workflow ? workflowShortName(item.workflow) : "", item.error].filter(Boolean).join(": "))}</span>`).join("")}
         </div>
       </div>
       <div class="op-row">
         <span class="op-label">Condition</span>
-        <div class="op-value op-tiles">
-          ${indicators.map((item) => `
-            <div class="op-tile" title="${escapeHTML(`${item.spec.step}.${item.spec.key}`)}">
-              <span class="op-tile-label">${escapeHTML(item.spec.label)}</span>
-              <strong>${item.loading ? "…" : escapeHTML(formatIndicator(item.value, item.spec.unit))}</strong>
-              <span class="op-tile-source">${escapeHTML(workflowShortName(item.spec.workflow))}${item.spec.unit && ["index", "0-1", "count"].includes(item.spec.unit) ? ` · ${escapeHTML(item.spec.unit)}` : ""}</span>
-            </div>
-          `).join("")}
-        </div>
-      </div>
-      <div class="op-row">
-        <span class="op-label">Status</span>
         <div class="op-value">
-          ${status ? `
-            <span class="op-status op-status-${worst >= 2 ? "alarm" : worst >= 1 ? "warning" : "ok"}">${escapeHTML(status.label)}</span>
-            <span>${escapeHTML(status.description)}</span>
-            <span class="workflow-model-muted">from ${escapeHTML(raisedBy.join(", "))}</span>
-          ` : '<span class="workflow-model-muted">— no finished assessment yet</span>'}
-        </div>
-      </div>
-      <div class="op-row">
-        <span class="op-label">Recommendation</span>
-        <div class="op-value op-recommendations">
-          ${recommendations.length > 0 ? recommendations.map((item) => `
-            <div title="${escapeHTML(item.description)}"><strong>${escapeHTML(item.label)}</strong> <span class="workflow-model-muted">from ${escapeHTML(item.from.join(", "))}</span></div>
-          `).join("") : '<span class="workflow-model-muted">—</span>'}
+          <div class="op-kv" role="table" aria-label="Condition indicators">
+            ${indicators.map((item) => `
+              <div class="op-kv-row" role="row" title="${escapeHTML(`${item.spec.step}.${item.spec.key}`)}">
+                <span class="op-kv-label" role="cell">${escapeHTML(item.spec.label)}</span>
+                <strong class="op-kv-value" role="cell">${item.loading ? "…" : escapeHTML(formatIndicator(item.value, item.spec.unit))}</strong>
+                <span class="op-kv-source workflow-model-muted" role="cell">${escapeHTML(workflowShortName(item.spec.workflow))}${item.spec.unit && ["index", "0-1", "count"].includes(item.spec.unit) ? ` · ${escapeHTML(item.spec.unit)}` : ""}</span>
+              </div>
+            `).join("")}
+          </div>
         </div>
       </div>
     </div>
-    <p class="op-footer">CADS recommends; the operator decides. In operation the assessment runs after each ingested batch.</p>
   `;
-  container.querySelector("#runSiteAssessment")?.addEventListener("click", () => void runSiteAssessment(siteId));
+}
+
+// ---------------------------------------------------------------------------
+// Site views: "Plots" (assessment line, condition table, then the time span buttons
+// and history charts from the CADS database), "Workflow" (workflow tabs, wiring
+// diagram, Workflow and FMU cards) and "Runs" (workflow tabs, history rail, run
+// record). Site name, partners, status and recommendation sit in the strip between
+// the site tabs and the view tabs.
+// Charts follow matrix sites[].plots.charts; series are measured channels,
+// run traces (simulation seconds mapped to wall time) or end-of-run outputs.
+// ---------------------------------------------------------------------------
+
+const SITE_VIEWS = [
+  { id: "plots", label: "Plots" },
+  { id: "workflow", label: "Workflow" },
+  { id: "runs", label: "Runs" },
+];
+const PLOT_SPANS = [
+  { id: "6h", label: "6h", ms: 6 * 3600_000 },
+  { id: "24h", label: "24h", ms: 24 * 3600_000 },
+  { id: "7d", label: "7d", ms: 7 * 86_400_000 },
+  { id: "30d", label: "30d", ms: 30 * 86_400_000 },
+  { id: "all", label: "All", ms: 0 },
+];
+const PLOT_GROUP = "cads-plots";
+const PLOT_MAX_POINTS = 1500;
+const NO_DB_PLOTS_NOTE = "No CADS database configured: showing the latest finished run of each workflow; measured channels and run history need CADS_DB_URL.";
+
+function readPersistedSiteView() {
+  try {
+    // ?view=plots|workflow|runs deep-links a view; otherwise the last choice is remembered.
+    // The former "details" view maps to "workflow".
+    const normalize = (id) => (id === "details" ? "workflow" : id);
+    const requested = normalize(new URLSearchParams(window.location.search).get("view"));
+    const stored = normalize(window.localStorage.getItem(SITE_VIEW_STORAGE_KEY));
+    const value = SITE_VIEWS.some((view) => view.id === requested) ? requested : stored;
+    return SITE_VIEWS.some((view) => view.id === value) ? value : "plots";
+  } catch (_error) {
+    return "plots";
+  }
+}
+
+function persistSiteView(view) {
+  try {
+    window.localStorage.setItem(SITE_VIEW_STORAGE_KEY, view);
+  } catch (_error) {
+    // Storage may be unavailable (private mode); the choice then lasts for this page only.
+  }
+}
+
+function selectSiteView(view) {
+  if (!SITE_VIEWS.some((item) => item.id === view) || view === state.siteView) {
+    return;
+  }
+  state.siteView = view;
+  persistSiteView(view);
+  renderSiteViewTabs();
+  applySiteView();
+  if (view === "runs") {
+    renderRuns();
+    renderWorkflowOutput();
+  } else if (view === "workflow") {
+    renderWorkflowContent();
+  } else {
+    renderOperatorView();
+    renderPlotsView();
+  }
+  // Charts initialised while hidden have no size: resize once the view is laid out.
+  window.setTimeout(resizeECharts, 0);
+}
+
+function renderSiteViewTabs() {
+  const container = document.getElementById("siteViewTabs");
+  if (!container) {
+    return;
+  }
+  container.innerHTML = SITE_VIEWS.map((view) => {
+    const isActive = view.id === state.siteView;
+    return `
+      <button
+        type="button"
+        role="tab"
+        class="site-tab${isActive ? " selected" : ""}"
+        aria-selected="${isActive ? "true" : "false"}"
+        aria-controls="${view.id === "plots" ? "plotsView" : view.id === "workflow" ? "workflowContent" : "dashboardWorkspace"}"
+        tabindex="${isActive ? "0" : "-1"}"
+        data-site-view="${escapeHTML(view.id)}"
+      >
+        <span>${escapeHTML(view.label)}</span>
+      </button>
+    `;
+  }).join("");
+  for (const button of container.querySelectorAll("[data-site-view]")) {
+    button.addEventListener("click", () => selectSiteView(button.dataset.siteView));
+  }
+  bindTabRowKeys(container, "data-site-view", selectSiteView);
+}
+
+function applySiteView() {
+  const view = state.siteView;
+  const visible = {
+    plotsView: view === "plots",
+    workflowTabs: view === "workflow" || view === "runs",
+    workflowContent: view === "workflow",
+    dashboardWorkspace: view === "runs",
+  };
+  for (const [id, shown] of Object.entries(visible)) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.hidden = !shown;
+    }
+  }
+}
+
+function plotsSpec(siteId) {
+  const charts = matrixSiteEntry(siteId)?.plots?.charts;
+  return Array.isArray(charts)
+    ? charts.filter((chart) => chart && chart.id && Array.isArray(chart.series) && chart.series.length > 0)
+    : [];
+}
+
+function plotSpanMs(span) {
+  return PLOT_SPANS.find((item) => item.id === span)?.ms || 0;
+}
+
+// Query of /api/sites/{site}/history: the measured channels and step:signal traces the charts use.
+function plotsRequestQuery(charts, span) {
+  const channels = new Set();
+  const series = new Set();
+  for (const chart of charts) {
+    for (const item of chart.series) {
+      if (item?.kind === "measurement" && item.channel) {
+        channels.add(item.channel);
+      } else if (item?.kind === "trace" && item.step && item.signal) {
+        series.add(`${item.step}:${item.signal}`);
+      }
+    }
+  }
+  const params = new URLSearchParams({ span, max_points: String(PLOT_MAX_POINTS) });
+  if (channels.size > 0) {
+    params.set("channels", [...channels].join(","));
+  }
+  if (series.size > 0) {
+    params.set("series", [...series].join(","));
+  }
+  return params.toString();
+}
+
+// Fetches the site history for the selected span. A service without a database
+// answers configured:false; a missing or failing endpoint (e.g. an older service)
+// is not fatal: both fall back to the latest finished run payloads.
+function ensurePlotsData(siteId, options = {}) {
+  const charts = plotsSpec(siteId);
+  if (!siteId || charts.length === 0) {
+    return;
+  }
+  const span = state.plots.span;
+  const current = state.plots.data.get(siteId);
+  if (current && !options.force) {
+    // Loading or loaded for this span already; a different span fetches anew.
+    if (current.span === span) {
+      return;
+    }
+    // Without a database the fallback is computed client side for any span.
+    if (current.state === "fallback" && current.reason === "nodb") {
+      current.span = span;
+      return;
+    }
+  }
+  state.plots.seq += 1;
+  const seq = state.plots.seq;
+  const previous = current?.state === "loading" ? current.previous : current || null;
+  state.plots.data.set(siteId, { state: "loading", span, seq, previous });
+  const isCurrent = () => state.plots.data.get(siteId)?.seq === seq;
+  fetchJSON(`/api/sites/${encodeURIComponent(siteId)}/history?${plotsRequestQuery(charts, span)}`)
+    .then((payload) => {
+      if (!isCurrent()) {
+        return;
+      }
+      if (!payload || payload.configured === false) {
+        state.plots.data.set(siteId, { state: "fallback", span, seq, reason: "nodb" });
+        return;
+      }
+      state.plots.data.set(siteId, { state: "ready", span, seq, payload: normalizeHistoryPayload(payload) });
+    })
+    .catch((error) => {
+      if (isCurrent()) {
+        state.plots.data.set(siteId, { state: "fallback", span, seq, reason: "unavailable", message: String(error.message || "").trim() });
+      }
+    })
+    .finally(() => {
+      if (isCurrent() && activeSiteId() === siteId) {
+        renderPlotsView();
+      }
+    });
+}
+
+function normalizeHistoryPayload(payload) {
+  const fromMs = Number(payload.fromMs);
+  const toMs = Number(payload.toMs);
+  return {
+    ...payload,
+    fromMs: Number.isFinite(fromMs) ? fromMs : Date.parse(payload.from || "") || 0,
+    toMs: Number.isFinite(toMs) && toMs > fromMs ? toMs : (Number.isFinite(fromMs) ? fromMs : 0) + 1000,
+    measurements: Array.isArray(payload.measurements) ? payload.measurements : [],
+    runs: Array.isArray(payload.runs) ? payload.runs : [],
+  };
+}
+
+// Charts are rebuilt only when this changes for the same site and span.
+function historyKey(history) {
+  return [
+    history.anchor || "",
+    history.fromMs,
+    history.toMs,
+    history.binSeconds || 0,
+    history.runs.map((run) => run.runId).join(","),
+    history.measurements.map((item) => `${item.channel}:${Array.isArray(item.points) ? item.points.length : 0}`).join(","),
+  ].join("|");
+}
+
+// What the charts show for a site: {payload, key, note} or null while nothing is loaded.
+function resolvePlotsHistory(siteId, entry) {
+  if (!entry) {
+    return null;
+  }
+  if (entry.state === "loading") {
+    return entry.previous && entry.previous.span === state.plots.span ? resolvePlotsHistory(siteId, entry.previous) : null;
+  }
+  if (entry.state === "ready") {
+    return { payload: entry.payload, key: `db:${historyKey(entry.payload)}`, note: "", source: "database" };
+  }
+  const payload = historyFromPayloads(siteId, state.plots.span);
+  let note = entry.reason === "nodb"
+    ? NO_DB_PLOTS_NOTE
+    : `Site history unavailable (${entry.message || "no response"}): showing the latest finished run of each workflow.`;
+  if (!runsEnabled()) {
+    note += " Run results also need Argo access or local runs.";
+  }
+  return { payload, key: `fb:${historyKey(payload)}`, note, source: "fallback" };
+}
+
+// Latest succeeded run that assessed new data (a "skipped" run carries none).
+function latestAssessedPayload(workflowPath) {
+  const latest = latestSuccessfulPayload(workflowPath);
+  if (!latest.payload || String(runInfo(latest.payload)?.status || "").toLowerCase() !== "skipped") {
+    return latest;
+  }
+  for (const run of state.runs) {
+    if (run.workflowPath !== workflowPath || run.name === latest.run.name || String(run.phase || "").toLowerCase() !== "succeeded") {
+      continue;
+    }
+    const cached = cachedRunResults(run.name);
+    if (cached?.state === "ready") {
+      if (String(runInfo(cached.payload)?.status || "").toLowerCase() === "skipped") {
+        continue;
+      }
+      return { run, payload: cached.payload };
+    }
+    ensureRunResultsLoaded(run);
+    return { run, payload: null, loading: true };
+  }
+  return { run: null, payload: null };
+}
+
+// Wall-clock window of a run payload: _run.data_window, else the first input
+// dataset window, else started_at plus the simulated duration.
+function payloadRunWindow(payload, run) {
+  const info = runInfo(payload) || {};
+  const ms = (value) => Date.parse(value || "");
+  const dataWindow = info.data_window;
+  if (dataWindow && typeof dataWindow === "object") {
+    const fromMs = ms(dataWindow.from);
+    const toMs = ms(dataWindow.to);
+    if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs) {
+      const simStart = Number(dataWindow.sim_start_time);
+      return { fromMs, toMs, simStartTime: Number.isFinite(simStart) ? simStart : 0, source: "data_window" };
+    }
+  }
+  for (const step of Array.isArray(info.steps) ? info.steps : []) {
+    for (const fmu of Array.isArray(step?.fmus) ? step.fmus : []) {
+      for (const input of Array.isArray(fmu?.inputs) ? fmu.inputs : []) {
+        const fromMs = ms(input?.from);
+        const toMs = ms(input?.to);
+        if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs) {
+          return { fromMs, toMs, simStartTime: 0, source: "input" };
+        }
+      }
+    }
+  }
+  const startedMs = ms(info.started_at || run?.startedAt || run?.createdAt);
+  if (!Number.isFinite(startedMs)) {
+    return null;
+  }
+  const simulated = Number(info.simulated_seconds);
+  return { fromMs: startedMs, toMs: startedMs + (simulated > 0 ? simulated * 1000 : 1000), simStartTime: 0, source: "started_at" };
+}
+
+// Database-less history: the same runs[] shape as the endpoint, from the latest
+// finished payload of each site workflow; no measured channels.
+function historyFromPayloads(siteId, span) {
+  const wanted = new Set(plotsSpec(siteId).flatMap((chart) => chart.series.map((item) => item?.workflow)).filter(Boolean));
+  const runs = [];
+  for (const workflow of workflowsForSiteTab(siteId)) {
+    if (wanted.size > 0 && !wanted.has(workflow.path)) {
+      continue;
+    }
+    const { run, payload } = latestAssessedPayload(workflow.path);
+    if (!run || !payload) {
+      continue;
+    }
+    const runWindow = payloadRunWindow(payload, run);
+    if (!runWindow) {
+      continue;
+    }
+    const outputs = {};
+    const series = {};
+    for (const [stepName, stepResult] of modelStepEntriesOf(payload)) {
+      const values = {};
+      for (const [key, value] of Object.entries(stepResult)) {
+        if (key !== "trace" && value !== null && typeof value !== "object" && Number.isFinite(Number(value))) {
+          values[key] = Number(value);
+        }
+      }
+      outputs[stepName] = values;
+      const trace = extractSimulinkTrace(stepResult);
+      if (trace) {
+        series[stepName] = {};
+        for (const [signal, samples] of Object.entries(trace.signals)) {
+          if (Array.isArray(samples)) {
+            series[stepName][signal] = { t: trace.times, v: samples.slice(0, trace.times.length).map(coerceTraceNumber) };
+          }
+        }
+      }
+    }
+    runs.push({
+      runId: run.name,
+      workflowPath: workflow.path,
+      source: run.source || "",
+      startedAt: run.startedAt || "",
+      finishedAt: run.finishedAt || "",
+      windowFromMs: runWindow.fromMs,
+      windowToMs: runWindow.toMs,
+      simStartTime: runWindow.simStartTime,
+      anchorSource: runWindow.source,
+      outputs,
+      series,
+    });
+  }
+  // Without runs, anchor on the current hour so the chart key stays stable between polls.
+  const anchorMs = runs.length > 0 ? Math.max(...runs.map((run) => run.windowToMs)) : Math.floor(Date.now() / 3600_000) * 3600_000;
+  const spanMs = plotSpanMs(span);
+  let fromMs = spanMs > 0 ? anchorMs - spanMs : runs.length > 0 ? Math.min(...runs.map((run) => run.windowFromMs)) : anchorMs - 86_400_000;
+  if (fromMs >= anchorMs) {
+    fromMs = anchorMs - 3600_000;
+  }
+  return {
+    configured: false,
+    site: siteId,
+    span,
+    anchor: new Date(anchorMs).toISOString(),
+    fromMs,
+    toMs: anchorMs,
+    binSeconds: 0,
+    truncated: false,
+    measurements: [],
+    runs,
+  };
+}
+
+function renderPlotsView() {
+  const siteId = activeSiteId();
+  const charts = plotsSpec(siteId);
+  renderPlotsToolbar(siteId, charts.length > 0);
+  const view = document.getElementById("plotsView");
+  const container = document.getElementById("plotsCharts");
+  if (!view || !container || view.hidden) {
+    return;
+  }
+  if (charts.length === 0) {
+    const key = `${siteId}|none`;
+    if (state.plots.renderedKey !== key) {
+      disposeEChartsIn(container);
+      container.innerHTML = '<div class="empty-state">No plots configured for this site yet.</div>';
+      state.plots.renderedKey = key;
+    }
+    setPlotsNote("");
+    return;
+  }
+  ensurePlotsData(siteId);
+  const history = resolvePlotsHistory(siteId, state.plots.data.get(siteId));
+  const prefix = `${siteId}|${state.plots.span}|`;
+  if (!history) {
+    // While a new span loads, the previous charts of the same site stay on screen (dimmed)
+    // so the page keeps its height and scroll position; only a new site shows a placeholder.
+    if (state.plots.renderedKey.startsWith(`${siteId}|`) && state.plots.renderedKey !== `${siteId}|loading`) {
+      container.classList.add("loading");
+    } else if (!state.plots.renderedKey.startsWith(prefix)) {
+      replaceChartGrid(container, '<div class="empty-state">Loading site history…</div>');
+      state.plots.renderedKey = `${siteId}|loading`;
+    }
+    return;
+  }
+  container.classList.remove("loading");
+  setPlotsNote(history.note);
+  const key = `${prefix}${history.key}`;
+  if (key === state.plots.renderedKey) {
+    return;
+  }
+  // A new site or span starts unzoomed; a reload of the same span keeps the zoom.
+  if (!state.plots.renderedKey.startsWith(prefix)) {
+    state.plots.zoom = null;
+  }
+  replaceChartGrid(container, charts.map((chart, index) => renderTimeSeriesCard(chart, index === charts.length - 1)).join(""), () => {
+    initializePlotCharts(container, charts, history.payload);
+  });
+  state.plots.renderedKey = key;
+}
+
+// Swaps the chart grid's content without moving the page: the grid keeps its previous height
+// during the swap and the window scroll offset is restored after the new charts are laid out.
+function replaceChartGrid(container, html, initialize) {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const previousHeight = container.offsetHeight;
+  if (previousHeight > 0) {
+    container.style.minHeight = `${previousHeight}px`;
+  }
+  disposeEChartsIn(container);
+  container.innerHTML = html;
+  if (typeof initialize === "function") {
+    initialize();
+  }
+  window.scrollTo(scrollX, scrollY);
+  window.requestAnimationFrame(() => {
+    container.style.minHeight = "";
+    window.scrollTo(scrollX, scrollY);
+  });
+}
+
+function setPlotsNote(text) {
+  const note = document.getElementById("plotsNote");
+  if (!note) {
+    return;
+  }
+  note.textContent = text || "";
+  note.hidden = !text;
+}
+
+// The toolbar is built once and updated in place, so the 5 s poll keeps focus.
+function renderPlotsToolbar(siteId, hasCharts) {
+  const toolbar = document.getElementById("plotsToolbar");
+  if (!toolbar) {
+    return;
+  }
+  toolbar.hidden = !hasCharts;
+  if (!toolbar.dataset.ready) {
+    toolbar.innerHTML = `
+      <button id="plotsRefresh" class="selected-launch-button plots-refresh" type="button" title="Run every workflow of this site on the newest ingested data">Run assessment</button>
+      <div class="span-buttons" role="group" aria-label="Time span">
+        ${PLOT_SPANS.map((span) => `<button type="button" class="span-btn" data-plot-span="${escapeHTML(span.id)}" aria-pressed="false">${escapeHTML(span.label)}</button>`).join("")}
+      </div>
+      <div id="plotsStatus" class="plots-status" aria-live="polite"></div>
+      <span class="plots-hint">Zoom: pinch or Ctrl+scroll inside a chart, or drag the bar under the last chart; two-finger scroll moves the page.</span>
+    `;
+    toolbar.dataset.ready = "1";
+    toolbar.querySelector("#plotsRefresh").addEventListener("click", () => refreshSitePlots(activeSiteId()));
+    for (const button of toolbar.querySelectorAll("[data-plot-span]")) {
+      button.addEventListener("click", () => applyPlotSpan(button.dataset.plotSpan));
+    }
+  }
+  for (const button of toolbar.querySelectorAll("[data-plot-span]")) {
+    const selected = button.dataset.plotSpan === state.plots.span;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  }
+  const refresh = toolbar.querySelector("#plotsRefresh");
+  const pending = Boolean(state.siteAssessments[siteId]?.pending);
+  const siteName = matrixSiteEntry(siteId)?.label || siteId;
+  refresh.disabled = !runsEnabled() || pending;
+  refresh.textContent = pending ? "Submitting…" : "Run assessment";
+  refresh.title = runsEnabled()
+    ? `Run every ${siteName} workflow on the newest data, then update the plots`
+    : "Running workflows needs Argo access or local runs (--execution local with the runner binary or image).";
+  renderPlotsStatus(siteId);
+}
+
+function formatBinSeconds(seconds) {
+  const value = Number(seconds);
+  if (value % 86_400 === 0) {
+    return `${value / 86_400} d`;
+  }
+  if (value % 3600 === 0) {
+    return `${value / 3600} h`;
+  }
+  if (value % 60 === 0) {
+    return `${value / 60} min`;
+  }
+  return formatDuration(value);
+}
+
+// Toolbar status text: submission progress, data coverage, errors.
+function renderPlotsStatus(siteId = activeSiteId()) {
+  const element = document.getElementById("plotsStatus");
+  if (!element) {
+    return;
+  }
+  const assessment = state.siteAssessments[siteId] || {};
+  const parts = [];
+  const submitted = Array.isArray(assessment.submittedRuns) ? assessment.submittedRuns : [];
+  if (assessment.pending) {
+    parts.push("<strong>Submitting…</strong>");
+  } else if (submitted.length > 0) {
+    const done = submitted.filter((name) => isFinishedRunPhase(runSummaryByName(name)?.phase)).length;
+    parts.push(`<strong>Running · ${done} of ${submitted.length} finished</strong>`);
+  } else if (assessment.updatedAt) {
+    const time = new Date(assessment.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    parts.push(`<strong>Updated ${escapeHTML(time)}</strong>`);
+  }
+  const upToDate = siteUpToDateText(siteId);
+  if (upToDate && !assessment.pending) {
+    parts.push(`<span class="plots-status-ok">${escapeHTML(upToDate)}</span>`);
+  }
+  const entry = state.plots.data.get(siteId);
+  if (entry?.state === "loading") {
+    parts.push("<span>loading history…</span>");
+  }
+  const shown = entry?.state === "loading" ? entry.previous : entry;
+  if (shown?.state === "ready") {
+    const payload = shown.payload;
+    if (payload.anchor) {
+      parts.push(`<span>data up to ${escapeHTML(formatTimestampCompact(payload.anchor))}</span>`);
+    }
+    if (Number(payload.binSeconds) > 0) {
+      parts.push(`<span>averaged per ${escapeHTML(formatBinSeconds(payload.binSeconds))}</span>`);
+    }
+    if (payload.truncated) {
+      parts.push("<span>newest runs only</span>");
+    }
+  }
+  for (const item of Array.isArray(assessment.errors) ? assessment.errors : []) {
+    parts.push(`<span class="op-error">${escapeHTML([item.workflow ? workflowShortName(item.workflow) : "", item.error].filter(Boolean).join(": "))}</span>`);
+  }
+  element.innerHTML = parts.join('<span aria-hidden="true">·</span>');
+}
+
+function applyPlotSpan(span) {
+  if (!PLOT_SPANS.some((item) => item.id === span) || span === state.plots.span) {
+    return;
+  }
+  state.plots.span = span;
+  state.plots.zoom = null;
+  renderPlotsView();
+}
+
+// Refresh = run every site workflow on the newest data; the plots reload when they finish.
+function refreshSitePlots(siteId) {
+  if (!siteId) {
+    return;
+  }
+  void runSiteAssessment(siteId);
+}
+
+// Called after every runs poll: refetch a site's history only when the newest
+// finished run of one of its workflows changed, or all submitted runs finished.
+function watchPlotsRefresh() {
+  const siteIds = new Set([...state.plots.data.keys(), activeSiteId()]);
+  for (const siteId of siteIds) {
+    const workflows = workflowsForSiteTab(siteId);
+    if (workflows.length === 0) {
+      continue;
+    }
+    const key = workflows
+      .map((workflow) => state.runs.find((run) => run.workflowPath === workflow.path && isFinishedRunPhase(run.phase))?.name || "")
+      .join("|");
+    const previous = state.plots.finishedKey[siteId];
+    state.plots.finishedKey[siteId] = key;
+    let changed = previous !== undefined && previous !== key;
+    const assessment = state.siteAssessments[siteId];
+    if (assessment && !assessment.pending && Array.isArray(assessment.submittedRuns) && assessment.submittedRuns.length > 0) {
+      const allFinished = assessment.submittedRuns.every((name) => {
+        const run = runSummaryByName(name);
+        return !run || isFinishedRunPhase(run.phase);
+      });
+      if (allFinished) {
+        assessment.submittedRuns = [];
+        assessment.updatedAt = Date.now();
+        changed = true;
+      }
+    }
+    if (changed && state.plots.data.has(siteId)) {
+      state.siteData.delete(siteId);
+      ensurePlotsData(siteId, { force: true });
+    }
+  }
+  renderPlotsView();
+}
+
+function renderTimeSeriesCard(chart, isLast) {
+  return `
+    <section class="trace-card plot-card${isLast ? " plot-card-last" : ""}">
+      <div class="trace-head">
+        <div>
+          <h4>${escapeHTML(chart.title || chart.id)}</h4>
+          ${chart.description ? `<p>${escapeHTML(chart.description)}</p>` : ""}
+        </div>
+        <div class="plot-latest" data-plot-latest="${escapeHTML(chart.id)}" title="Latest value of each series in the selected span"></div>
+      </div>
+      <div class="trace-chart-shell">
+        <div class="echarts-chart" data-plot-chart="${escapeHTML(chart.id)}" aria-hidden="true"></div>
+        <div class="svg-chart-fallback"><div class="plot-empty">Charts need the ECharts library, which could not be loaded.</div></div>
+      </div>
+    </section>
+  `;
+}
+
+// Newest finite value of a series (points are [x, y] or {value: [x, y]}, gaps are null).
+function latestSeriesValue(item) {
+  for (let index = item.data.length - 1; index >= 0; index -= 1) {
+    const point = item.data[index];
+    const pair = Array.isArray(point) ? point : point?.value;
+    const value = Array.isArray(pair) ? Number(pair[1]) : NaN;
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+// The chart header lists each series' latest value: the condition numbers next to their plot.
+// An end-of-run output series repeats the end of its trace, so it is skipped when both exist.
+function renderPlotLatest(container, chart, plotSeries) {
+  const target = container.querySelector(`[data-plot-latest="${CSS.escape(chart.id)}"]`);
+  if (!target) {
+    return;
+  }
+  const traces = plotSeries.filter((item) => item.kind === "trace");
+  const items = plotSeries.filter((item) => {
+    if (item.kind !== "output") {
+      return true;
+    }
+    return !traces.some((trace) => trace.spec?.workflow === item.spec?.workflow
+      && trace.spec?.step === item.spec?.step && trace.spec?.signal === item.spec?.name);
+  });
+  target.innerHTML = items.map((item) => {
+    const value = latestSeriesValue(item);
+    if (value === undefined) {
+      return "";
+    }
+    return `<span class="plot-latest-item"><span class="dot" style="background:${escapeHTML(item.color)}"></span>${escapeHTML(item.name)} <strong>${escapeHTML(formatIndicator(value, chart.unit || item.unit || ""))}</strong></span>`;
+  }).join("");
+}
+
+// ECharts series data for one chart: measured points, one point per run for an
+// output (at the end of its window), and run traces joined in time with a gap.
+function buildPlotSeries(chart, history) {
+  const runs = [...history.runs].sort((left, right) => Number(left.windowFromMs) - Number(right.windowFromMs));
+  return chart.series.map((spec, index) => {
+    const kind = spec.kind || "trace";
+    const name = spec.label || spec.signal || spec.name || spec.channel || `Series ${index + 1}`;
+    const color = spec.color || paletteColor(index);
+    if (kind === "measurement") {
+      const measurement = history.measurements.find((item) => item?.channel === spec.channel);
+      const data = (Array.isArray(measurement?.points) ? measurement.points : [])
+        .map((point) => (Array.isArray(point) ? [Number(point[0]), coerceTraceNumber(point[1])] : null))
+        .filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1]));
+      return { kind, name, color, data, spec, unit: measurement?.unit || "" };
+    }
+    const matching = runs.filter((run) => run.workflowPath === spec.workflow);
+    if (kind === "output") {
+      const data = matching
+        .map((run) => {
+          const value = coerceTraceNumber(run.outputs?.[spec.step]?.[spec.name]);
+          const x = Number(run.windowToMs);
+          return Number.isFinite(value) && Number.isFinite(x) ? { value: [x, value], runId: run.runId } : null;
+        })
+        .filter(Boolean);
+      return { kind, name, color, data, spec };
+    }
+    const data = [];
+    for (const run of matching) {
+      const trace = run.series?.[spec.step]?.[spec.signal];
+      if (!Array.isArray(trace?.t) || !Array.isArray(trace?.v)) {
+        continue;
+      }
+      const simStart = Number(run.simStartTime) || 0;
+      const windowFrom = Number(run.windowFromMs);
+      const points = [];
+      trace.t.forEach((time, pointIndex) => {
+        const x = windowFrom + (Number(time) - simStart) * 1000;
+        const y = coerceTraceNumber(trace.v[pointIndex]);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          points.push({ value: [x, y], runId: run.runId });
+        }
+      });
+      if (points.length === 0) {
+        continue;
+      }
+      if (data.length > 0) {
+        // Break the line between runs: each assessment is a separate window.
+        const gapAt = (data[data.length - 1].value[0] + points[0].value[0]) / 2;
+        data.push({ value: [gapAt, "-"] });
+      }
+      data.push(...points);
+    }
+    return { kind, name, color, data, spec };
+  });
+}
+
+function buildTimeSeriesOption(chart, plotSeries, history, options = {}) {
+  const theme = chartTheme();
+  const base = baseChartStyle(theme);
+  const chartKey = `plot:${chart.id}`;
+  const selected = {};
+  for (const item of plotSeries) {
+    selected[item.name] = !state.hiddenTraceSeries.has(`${chartKey}:${item.name}`);
+  }
+  const zoom = state.plots.zoom || { start: 0, end: 100 };
+  // Wheel zoom only with Ctrl (a trackpad pinch arrives as Ctrl+wheel), so two-finger
+  // scrolling keeps moving the page; dragging inside the chart pans.
+  const dataZoom = [{
+    type: "inside",
+    xAxisIndex: 0,
+    filterMode: "none",
+    start: zoom.start,
+    end: zoom.end,
+    zoomOnMouseWheel: "ctrl",
+    moveOnMouseWheel: false,
+    moveOnMouseMove: true,
+  }];
+  if (options.slider) {
+    dataZoom.push({
+      type: "slider",
+      xAxisIndex: 0,
+      filterMode: "none",
+      start: zoom.start,
+      end: zoom.end,
+      height: 22,
+      bottom: 10,
+      borderColor: "rgba(0, 28, 99, 0.13)",
+      textStyle: { color: theme.muted, fontFamily: theme.fontFamily, fontSize: 11 },
+    });
+  }
+  const thresholds = (Array.isArray(chart.thresholds) ? chart.thresholds : [])
+    .filter((item) => item && Number.isFinite(Number(item.value)));
+  // Limit lines come from the placeholder models' own thresholds (matrix sites[].plots.charts[].thresholds).
+  const thresholdColor = (item) => PLOT_THRESHOLD_COLORS[item.severity] || PLOT_THRESHOLD_COLORS.alarm;
+  const thresholdValues = thresholds.map((item) => Number(item.value));
+  const thresholdMin = thresholdValues.length > 0 ? Math.min(...thresholdValues) : null;
+  const thresholdMax = thresholdValues.length > 0 ? Math.max(...thresholdValues) : null;
+  const hasData = plotSeries.some((item) => item.data.length > 0);
+  const axisLine = { lineStyle: { color: "rgba(23, 33, 38, 0.24)" } };
+  const axisLabel = { color: theme.muted, fontFamily: theme.fontFamily, fontSize: 12, fontWeight: 600, hideOverlap: true };
+  const splitLine = { lineStyle: { color: "rgba(23, 33, 38, 0.09)", type: "dashed" } };
+  const series = plotSeries.map((item, index) => ({
+    name: item.name,
+    type: "line",
+    data: item.data,
+    showSymbol: item.kind === "output",
+    symbol: "circle",
+    symbolSize: item.kind === "output" ? 7 : 5,
+    connectNulls: false,
+    ...(item.kind === "measurement" ? { sampling: "lttb" } : {}),
+    clip: true,
+    lineStyle: { width: item.kind === "measurement" ? 1.6 : 2.4, color: item.color, type: item.kind === "output" ? "dashed" : "solid" },
+    itemStyle: { color: item.color },
+    emphasis: { focus: "series" },
+    ...(index === 0 && thresholds.length > 0 ? {
+      markLine: {
+        silent: true,
+        symbol: "none",
+        animation: false,
+        lineStyle: { type: "dashed", width: 1.4 },
+        label: { position: "insideEndTop", fontSize: 11, fontWeight: 600, fontFamily: theme.fontFamily },
+        data: thresholds.map((item) => ({
+          yAxis: Number(item.value),
+          lineStyle: { color: thresholdColor(item) },
+          label: { color: thresholdColor(item), formatter: item.label || `Limit ${formatChartValueTick(Number(item.value))}` },
+        })),
+      },
+    } : {}),
+  }));
+  return {
+    animation: false,
+    backgroundColor: "transparent",
+    color: plotSeries.map((item) => item.color),
+    textStyle: base.textStyle,
+    title: {
+      show: !hasData,
+      text: "No data in this span",
+      left: "center",
+      top: "middle",
+      textStyle: { color: theme.muted, fontFamily: theme.fontFamily, fontSize: 13, fontWeight: 600 },
+    },
+    grid: { left: 56, right: 24, top: 44, bottom: options.slider ? 52 : 14, containLabel: true },
+    legend: { ...base.legend, selected },
+    tooltip: { ...base.tooltip, formatter: (params) => renderPlotTooltip(params, chart, history) },
+    dataZoom,
+    // Identical min/max on every chart so the connected zoom percentages line up.
+    xAxis: { type: "time", min: history.fromMs, max: history.toMs, axisLine, axisLabel, axisTick: { show: false }, splitLine },
+    yAxis: {
+      type: "value",
+      name: chart.unit || "",
+      nameLocation: "end",
+      nameGap: 12,
+      scale: true,
+      // The axis always shows the limit lines, with a little headroom above and below.
+      min: (extent) => plotAxisBound(extent, thresholdMin, -1),
+      max: (extent) => plotAxisBound(extent, thresholdMax, 1),
+      axisLine: { show: true, ...axisLine },
+      axisLabel: { ...axisLabel, formatter: (value) => formatChartValueTick(value) },
+      axisTick: { show: false },
+      nameTextStyle: { align: "left", color: theme.muted, fontFamily: theme.fontFamily, fontSize: 12, fontWeight: 700 },
+      splitLine,
+    },
+    series,
+  };
+}
+
+const PLOT_THRESHOLD_COLORS = { alarm: "#a53f2b", warning: "#b7791f", reference: "#5b6b7a" };
+
+// Axis bound that includes the data extent and the outermost limit line, padded by 6 % of
+// the resulting range so a line never sits on the chart edge. direction: -1 = min, 1 = max.
+function plotAxisBound(extent, limit, direction) {
+  const dataBound = direction < 0 ? extent.min : extent.max;
+  const values = [dataBound, limit].filter((value) => Number.isFinite(value));
+  if (values.length === 0) {
+    return undefined;
+  }
+  const bound = direction < 0 ? Math.min(...values) : Math.max(...values);
+  const other = direction < 0 ? extent.max : extent.min;
+  const range = Math.abs((Number.isFinite(other) ? other : bound) - bound) || Math.abs(bound) || 1;
+  return bound + direction * range * 0.06;
+}
+
+// Absolute time, then each series value near the pointer; run points name their run.
+function renderPlotTooltip(params, chart, history) {
+  const items = (Array.isArray(params) ? params : [params])
+    .filter((item) => Array.isArray(item?.value) && Number.isFinite(Number(item.value[0])) && Number.isFinite(Number(item.value[1])));
+  if (items.length === 0) {
+    return "";
+  }
+  const axisValue = Number(items[0].axisValue ?? items[0].value[0]);
+  // Axis tooltips pick the nearest point of every series: drop points far from the pointer.
+  const tolerance = Math.max(15 * 60_000, (Number(history.toMs) - Number(history.fromMs)) / 150);
+  const near = items.filter((item) => Math.abs(Number(item.value[0]) - axisValue) <= tolerance);
+  if (near.length === 0) {
+    return "";
+  }
+  const rows = near.map((item) => `
+    <div class="echarts-tooltip-row">
+      <span class="echarts-tooltip-marker" style="background:${escapeHTML(item.color)}"></span>
+      <span class="echarts-tooltip-name">${escapeHTML(item.seriesName)}</span>
+      <strong>${escapeHTML(formatChartValueTick(Number(item.value[1])))}</strong>
+    </div>
+    ${item.data?.runId ? `<div class="echarts-tooltip-subtitle">run ${escapeHTML(item.data.runId)} · ${escapeHTML(formatTimestampCompact(Number(item.value[0])))}</div>` : ""}
+  `).join("");
+  return `
+    <div class="echarts-tooltip-card">
+      <div class="echarts-tooltip-title">${escapeHTML(formatTimestamp(axisValue))}</div>
+      ${chart.unit ? `<div class="echarts-tooltip-subtitle">${escapeHTML(chart.unit)}</div>` : ""}
+      ${rows}
+    </div>
+  `;
+}
+
+function initializePlotCharts(container, charts, history) {
+  if (!window.echarts || typeof window.echarts.init !== "function") {
+    return;
+  }
+  let count = 0;
+  charts.forEach((chart, index) => {
+    const element = container.querySelector(`[data-plot-chart="${CSS.escape(chart.id)}"]`);
+    if (!element) {
+      return;
+    }
+    const plotSeries = buildPlotSeries(chart, history);
+    renderPlotLatest(container, chart, plotSeries);
+    element.closest(".trace-chart-shell")?.classList.add("echarts-ready");
+    element.setAttribute("aria-hidden", "false");
+    const instance = window.echarts.getInstanceByDom(element) || window.echarts.init(element, null, { renderer: "canvas" });
+    instance.setOption(buildTimeSeriesOption(chart, plotSeries, history, { slider: index === charts.length - 1 }), true);
+    instance.group = PLOT_GROUP;
+    instance.on("datazoom", () => {
+      const zoom = instance.getOption()?.dataZoom?.[0];
+      if (zoom && Number.isFinite(zoom.start) && Number.isFinite(zoom.end)) {
+        state.plots.zoom = { start: zoom.start, end: zoom.end };
+      }
+    });
+    instance.on("legendselectchanged", (event) => {
+      for (const item of plotSeries) {
+        const key = `plot:${chart.id}:${item.name}`;
+        if (event.selected?.[item.name] === false) {
+          state.hiddenTraceSeries.add(key);
+        } else {
+          state.hiddenTraceSeries.delete(key);
+        }
+      }
+    });
+    count += 1;
+  });
+  if (count > 1) {
+    window.echarts.connect(PLOT_GROUP);
+  }
 }
 
 // Content area for the selected workflow: header strip, title, model chain,
@@ -1196,9 +2230,9 @@ function renderWorkflowContent() {
   renderWorkflowChainArea(workflow);
   renderWorkflowFactsCard(workflow);
   renderSelectedModelPanel();
-  const footer = document.getElementById("workflowFooter");
-  if (footer) {
-    footer.innerHTML = `${renderDemoScopeNote()}${renderCouplingLegend()}`;
+  const caption = document.getElementById("chainCaption");
+  if (caption) {
+    caption.innerHTML = workflow ? renderCouplingLegend() : "";
   }
 }
 
@@ -1211,6 +2245,17 @@ function renderSiteHeader(workflow) {
   const demo = DEMONSTRATORS.find((entry) => entry.id === siteId);
   if (!demo) {
     container.innerHTML = workflow ? '<span class="dw-site">Shared</span>' : "";
+    return;
+  }
+  const view = operatorViewSpec(siteId);
+  if (view) {
+    // Name, partners and status live in the strip above; Details shows what data comes in.
+    container.innerHTML = `
+      <div class="details-subblock">
+        <span class="details-label">Data in</span>
+        <div class="details-data-in op-data">${renderOperatorDataLines(siteId, view)}</div>
+      </div>
+    `;
     return;
   }
   const partners = Array.isArray(matrixSiteEntry(siteId)?.partners) ? matrixSiteEntry(siteId).partners : [];
@@ -1240,15 +2285,11 @@ function renderWorkflowTitleLine(workflow) {
   container.innerHTML = `
     <div class="wf-title-row">
       <h2>${escapeHTML(workflowLabel(workflow))}</h2>
-      <span class="coupling-badge-row">${renderCouplingBadges(coupling.badges)}</span>
+      <span class="coupling-badge-row" title="${escapeHTML(coupling.label || "")}">${renderCouplingBadges(coupling.badges)}</span>
     </div>
     ${workflow.metadata?.summary
       ? `<p class="details-text workflow-summary">${escapeHTML(workflow.metadata.summary)}</p>`
       : description ? `<p class="details-text">${escapeHTML(description)}</p>` : ""}
-    <div class="details-coupling-line">
-      <span class="details-label">FMU coupling:</span>
-      <span>${escapeHTML(coupling.label || "n/a")}</span>
-    </div>
   `;
 }
 
@@ -1258,10 +2299,29 @@ function renderWorkflowChainArea(workflow) {
     return;
   }
   container.innerHTML = workflow
-    ? `${renderDataLaneList(workflow)}<div class="dw-chain" aria-label="Models in execution order">${renderWorkflowChain(workflow)}</div>${renderDataSourceDetails(workflow)}`
+    ? `${renderDataLaneList(workflow)}<div class="dw-chain" aria-label="Models in execution order"><div class="dw-chain-canvas">${renderWorkflowChain(workflow)}<svg class="dw-wires" aria-hidden="true"></svg></div></div>${renderDataSourceDetails(workflow)}`
     : "";
   for (const pill of container.querySelectorAll("[data-chain-model]")) {
-    pill.addEventListener("click", () => selectWorkflow(pill.dataset.chainWorkflow, { modelKey: pill.dataset.chainModel }));
+    const select = () => selectWorkflow(pill.dataset.chainWorkflow, { modelKey: pill.dataset.chainModel });
+    pill.addEventListener("click", select);
+    pill.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        select();
+      }
+    });
+  }
+  for (const toggle of container.querySelectorAll("[data-params-toggle]")) {
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = toggle.dataset.paramsToggle;
+      if (chainOpenParams.has(id)) {
+        chainOpenParams.delete(id);
+      } else {
+        chainOpenParams.add(id);
+      }
+      renderWorkflowChainArea(selectedWorkflow());
+    });
   }
   for (const pill of container.querySelectorAll("[data-chain-source]")) {
     pill.addEventListener("click", () => {
@@ -1269,6 +2329,70 @@ function renderWorkflowChainArea(workflow) {
       renderWorkflowChainArea(selectedWorkflow());
     });
   }
+  // Hovering a port highlights its wires and the ports at the other end.
+  for (const port of container.querySelectorAll("[data-port]")) {
+    port.addEventListener("mouseenter", () => highlightChainPort(container, port.dataset.port, true));
+    port.addEventListener("mouseleave", () => highlightChainPort(container, port.dataset.port, false));
+  }
+  window.requestAnimationFrame(() => drawChainWiring(container));
+}
+
+function highlightChainPort(container, portId, on) {
+  const partners = new Set();
+  for (const wire of container.querySelectorAll(".dw-wire")) {
+    if (wire.dataset.from === portId || wire.dataset.to === portId) {
+      wire.classList.toggle("active", on);
+      partners.add(wire.dataset.from === portId ? wire.dataset.to : wire.dataset.from);
+    }
+  }
+  for (const port of container.querySelectorAll("[data-port]")) {
+    if (port.dataset.port === portId || partners.has(port.dataset.port)) {
+      port.classList.toggle("active", on);
+    }
+  }
+}
+
+// Draws the wires between port rows as cubic curves in the SVG overlay; connection
+// wires are solid, step hand-overs dashed. Called after render and on resize.
+function drawChainWiring(container) {
+  const canvas = container?.querySelector(".dw-chain-canvas");
+  const svg = canvas?.querySelector("svg.dw-wires");
+  if (!canvas || !svg) {
+    return;
+  }
+  const bounds = canvas.getBoundingClientRect();
+  const width = Math.max(canvas.scrollWidth, Math.ceil(bounds.width));
+  const height = Math.max(canvas.scrollHeight, Math.ceil(bounds.height));
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  const anchor = (portId, side) => {
+    const element = canvas.querySelector(`[data-port="${CSS.escape(portId)}"]`);
+    if (!element) {
+      return null;
+    }
+    const rect = element.getBoundingClientRect();
+    return { x: (side === "right" ? rect.right : rect.left) - bounds.left, y: rect.top + rect.height / 2 - bounds.top };
+  };
+  const paths = [];
+  for (const edge of chainEdges) {
+    const from = anchor(edge.from, "right");
+    const to = anchor(edge.to, "left");
+    if (!from || !to) {
+      continue;
+    }
+    const dx = Math.max(40, Math.abs(to.x - from.x) / 2);
+    const d = `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} C ${(from.x + dx).toFixed(1)} ${from.y.toFixed(1)}, ${(to.x - dx).toFixed(1)} ${to.y.toFixed(1)}, ${to.x.toFixed(1)} ${to.y.toFixed(1)}`;
+    paths.push(`<path class="dw-wire ${edge.kind}" d="${d}" data-from="${escapeHTML(edge.from)}" data-to="${escapeHTML(edge.to)}" marker-end="url(#dwArrow)"><title>${escapeHTML(`${edge.from.replace(":out:", ".")} → ${edge.to.replace(":in:", ".")}`)}</title></path>`);
+  }
+  svg.innerHTML = `
+    <defs>
+      <marker id="dwArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 8 4 L 0 8 z" class="dw-wire-head"></path>
+      </marker>
+    </defs>
+    ${paths.join("")}
+  `;
 }
 
 function renderWorkflowFactsCard(workflow) {
@@ -1282,19 +2406,23 @@ function renderWorkflowFactsCard(workflow) {
   }
   const payload = latestLoadedPayload(workflow);
   const info = runInfo(payload);
-  const caseName = payload?.stepResults?._synthetic_case?.name || "";
   const runtime = workflowMaxRuntimeLabel(workflow).replace(/^max runtime /, "");
-  const sha = normalizeSha(info?.workflow?.sha256 || workflow.sha256);
+  const latestRun = latestRunFor([workflow.path]);
+  const window = info?.data_window;
+  const windowText = window && window.resolved && window.from && window.to
+    ? `assessed ${formatTimestampCompact(window.from)} → ${formatTimestampCompact(window.to)}`
+    : "";
   container.innerHTML = `
     <dl class="details-kv">
-      <div><dt>Steps</dt><dd>${workflow.stepCount}</dd></div>
-      <div><dt>Max runtime</dt><dd>${escapeHTML(runtime || "n/a")}</dd></div>
-      <div><dt>Synthetic case</dt><dd>${caseName ? escapeHTML(caseName) : '<span class="workflow-model-muted">shown after the first finished run</span>'}</dd></div>
-      <div><dt>Latest run</dt><dd>${renderRunStatusLine(latestRunFor([workflow.path]))}</dd></div>
-      <div><dt>Runner</dt><dd>${info?.runner_version ? `<code>${escapeHTML(info.runner_version)}</code>` : '<span class="workflow-model-muted">run the workflow to see</span>'}</dd></div>
-      <div><dt>Workflow sha</dt><dd>${sha ? `<code title="${escapeHTML(sha)}">${escapeHTML(sha.slice(0, 12))}</code>${info?.workflow?.sha256 ? "" : ' <span class="workflow-model-muted">(catalog)</span>'}` : '<span class="workflow-model-muted">n/a</span>'}</dd></div>
+      <div><dt>Latest run</dt><dd>
+        ${renderRunStatusLine(latestRun)}
+        ${windowText ? `<span class="workflow-model-muted">· ${escapeHTML(windowText)}</span>` : ""}
+        ${latestRun && payload ? '<button type="button" class="details-link" data-open-runs>run record ▸</button>' : ""}
+      </dd></div>
+      <div><dt>Steps</dt><dd>${workflow.stepCount}${escapeHTML(runtime ? ` · max runtime ${runtime}` : "")}</dd></div>
     </dl>
   `;
+  container.querySelector("[data-open-runs]")?.addEventListener("click", () => selectSiteView("runs"));
 }
 
 function renderSelectedModelPanel() {
@@ -1303,14 +2431,14 @@ function renderSelectedModelPanel() {
   const workflow = selectedWorkflow();
   const entry = workflow ? selectedModelEntry(workflow) : null;
   if (title) {
-    title.textContent = entry ? fmuBaseName(entry.fmu) : "none";
+    title.textContent = entry ? String(entry.fmu || "").split("/").pop() || fmuBaseName(entry.fmu) : "none";
   }
   if (!body) {
     return;
   }
   body.innerHTML = entry
     ? renderModelEntryDetails(workflow, entry)
-    : '<div class="details-empty">Pick a model in the chain above.</div>';
+    : '<div class="details-empty">Pick an FMU in the chain above.</div>';
 }
 
 // Operator-view data entries that are not ingested yet (SCADA, market, ...),
@@ -1355,43 +2483,150 @@ function renderLaneGrid(items) {
 // Steps in execution order: a co-sim step is a box of member pills with their
 // coupling between neighbours; plain steps follow after a one-way arrow. Data
 // sources sit in a lane above the model they feed.
+// Parameter lists are folded by default; this remembers which boxes are unfolded.
+const chainOpenParams = new Set();
+// Wires of the chain drawn last: [{from: "<key>:out:<var>", to: "<key>:in:<var>", kind}].
+let chainEdges = [];
+
+// Channel names fed by an input_series catalog label ("db:site.measurements/ch1,ch2",
+// "s3://bucket/key", or a CSV path).
+function inputSeriesChannels(label) {
+  const text = String(label || "").trim();
+  if (!text) {
+    return [];
+  }
+  if (text.startsWith("db:")) {
+    const channels = text.slice(text.indexOf("/") + 1);
+    return channels.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return [text.split("/").pop() || text];
+}
+
+// Value of an output in the latest loaded run of the workflow, formatted for a port row.
+function chainOutputValue(payload, stepName, resultKey) {
+  const value = payload?.stepResults?.[stepName]?.[resultKey];
+  if (value === undefined || value === null || typeof value === "object") {
+    return undefined;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? formatIndicator(numeric, "") : String(value);
+}
+
+// Port rows of one model: connection and hand-over inputs, measured series, event targets,
+// carried-over state; outputs with their latest value; parameters (without carried ones).
+function chainPorts(workflow, model, options) {
+  const { stepName, memberName, events, carryOver, payload, resultPrefix, extraOutputs = [] } = options;
+  const inputs = [];
+  const seen = new Set();
+  const add = (port) => {
+    if (!seen.has(port.name)) {
+      seen.add(port.name);
+      inputs.push(port);
+    }
+  };
+  for (const input of Array.isArray(model.inputs) ? model.inputs : []) {
+    const name = typeof input === "string" ? input : input?.name;
+    if (!name) {
+      continue;
+    }
+    const source = typeof input === "string" ? "" : input.sourceStep && input.sourceOutput ? `${input.sourceStep}.${input.sourceOutput}` : input.source || "";
+    add({ name, kind: typeof input !== "string" && input.sourceStep ? "handover" : "conn", title: source ? `${name} ← ${source}` : name });
+  }
+  for (const channel of inputSeriesChannels(model.inputSeries)) {
+    add({ name: channel, kind: "series", title: `measured series ${channel} (${String(model.inputSeries).startsWith("db:") ? "STOR-HY database, bundled file as fallback" : model.inputSeries})` });
+  }
+  for (const event of events) {
+    const target = String(event?.set || "").split(".").pop();
+    if (target) {
+      add({ name: target, kind: "event", title: cosimEventText(event) });
+    }
+  }
+  const carried = carryOver && typeof carryOver === "object" ? Object.entries(carryOver) : [];
+  for (const [target, ref] of carried) {
+    add({ name: target, kind: "carry", title: `${target} carried over from the previous run (${ref})` });
+  }
+  const carriedNames = new Set(carried.map(([target]) => target));
+  const outputs = (Array.isArray(model.outputs) ? model.outputs : []).map((name) => ({
+    name,
+    title: `${memberName ? `${memberName}.` : ""}${name}`,
+    value: chainOutputValue(payload, stepName, `${resultPrefix}${name}`),
+  }));
+  for (const name of extraOutputs) {
+    if (!outputs.some((port) => port.name === name)) {
+      outputs.push({ name, kind: "internal", title: `${memberName ? `${memberName}.` : ""}${name} (exchanged inside the step, not an exported output)` });
+    }
+  }
+  const parameters = (Array.isArray(model.parameters) ? model.parameters : []).filter((name) => !carriedNames.has(name));
+  return { inputs, outputs, parameters };
+}
+
 function renderWorkflowChain(workflow) {
   const isSelected = workflow.path === state.selectedWorkflowPath;
   const selectedKey = isSelected ? selectedModelEntry(workflow)?.key || "" : "";
   const openSourceKey = isSelected ? state.openSourceKey : "";
   const entries = workflowFmus(workflow);
+  const payload = latestLoadedPayload(workflow);
+  const models = workflowModels(workflow);
+  const stepIndexByName = new Map(models.map((model, index) => [model.name, index]));
+  const edges = [];
   const lane = (key) => {
     const entry = entries.find((item) => item.key === key);
     return entry ? modelDataPills(workflow, entry, openSourceKey) : [];
   };
+  // Hand-over edges: a plain step's start_from inputs point at an earlier step's output.
+  const handoverEdges = (model, key) => {
+    for (const input of Array.isArray(model.inputs) ? model.inputs : []) {
+      if (!input || typeof input === "string" || !input.sourceStep || !input.sourceOutput) {
+        continue;
+      }
+      const sourceIndex = stepIndexByName.get(input.sourceStep);
+      if (sourceIndex === undefined) {
+        continue;
+      }
+      const sourceModel = models[sourceIndex];
+      const dotted = String(input.sourceOutput).indexOf(".");
+      const fromKey = isCosimModel(sourceModel) && dotted > 0 ? `${sourceIndex}.${input.sourceOutput.slice(0, dotted)}` : String(sourceIndex);
+      const fromVar = isCosimModel(sourceModel) && dotted > 0 ? input.sourceOutput.slice(dotted + 1) : input.sourceOutput;
+      edges.push({ from: `${fromKey}:out:${fromVar}`, to: `${key}:in:${input.name}`, kind: "handover" });
+    }
+  };
   const items = [];
-  workflowModels(workflow).forEach((model, index) => {
+  models.forEach((model, index) => {
     if (index > 0) {
       items.push({ lane: [], node: '<span class="dw-arrow" title="one-way hand-over of final values">&rarr;</span>' });
     }
     if (!isCosimModel(model)) {
-      items.push({ lane: lane(String(index)), node: renderChainPill(workflow, String(index), model.fmu, model.label || model.name, [], selectedKey) });
+      const key = String(index);
+      const ports = chainPorts(workflow, model, { stepName: model.name, memberName: "", events: [], carryOver: model.carryOver, payload, resultPrefix: "" });
+      handoverEdges(model, key);
+      items.push({ lane: lane(key), node: renderChainPill(workflow, key, model.fmu, model.label || model.name, [], selectedKey, ports) });
       return;
     }
     const cosim = model.cosim;
     const members = Array.isArray(cosim.models) ? cosim.models : [];
     const events = Array.isArray(cosim.events) ? cosim.events : [];
-    const directed = new Set((Array.isArray(cosim.connections) ? cosim.connections : []).map((connection) =>
-      `${connection?.fromModel || cosimVarModel(connection?.from)}\u0000${connection?.toModel || cosimVarModel(connection?.to)}`));
+    const connections = Array.isArray(cosim.connections) ? cosim.connections : [];
+    const connectionOutputs = new Map();
+    for (const connection of connections) {
+      const fromModel = connection?.fromModel || cosimVarModel(connection?.from);
+      const toModel = connection?.toModel || cosimVarModel(connection?.to);
+      const fromVariable = connection?.fromVariable || String(connection?.from || "").split(".").pop();
+      const toVariable = connection?.toVariable || String(connection?.to || "").split(".").pop();
+      if (fromModel && toModel && fromVariable && toVariable) {
+        edges.push({ from: `${index}.${fromModel}:out:${fromVariable}`, to: `${index}.${toModel}:in:${toVariable}`, kind: "conn" });
+        connectionOutputs.set(fromModel, [...(connectionOutputs.get(fromModel) || []), fromVariable]);
+      }
+    }
     const edgeTitles = cosimEdges(cosim).map((edge) => `${edge.from} ${edge.bidirectional ? "<->" : "->"} ${edge.to}`).join(", ");
     const memberItems = [];
     members.forEach((member, memberIndex) => {
       if (memberIndex > 0) {
-        const previous = members[memberIndex - 1].name;
-        const forward = directed.has(`${previous}\u0000${member.name}`);
-        const backward = directed.has(`${member.name}\u0000${previous}`);
-        const symbol = forward && backward ? "&#8644;" : forward ? "&rarr;" : backward ? "&larr;" : "&middot;";
-        const title = forward && backward ? "bidirectional exchange" : forward || backward ? "one-way exchange" : "no direct exchange";
-        memberItems.push({ lane: [], node: `<span class="dw-link" title="${title}">${symbol}</span>` });
+        memberItems.push({ lane: [], node: '<span class="dw-link dw-link-gap" aria-hidden="true"></span>' });
       }
       const memberEvents = events.filter((item) => cosimVarModel(item?.set) === member.name);
       const key = `${index}.${member.name}`;
-      memberItems.push({ lane: lane(key), node: renderChainPill(workflow, key, member.fmu, member.label || member.name, memberEvents, selectedKey) });
+      const ports = chainPorts(workflow, member, { stepName: model.name, memberName: member.name, events: memberEvents, carryOver: member.carryOver, payload, resultPrefix: `${member.name}.`, extraOutputs: connectionOutputs.get(member.name) || [] });
+      memberItems.push({ lane: lane(key), node: renderChainPill(workflow, key, member.fmu, member.label || member.name, memberEvents, selectedKey, ports) });
     });
     items.push({
       lane: [],
@@ -1403,6 +2638,7 @@ function renderWorkflowChain(workflow) {
       `,
     });
   });
+  chainEdges = edges;
   return renderLaneGrid(items);
 }
 
@@ -1415,12 +2651,24 @@ function renderDataLaneList(workflow) {
   return rows.length > 0 ? `<div class="dw-lane-list">${rows.join("")}</div>` : "";
 }
 
-function renderChainPill(workflow, key, fmuPath, fallbackLabel, events, selectedKey) {
+function renderChainPill(workflow, key, fmuPath, fallbackLabel, events, selectedKey, ports = null) {
   const owners = fmuOwners(fmuPath);
   const eventTitle = events.map((item) => cosimEventText(item)).join("; ");
+  const inputs = ports?.inputs || [];
+  const outputs = ports?.outputs || [];
+  const parameters = ports?.parameters || [];
+  const paramsOpen = chainOpenParams.has(`${workflow.path}|${key}`);
+  const portRow = (port, direction) => `
+    <span
+      class="dw-port ${direction} ${escapeHTML(port.kind || "")}"
+      data-port="${escapeHTML(`${key}:${direction}:${port.name}`)}"
+      title="${escapeHTML(port.title || port.name)}"
+    >${port.kind === "series" ? DATABASE_ICON : ""}${port.kind === "event" ? "&#9889; " : ""}${port.kind === "carry" ? "&#8635; " : ""}${escapeHTML(port.name)}${port.value !== undefined ? `<em>${escapeHTML(port.value)}</em>` : ""}</span>
+  `;
   return `
-    <button
-      type="button"
+    <div
+      role="button"
+      tabindex="0"
       class="dw-pill${selectedKey === key ? " selected" : ""}"
       data-chain-workflow="${escapeHTML(workflow.path)}"
       data-chain-model="${escapeHTML(key)}"
@@ -1430,7 +2678,19 @@ function renderChainPill(workflow, key, fmuPath, fallbackLabel, events, selected
       <span class="dw-pill-label">${escapeHTML(fmuShortLabel(fmuPath, fallbackLabel))}</span>
       ${owners.length > 0 ? `<span class="dw-pill-owners">${escapeHTML(owners.join(", "))}</span>` : ""}
       ${events.length > 0 ? `<span class="dw-event" title="${escapeHTML(eventTitle)}">&#9889; event</span>` : ""}
-    </button>
+      ${inputs.length > 0 || outputs.length > 0 ? `
+        <div class="dw-ports">
+          <div class="dw-port-col">${inputs.map((port) => portRow(port, "in")).join("")}</div>
+          <div class="dw-port-col out">${outputs.map((port) => portRow(port, "out")).join("")}</div>
+        </div>
+      ` : ""}
+      ${parameters.length > 0 ? `
+        <button type="button" class="dw-params-toggle" data-params-toggle="${escapeHTML(`${workflow.path}|${key}`)}" aria-expanded="${paramsOpen ? "true" : "false"}">
+          ${paramsOpen ? "&#9662;" : "&#9656;"} ${parameters.length} parameter${parameters.length === 1 ? "" : "s"}
+        </button>
+        ${paramsOpen ? `<div class="dw-params">${parameters.map((name) => `<span class="dw-param">${escapeHTML(name)}</span>`).join("")}</div>` : ""}
+      ` : ""}
+    </div>
   `;
 }
 
@@ -1751,14 +3011,6 @@ function resultsSinkText(sink) {
   return `not written${sink.error ? `: ${sink.error}` : ""}`;
 }
 
-function renderDemoScopeNote() {
-  if (!Array.isArray(state.modelMatrix?.demo_scope?.sites)) {
-    return "";
-  }
-  const names = matrixSites().map((site) => site.label || site.id);
-  return `<p class="demo-scope-note">${escapeHTML(`Demo scope: ${names.join(" and ")}, one FMU per model.`)}</p>`;
-}
-
 function renderCouplingLegend() {
   const items = [
     ["ping-pong", "Gauss-Seidel: sequential exchange each communication step"],
@@ -1914,11 +3166,14 @@ function bindLaunchButton(selected) {
   if (!launchButton) {
     return;
   }
-  const remoteEnabled = Boolean(state.config?.remoteEnabled);
+  // A single workflow can be launched wherever the site assessment can run: hosted or local.
+  const remoteEnabled = runsEnabled();
   const selectedPending = Boolean(selected && state.pendingWorkflows.has(selected.path));
   launchButton.disabled = !remoteEnabled || !selected || selectedPending;
-  launchButton.textContent = selectedPending ? "Submitting…" : "Launch this workflow only";
-  launchButton.title = remoteEnabled ? "" : "Remote launching is disabled in the current dashboard configuration.";
+  launchButton.textContent = selectedPending ? "Submitting…" : "Launch workflow";
+  launchButton.title = remoteEnabled
+    ? "Run only this workflow (the site assessment on the Plots view runs all of them)"
+    : "Launching needs Argo access or local runs.";
   launchButton.onclick = () => {
     if (state.selectedWorkflowPath) {
       void launchWorkflow(state.selectedWorkflowPath);
@@ -2031,8 +3286,8 @@ function latestRunFor(paths) {
 }
 
 function renderRunStatusLine(run) {
-  if (!state.config?.remoteEnabled) {
-    return '<span class="workflow-model-muted">run history needs Argo access</span>';
+  if (!runsEnabled()) {
+    return '<span class="workflow-model-muted">run history needs Argo access or local runs</span>';
   }
   if (!run) {
     return '<span class="workflow-model-muted">no runs yet</span>';
@@ -2046,7 +3301,6 @@ function renderRunStatusLine(run) {
 function renderModelEntryDetails(workflow, entry) {
   const descriptor = runtimeFmuDescriptor(workflow, entry);
   const owners = fmuOwners(entry.fmu);
-  const usedAt = fmuSiteLabels(entry.fmu);
   const inputs = (Array.isArray(entry.inputs) ? entry.inputs : [])
     .map((input) => {
       if (typeof input === "string") {
@@ -2065,28 +3319,24 @@ function renderModelEntryDetails(workflow, entry) {
     : entry.parameters && typeof entry.parameters === "object"
       ? Object.entries(entry.parameters).map(([key, value]) => `${key}=${value}`)
       : [];
+  const role = entry.kind === "member"
+    ? `co-simulation member of step ${entry.stepName}`
+    : `step ${entry.stepIndex + 1} of the workflow`;
+  const identity = descriptor
+    ? [
+      descriptor.fmi_version ? `FMI ${descriptor.fmi_version}` : "",
+      descriptor.declared_step !== undefined && descriptor.declared_step !== null ? `declared step ${formatMetric(descriptor.declared_step)} s` : "",
+      descriptor.model_version ? `version ${descriptor.model_version}` : "",
+      descriptor.generation_tool || "",
+      descriptor.sha256 ? `sha ${String(descriptor.sha256).slice(0, 12)}` : "",
+    ].filter(Boolean).join(" | ")
+    : "FMI version, step size and checksum appear after the first run";
   return `
     <div class="details-model-detail">
       <div class="details-block">
         <strong class="details-model-label">${escapeHTML(fmuShortLabel(entry.fmu, entry.label))}</strong>
-        <span class="details-caption">${escapeHTML([
-          owners.length > 0 ? owners.join(", ") : "",
-          usedAt.length > 0 ? `used at ${usedAt.join(", ")}` : "",
-          entry.kind === "member" ? `co-simulation member of ${formatWorkflowCategory(entry.stepName)}` : `step ${entry.stepIndex + 1}`,
-        ].filter(Boolean).join(" | "))}</span>
-      </div>
-      <div class="details-block">
-        <span class="details-label">FMU identity</span>
-        <code class="details-fmu-name">${escapeHTML(String(entry.fmu || "n/a").split("/").pop())}</code>
-        ${descriptor ? `
-          <span class="details-caption">${escapeHTML([
-            descriptor.fmi_version ? `FMI ${descriptor.fmi_version}` : "",
-            descriptor.declared_step !== undefined && descriptor.declared_step !== null ? `declared step ${formatMetric(descriptor.declared_step)} s` : "",
-            descriptor.model_version ? `version ${descriptor.model_version}` : "",
-            descriptor.generation_tool || "",
-            descriptor.sha256 ? `sha ${String(descriptor.sha256).slice(0, 12)}` : "",
-          ].filter(Boolean).join(" | "))}</span>
-        ` : '<span class="details-caption">FMI version, step size and checksum: run the workflow to see</span>'}
+        <span class="details-caption">${escapeHTML([owners.length > 0 ? `by ${owners.join(", ")}` : "", role].filter(Boolean).join(" · "))}</span>
+        <span class="details-caption">${escapeHTML(identity)} · deterministic placeholder, not validated physics</span>
       </div>
       <div class="details-model-io">
         <div class="details-block${dataInputs.length > 0 ? " details-block-wide" : ""}">
@@ -2103,7 +3353,6 @@ function renderModelEntryDetails(workflow, entry) {
           <div class="workflow-model-chip-row">${renderWorkflowChips(parameters, 8)}</div>
         </div>
       </div>
-      <p class="details-note">Deterministic placeholder, not validated physics.</p>
     </div>
   `;
 }
@@ -2111,8 +3360,11 @@ function renderModelEntryDetails(workflow, entry) {
 // Renders everything that follows the selection: both tab rows and the content area.
 function renderWorkflows() {
   renderSiteTabs();
+  renderSiteViewTabs();
+  applySiteView();
   renderWorkflowTabs();
   renderWorkflowContent();
+  renderPlotsView();
 }
 
 async function launchWorkflow(workflowPath) {
@@ -2381,7 +3633,12 @@ async function loadSelectedWorkflowResult() {
 }
 
 async function loadGenericWorkflowResult(workflow) {
-  const candidates = finishedSelectedWorkflowRuns();
+  let candidates = finishedSelectedWorkflowRuns();
+  // A finished run chosen in the history rail is shown instead of the latest one.
+  const pinnedRun = state.selectedRunName ? candidates.find((run) => run.name === state.selectedRunName) : null;
+  if (pinnedRun) {
+    candidates = [pinnedRun];
+  }
   if (candidates.length === 0) {
     state.genericResult = {
       state: "empty",
@@ -2469,6 +3726,8 @@ function buildGenericReadyState(workflow, run, payload, latestRunName, skippedRu
     payload,
     fallbackFrom: latestRunName !== run.name ? latestRunName : "",
     skippedRuns,
+    // True when the run was chosen in the history rail rather than being the latest.
+    pinned: state.selectedRunName === run.name && finishedSelectedWorkflowRuns()[0]?.name !== run.name,
   };
 }
 
@@ -2503,6 +3762,11 @@ function buildSimulinkFallbackMarkup(simulink) {
 function renderWorkflowOutput() {
   // Run status, provenance and FMU identity in the content area follow loaded runs and results.
   renderWorkflowContent();
+  // The run record is only shown in the Runs view: skip rebuilding it on every poll;
+  // selectSiteView re-renders it when Runs is shown.
+  if (state.siteView !== "runs") {
+    return;
+  }
   const container = document.getElementById("workflowOutput");
   if (!container) {
     return;
@@ -2607,9 +3871,13 @@ function renderOutputHeader(workflow) {
   }
 
   if (workflowResultFamily(workflow) === "storhy_mock") {
-    kicker.textContent = workflowCategory(workflow) ? formatWorkflowCategory(workflowCategory(workflow)) : "STOR-HY Replica";
+    const category = workflowCategory(workflow) ? formatWorkflowCategory(workflowCategory(workflow)) : "";
+    const pinned = state.genericResult?.state === "ready" && state.genericResult.workflowPath === workflow.path && state.genericResult.pinned;
+    kicker.textContent = pinned ? "Selected run" : "Latest run";
     title.textContent = workflowLabel(workflow);
-    copy.textContent = workflowDescription(workflow) || "Python FMU replica workflow for the selected STOR-HY demonstrator.";
+    copy.textContent = pinned
+      ? `${category ? `${category} workflow. ` : ""}Record of the run chosen in the history: provenance, assessed data window, carried-over state and outputs. Click it again in the history, or "show latest", to return to the newest run.`
+      : `${category ? `${category} workflow. ` : ""}Record of the newest finished run: provenance, assessed data window, carried-over state and outputs. Click a run in the history to see an earlier one; trends and limit lines are on the Plots view.`;
     return;
   }
 
@@ -2645,6 +3913,7 @@ function renderStorhyMockResult(container, workflow) {
     <div class="result-head">
       <h3>${escapeHTML(payload.runName || result.runName)}</h3>
       <div class="result-head-actions">
+        ${result.pinned ? '<span class="result-kind-pill result-kind-pinned">from history</span><button class="result-latest-button" type="button" data-show-latest>show latest</button>' : ""}
         ${renderCollectedFromBadge(payload)}
         ${renderResultExportButtons(payload)}
         <span class="result-kind-pill result-kind-storhy">STOR-HY Mock</span>
@@ -2665,6 +3934,7 @@ function renderStorhyMockResult(container, workflow) {
       </article>
     `;
     bindResultExportButtons(container);
+    container.querySelector("[data-show-latest]")?.addEventListener("click", showLatestRun);
     return;
   }
 
@@ -2672,13 +3942,9 @@ function renderStorhyMockResult(container, workflow) {
   const [summaryStepName, summaryStep] = preferredStorhySummaryStep(modelStepEntries);
   const metricCards = buildStorhyMetricCards(modelStepEntries, dashboardConfig.summary || STORHY_DEFAULT_SUMMARY).join("");
   const syntheticCaseMarkup = renderStorhySyntheticCase(syntheticCase);
-  const valueBlocks = renderStorhyValueBlocks(modelStepEntries, dashboardConfig.valueBlocks || []);
-  const configuredTraceCards = renderStorhyConfiguredTraceCards(modelStepEntries, dashboardConfig.charts || [], workflow);
-  const fallbackTraceCard = configuredTraceCards
-    ? ""
-    : renderStorhyFallbackTraceCard(modelStepEntries);
-  const traceCards = configuredTraceCards || fallbackTraceCard;
 
+  // Charts, gauges and the status/recommendation grid live on the Plots view and in the
+  // site strip; the Details card is the run record.
   container.innerHTML = `
     <article class="result-card storhy-summary-card">
       ${alertBanner}
@@ -2689,16 +3955,57 @@ function renderStorhyMockResult(container, workflow) {
         <div>summary step ${escapeHTML(summaryStepName)}</div>
         ${renderRunTimingStrip(payload, run)}
       </div>
+      ${renderRunAssessmentWindow(payload)}
       ${buildGenericFallbackMarkup(result)}
       ${renderStorhyStepChain(payload, modelStepEntries)}
       ${syntheticCaseMarkup}
       ${metricCards ? `<div class="metric-grid storhy-metric-grid">${metricCards}</div>` : ""}
-      ${valueBlocks ? `<div class="storhy-visual-grid">${valueBlocks}</div>` : ""}
-      ${renderStorhyDecisionGrid(modelStepEntries, summaryStep, dashboardConfig)}
     </article>
-    ${traceCards ? `<div class="trace-stack">${traceCards}</div>` : ""}
   `;
   bindResultExportButtons(container);
+  container.querySelector("[data-show-latest]")?.addEventListener("click", showLatestRun);
+}
+
+// Assessed data window and carried-over state of a run (from _run.data_window and
+// steps[].fmus[].carry_over), so the Details card says which data the run covered and
+// where its cumulative state came from.
+function renderRunAssessmentWindow(payload) {
+  const info = runInfo(payload);
+  if (!info) {
+    return "";
+  }
+  const lines = [];
+  const window = info.data_window;
+  if (window && typeof window === "object") {
+    if (window.resolved && window.from && window.to) {
+      const span = Number.isFinite(Number(window.span_seconds)) ? ` (${formatSimDuration(Number(window.span_seconds))})` : "";
+      const previous = window.previous_run_id ? ` · continues run ${window.previous_run_id}` : " · first assessment";
+      const backlog = Number(window.backlog_seconds) > 0 ? ` · ${formatSimDuration(Number(window.backlog_seconds))} of newer data still to assess` : "";
+      lines.push(`<span><strong>Assessed data</strong> ${escapeHTML(formatTimestampCompact(window.from))} → ${escapeHTML(formatTimestampCompact(window.to))}${escapeHTML(span)}${escapeHTML(previous)}${escapeHTML(backlog)}</span>`);
+    } else if (String(info.status || "").toLowerCase() === "skipped") {
+      lines.push(`<span><strong>Assessed data</strong> none: no new data${window.previous_to ? ` since ${escapeHTML(formatTimestampCompact(window.previous_to))}` : ""}</span>`);
+    } else {
+      lines.push(`<span><strong>Assessed data</strong> bundled fallback file (no database); window mode ${escapeHTML(String(window.mode || ""))}</span>`);
+    }
+  }
+  const carried = [];
+  for (const step of Array.isArray(info.steps) ? info.steps : []) {
+    for (const fmu of Array.isArray(step.fmus) ? step.fmus : []) {
+      const carry = fmu.carry_over;
+      if (!carry || typeof carry !== "object" || !carry.values || typeof carry.values !== "object") {
+        continue;
+      }
+      const values = Object.entries(carry.values)
+        .map(([name, value]) => `${name} ${Number.isFinite(Number(value)) ? formatIndicator(Number(value), "") : String(value)}`)
+        .join(", ");
+      const source = carry.source === "previous_run" && carry.run_id ? `from run ${carry.run_id}` : "from the workflow's start values";
+      carried.push(`${fmu.model || step.name}: ${values} (${source})`);
+    }
+  }
+  if (carried.length > 0) {
+    lines.push(`<span><strong>Carried over</strong> ${carried.map((item) => escapeHTML(item)).join("; ")}</span>`);
+  }
+  return lines.length > 0 ? `<div class="run-window">${lines.join("")}</div>` : "";
 }
 
 function modelStepEntriesOf(payload) {
@@ -3373,7 +4680,7 @@ function renderRunTimingStrip(payload, run) {
       items.push(["", formatRatio(info.ratio)]);
     }
     if (info.status) {
-      items.push(["status", String(info.status)]);
+      items.push(["status", formatRunStatus(info.status)]);
     }
   } else if (run && Number(run.durationSeconds) > 0) {
     items.push(["pod duration", formatDuration(run.durationSeconds)]);
@@ -4253,33 +5560,14 @@ function initializeECharts(root = document) {
   }
 }
 
-function buildEChartsOption(chartId, chart) {
-  const { scale } = resolveChartScale(chart);
-  const theme = chartTheme();
-  const series = buildEChartsSeries(chart, scale);
-  const selected = {};
-
-  for (const [index, item] of chart.series.entries()) {
-    const seriesId = traceSeriesId(item.name, index);
-    selected[item.name] = !isTraceSeriesHidden(chartId, seriesId);
-  }
-
+// Text, legend and tooltip styling shared by the Details trace charts and the Plots charts.
+function baseChartStyle(theme) {
   return {
-    animation: false,
-    backgroundColor: "transparent",
-    color: chart.series.map((item) => item.color),
     textStyle: {
       color: theme.muted,
       fontFamily: theme.fontFamily,
       fontSize: 12,
       fontWeight: 500,
-    },
-    grid: {
-      left: 64,
-      right: 24,
-      top: 54,
-      bottom: 54,
-      containLabel: true,
     },
     legend: {
       type: "scroll",
@@ -4289,7 +5577,6 @@ function buildEChartsOption(chartId, chart) {
       itemWidth: 9,
       itemHeight: 9,
       icon: "circle",
-      selected,
       inactiveColor: "rgba(92,104,103,0.34)",
       pageIconColor: theme.accent,
       pageIconInactiveColor: "rgba(92,104,103,0.3)",
@@ -4326,6 +5613,37 @@ function buildEChartsOption(chartId, chart) {
           width: 1,
         },
       },
+    },
+  };
+}
+
+function buildEChartsOption(chartId, chart) {
+  const { scale } = resolveChartScale(chart);
+  const theme = chartTheme();
+  const base = baseChartStyle(theme);
+  const series = buildEChartsSeries(chart, scale);
+  const selected = {};
+
+  for (const [index, item] of chart.series.entries()) {
+    const seriesId = traceSeriesId(item.name, index);
+    selected[item.name] = !isTraceSeriesHidden(chartId, seriesId);
+  }
+
+  return {
+    animation: false,
+    backgroundColor: "transparent",
+    color: chart.series.map((item) => item.color),
+    textStyle: base.textStyle,
+    grid: {
+      left: 64,
+      right: 24,
+      top: 54,
+      bottom: 54,
+      containLabel: true,
+    },
+    legend: { ...base.legend, selected },
+    tooltip: {
+      ...base.tooltip,
       formatter: (params) => renderEChartsTooltip(params, chart, scale),
     },
     xAxis: {
@@ -4879,9 +6197,9 @@ function renderRuns() {
   }
 
   if (runs.length === 0) {
-    const remoteHint = state.config?.remoteEnabled
-      ? `No visible remote runs for ${workflowLabel(workflow)} yet.`
-      : "Remote launching is disabled in the current dashboard configuration.";
+    const remoteHint = runsEnabled()
+      ? `No visible runs for ${workflowLabel(workflow)} yet.`
+      : "Run history needs Argo access or local runs (disabled in the current dashboard configuration).";
     list.innerHTML = `<div class="empty-state">${escapeHTML(remoteHint)}</div>`;
     return;
   }
@@ -4896,7 +6214,7 @@ function renderRuns() {
           <button class="run-summary" type="button" data-run-name="${escapeHTML(run.name)}" aria-expanded="${expanded ? "true" : "false"}">
             <span class="run-status-dot ${phaseClass}" aria-hidden="true"></span>
             <span class="run-summary-main">
-              <span class="run-name">${escapeHTML(run.name)}</span>
+              <span class="run-name">${escapeHTML(run.name)}${run.source === "local" ? '<span class="run-source-badge">ran locally</span>' : ""}</span>
               <span class="run-subline">${escapeHTML(formatTimestampCompact(run.createdAt))} | ${escapeHTML(formatDuration(run.durationSeconds))} | ${escapeHTML(run.progress || "n/a")}</span>
             </span>
             <span class="run-expand-indicator" aria-hidden="true">${expanded ? "-" : "+"}</span>
@@ -4941,8 +6259,23 @@ function renderRuns() {
     button.addEventListener("click", () => {
       state.selectedRunName = state.selectedRunName === button.dataset.runName ? "" : button.dataset.runName;
       renderRuns();
+      // The run record on the right follows the chosen run (back to the latest when deselected).
+      void loadSelectedWorkflowResult().then(() => {
+        renderRuns();
+        renderWorkflowOutput();
+      });
     });
   }
+}
+
+// Back from a pinned history run to the latest one.
+function showLatestRun() {
+  state.selectedRunName = "";
+  renderRuns();
+  void loadSelectedWorkflowResult().then(() => {
+    renderRuns();
+    renderWorkflowOutput();
+  });
 }
 
 function cachedRunResults(runName) {
@@ -4980,6 +6313,8 @@ function ensureRunResultsLoaded(run) {
       state.runResultsInflight.delete(run.name);
       renderRuns();
       renderOperatorView();
+      // The database-less Plots fallback is built from these payloads.
+      renderPlotsView();
     });
 }
 
@@ -5116,7 +6451,7 @@ function renderRunInfoDetails(run, payload) {
   return `
     <div class="run-detail-line">
       <span>Outcome</span>
-      <strong class="run-outcome run-outcome-${escapeHTML(traceSlug(outcome.status, "unknown"))}">${escapeHTML(outcome.status || "unknown")}</strong>
+      <strong class="run-outcome run-outcome-${escapeHTML(traceSlug(outcome.status, "unknown"))}">${escapeHTML(formatRunStatus(outcome.status) || "unknown")}</strong>
     </div>
     ${outcome.failedStep ? `<div class="run-detail-line"><span>Failed step</span><code>${escapeHTML(outcome.failedStep)}</code></div>` : ""}
     ${info.error ? `<div class="run-message">${escapeHTML(info.error)}</div>` : ""}
@@ -5224,6 +6559,12 @@ function renderRunCounts(runs) {
       <span>runs</span>
     </span>
   `;
+}
+
+// "skipped" means the runner found no new data after the previous assessment.
+function formatRunStatus(status) {
+  const text = String(status || "");
+  return text.toLowerCase() === "skipped" ? "no new data" : text;
 }
 
 function classifyPhase(phase) {
